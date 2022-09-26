@@ -1,3 +1,8 @@
+mod nullable;
+pub use nullable::*;
+mod bitmap;
+pub use bitmap::*;
+
 use std::{fmt::Display, mem::size_of, ops::Index};
 
 use models::{Timestamp, ValueType};
@@ -13,12 +18,6 @@ use crate::{
         DataBlockEncoding, Encoding,
     },
 };
-
-pub trait ByTimeRange {
-    fn time_range(&self) -> Option<TimeRange>;
-    fn time_range_by_range(&self, start: usize, end: usize) -> TimeRange;
-    fn exclude(&mut self, time_range: &TimeRange);
-}
 
 #[derive(Debug, Clone)]
 pub enum DataBlock {
@@ -181,17 +180,17 @@ impl DataBlock {
         }
     }
 
-    pub fn time_range(&self) -> Option<(Timestamp, Timestamp)> {
+    pub fn time_range(&self) -> Option<TimeRange> {
         if self.is_empty() {
             return None;
         }
         let end = self.len();
         match self {
-            DataBlock::U64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-            DataBlock::I64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-            DataBlock::Str { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-            DataBlock::F64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-            DataBlock::Bool { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
+            DataBlock::U64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned()).into()),
+            DataBlock::I64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned()).into()),
+            DataBlock::Str { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned()).into()),
+            DataBlock::F64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned()).into()),
+            DataBlock::Bool { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned()).into()),
         }
     }
 
@@ -447,15 +446,6 @@ impl DataBlock {
         }
         let TimeRange { min_ts, max_ts } = *time_range;
 
-        /// Returns possible position of ts in sli,
-        /// and if ts is not found, and position is at the bounds of sli, return (pos, false).
-        fn binary_search(sli: &[i64], ts: &i64) -> (usize, bool) {
-            match sli.binary_search(ts) {
-                Ok(i) => (i, true),
-                Err(i) => (i, false),
-            }
-        }
-
         let ts_sli = self.ts();
         let (min_idx, has_min) = binary_search(ts_sli, &min_ts);
         let (mut max_idx, has_max) = binary_search(ts_sli, &max_ts);
@@ -621,6 +611,29 @@ impl Display for DataBlock {
     }
 }
 
+impl From<NullableDataBlock> for DataBlock {
+    fn from(block: NullableDataBlock) -> Self {
+        let mut data_block = DataBlock::new(block.field_values().len(), block.field_type());
+        if let Some(bitmap) = block.bitmap() {
+            for (i, t) in block.timestamps().iter().enumerate() {
+                if bitmap.get(i) {
+                    data_block.insert(&block.field_values().data_value(i, *t));
+                }
+            }
+        }
+        data_block
+    }
+}
+
+/// Returns possible position of ts in sli,
+/// and if ts is not found, and position is at the bounds of sli, return (pos, false).
+fn binary_search(sli: &[i64], val: &i64) -> (usize, bool) {
+    match sli.binary_search(val) {
+        Ok(i) => (i, true),
+        Err(i) => (i, false),
+    }
+}
+
 fn exclude_fast<T: Sized + Copy>(v: &mut Vec<T>, min_idx: usize, max_idx: usize) {
     if v.is_empty() {
         return;
@@ -654,12 +667,14 @@ fn exclude_slow(v: &mut Vec<Vec<u8>>, min_idx: usize, max_idx: usize) {
 
 #[cfg(test)]
 pub mod test {
+    use models::Timestamp;
     use std::mem::size_of;
 
+    use crate::memcache::FieldVal;
     use crate::{
         memcache::DataType,
         tseries_family::TimeRange,
-        tsm::{block::exclude_fast, codec::DataBlockEncoding, DataBlock},
+        tsm::{block::exclude_fast, codec::DataBlockEncoding, DataBlock, NullableDataBlock},
     };
 
     pub(crate) fn check_data_block(block: &DataBlock, pattern: &[DataType]) {

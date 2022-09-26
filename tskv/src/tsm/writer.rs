@@ -14,7 +14,8 @@ use crate::{
     file_manager, file_utils,
     tsm::{
         codec::Encoding, BlockEntry, BlockMeta, BlockMetaIterator, DataBlock, Index, IndexEntry,
-        IndexMeta, BLOCK_META_SIZE, BLOOM_FILTER_BITS, INDEX_META_SIZE, MAX_BLOCK_VALUES,
+        IndexMeta, NullableDataBlock, BLOCK_META_SIZE, BLOOM_FILTER_BITS, INDEX_META_SIZE,
+        MAX_BLOCK_VALUES,
     },
 };
 
@@ -32,28 +33,28 @@ use crate::{
 // │ 4 bytes │ 1 byte  │
 // └─────────┴─────────┘
 //
-// ┌───────────────────────────────────────┐
-// │               Blocks                  │
-// ├───────────────────┬───────────────────┤
-// │                Block                  │
-// ├─────────┬─────────┼─────────┬─────────┼
-// │  CRC    │ ts      │  CRC    │  value  │
-// │ 4 bytes │ N bytes │ 4 bytes │ N bytes │
-// └─────────┴─────────┴─────────┴─────────┴
+// ┌─────────────────────────────────────────────────────┐
+// │               Blocks                                │
+// ├─────────────────────────────────────────────────────┤
+// │                Block                                │
+// ├─────────┬─────────┬─────────┬─────────┬─────────────┤
+// │  CRC    │ ts      │  CRC    │  value  │ NullsBitmap │
+// │ 4 bytes │ N bytes │ 4 bytes │ N bytes │ N bytes     │
+// └─────────┴─────────┴─────────┴─────────┴─────────────┘
 //
-// ┌───────────────────────────────────────────────────────────────────────────────┐
-// │                               Index                                           │
-// ├─────────┬──────┬───────┬─────────┬─────────┬────────┬────────┬────────┬───────┤
-// │ fieldId │ Type │ Count │Min Time │Max Time │ count  │ Offset │  Size  │Valoff │
-// │ 8 bytes │1 byte│2 bytes│ 8 bytes │ 8 bytes │4 bytes │8 bytes │8 bytes │8 bytes│
-// └─────────┴──────┴───────┴─────────┴─────────┴────────┴────────┴────────┴───────┘
+// ┌──────────────────────────────────────────────────────────────────────────────────────┐
+// │                               Index                                                  │
+// ├───────┬──────┬───────┬───────┬───────┬────────┬───────┬───────┬───────┬──────────────┤
+// │FieldId│ Type │ Count │MinTime│MaxTime│ValCount│Offset │ Size  │ValOff │NullsBitmapOff│
+// │8 bytes│1 byte│2 bytes│8 bytes│8 bytes│4 bytes │8 bytes│8 bytes│8 bytes│  8 bytes     │
+// └───────┴──────┴───────┴───────┴───────┴────────┴───────┴───────┴───────┴──────────────┘
 //
-// ┌─────────────────────────┐
-// │ Footer                  │
-// ├───────────────┬─────────┤
-// │ Bloom Filter  │Index Ofs│
-// │ 8 bytes       │ 8 bytes │
-// └───────────────┴─────────┘
+// ┌──────────────────────────┐
+// │          Footer          │
+// ├──────────────┬───────────┤
+// │ Bloom Filter │ Index Ofs │
+// │ 8 bytes      │ 8 bytes   │
+// └──────────────┴───────────┘
 
 const HEADER_LEN: u64 = 5;
 const TSM_MAGIC: u32 = 0x01346613;
@@ -225,11 +226,15 @@ impl TsmWriter {
         self.size
     }
 
-    pub fn write_block(&mut self, field_id: FieldId, block: &DataBlock) -> WriteTsmResult<usize> {
+    pub fn write_block(
+        &mut self,
+        field_id: FieldId,
+        block: &NullableDataBlock,
+    ) -> WriteTsmResult<usize> {
         let mut write_pos = self.writer.pos();
         if let Some(rg) = block.time_range() {
-            self.min_ts = self.min_ts.min(rg.0);
-            self.max_ts = self.max_ts.max(rg.1);
+            self.min_ts = self.min_ts.min(rg.min_ts);
+            self.max_ts = self.max_ts.max(rg.max_ts);
         }
         let ret = write_block_to(
             &mut self.writer,
@@ -322,7 +327,14 @@ fn write_raw_data_to(
             size += s;
         })
         .context(IOSnafu)?;
-    let ts_block_len = block_meta.val_off() - block_meta.offset();
+    let val_offset = block_meta.val_off();
+    let bitmap_offset = block_meta.bitmap_off();
+    let ts_block_len = val_offset - block_meta.offset();
+    let val_block_len = if bitmap_offset == 0 {
+        block_meta.size() - ts_block_len
+    } else {
+        bitmap_offset - val_offset
+    };
 
     index_buf.insert_block_meta(
         IndexEntry {
@@ -337,6 +349,7 @@ fn write_raw_data_to(
             offset,
             size: block.len() as u64,
             val_offset: offset + ts_block_len,
+            bitmap_offset: offset + ts_block_len + val_block_len,
         },
     );
 
@@ -348,49 +361,53 @@ fn write_block_to(
     write_pos: &mut u64,
     index_buf: &mut IndexBuf,
     field_id: FieldId,
-    block: &DataBlock,
+    block: &NullableDataBlock,
 ) -> WriteTsmResult<usize> {
     if block.is_empty() {
         return Ok(0);
     }
 
     let offset = writer.pos();
+    let mut val_offset = 0_u64;
+    let mut bitmap_offset = 0_u64;
     let mut size = 0;
 
     // TODO Make encoding result streamable
-    let (ts_buf, data_buf) = block
-        .encode(0, block.len(), block.encodings())
-        .context(EncodeSnafu)?;
+    let (ts_buf, data_buf) = block.encode(block.encodings()).context(EncodeSnafu)?;
     // Write u32 hash for timestamps
     writer
         .write(&crc32fast::hash(&ts_buf).to_be_bytes()[..])
-        .map(|s| {
+        .and_then(|s| {
             size += s;
+            // Write timestamp blocks
+            writer.write(&ts_buf)
         })
-        .context(IOSnafu)?;
-    // Write timestamp blocks
-    writer
-        .write(&ts_buf)
-        .map(|s| {
+        .and_then(|s| {
             size += s;
+            val_offset = writer.pos();
+            // Write u32 hash for value blocks
+            writer.write(&crc32fast::hash(&data_buf).to_be_bytes()[..])
         })
-        .context(IOSnafu)?;
-
-    let val_off = writer.pos();
-
-    // Write u32 hash for value blocks
-    writer
-        .write(&crc32fast::hash(&data_buf).to_be_bytes()[..])
-        .map(|s| {
+        .and_then(|s| {
             size += s;
+            // Write value blocks
+            writer.write(&data_buf)
         })
-        .context(IOSnafu)?;
-    // Write value blocks
-    writer
-        .write(&data_buf)
-        .map(|s| {
+        .and_then(|s| {
             size += s;
+            // Write nulls bitmap blocks
+            match block.bitmap_pruned_raw() {
+                Some(bitmap) => {
+                    bitmap_offset = writer.pos();
+                    writer.write(bitmap)
+                }
+                None => {
+                    bitmap_offset = 0;
+                    Ok(0)
+                }
+            }
         })
+        .map(|s| size += s)
         .context(IOSnafu)?;
 
     index_buf.insert_block_meta(
@@ -400,12 +417,13 @@ fn write_block_to(
             blocks: vec![],
         },
         BlockEntry {
-            min_ts: block.ts()[0],
-            max_ts: block.ts()[block.len() - 1],
+            min_ts: block.timestamps()[0],
+            max_ts: block.timestamps()[block.len() - 1],
             count: block.len() as u32,
             offset,
             size: size as u64,
-            val_offset: val_off,
+            val_offset,
+            bitmap_offset,
         },
     );
 
@@ -442,7 +460,8 @@ mod test {
         memcache::FieldVal,
         tsm::{
             codec::{DataBlockEncoding, Encoding},
-            new_tsm_writer, ColumnReader, DataBlock, IndexReader, TsmReader, TsmWriter,
+            new_tsm_writer, ColumnReader, DataBlock, IndexReader, NullableDataBlock, TsmReader,
+            TsmWriter,
         },
     };
 
@@ -451,7 +470,7 @@ mod test {
     fn write_to_tsm(
         dir: impl AsRef<Path>,
         file_name: &str,
-        data: &HashMap<FieldId, Vec<DataBlock>>,
+        data: &HashMap<FieldId, Vec<NullableDataBlock>>,
     ) {
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -467,12 +486,12 @@ mod test {
         writer.flush().unwrap();
     }
 
-    fn read_from_tsm(path: impl AsRef<Path>) -> HashMap<FieldId, Vec<DataBlock>> {
+    fn read_from_tsm(path: impl AsRef<Path>) -> HashMap<FieldId, Vec<NullableDataBlock>> {
         let file = Arc::new(file_manager::open_file(&path).unwrap());
         let len = file.len();
 
         let index = IndexReader::open(file.clone()).unwrap();
-        let mut data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
+        let mut data: HashMap<FieldId, Vec<NullableDataBlock>> = HashMap::new();
         for idx_meta in index.iter() {
             let cr = ColumnReader::new(file.clone(), idx_meta.block_iterator());
             for blk_ret in cr {
@@ -486,7 +505,7 @@ mod test {
         data
     }
 
-    fn check_tsm(path: impl AsRef<Path>, data: &HashMap<FieldId, Vec<DataBlock>>) {
+    fn check_tsm(path: impl AsRef<Path>, data: &HashMap<FieldId, Vec<NullableDataBlock>>) {
         let tsm_data = read_from_tsm(path);
         for (k, v) in tsm_data.iter() {
             assert_eq!(v, data.get(k).unwrap());
@@ -497,9 +516,9 @@ mod test {
     fn test_tsm_write_fast() {
         let dir = Path::new(TEST_PATH);
         #[rustfmt::skip]
-        let data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
-            (1, vec![DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15], enc: DataBlockEncoding::default() }]),
-            (2, vec![DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103], enc: DataBlockEncoding::default() }]),
+        let data: HashMap<FieldId, Vec<NullableDataBlock>> = HashMap::from([
+            (1, vec![DataBlock::U64 { ts: vec![2, 3, 4], val: vec![12, 13, 15], enc: DataBlockEncoding::default() }.into()]),
+            (2, vec![DataBlock::U64 { ts: vec![2, 3, 4], val: vec![101, 102, 103], enc: DataBlockEncoding::default() }.into()]),
         ]);
 
         let file_name = "_000001.tsm";
@@ -525,12 +544,37 @@ mod test {
         #[rustfmt::skip]
         let data = HashMap::from([
             (1, vec![
-                DataBlock::I64 { ts: ts_1, val: val_1, enc: DataBlockEncoding::default() },
-                DataBlock::I64 { ts: ts_2, val: val_2, enc: DataBlockEncoding::default() },
+                DataBlock::I64 { ts: ts_1, val: val_1, enc: DataBlockEncoding::default() }.into(),
+                DataBlock::I64 { ts: ts_2, val: val_2, enc: DataBlockEncoding::default() }.into(),
             ]),
         ]);
 
         let dir = Path::new(TEST_PATH).join("1");
+        let file_name = "_000001.tsm";
+        write_to_tsm(&dir, file_name, &data);
+        check_tsm(dir.join(file_name), &data);
+    }
+
+    #[test]
+    fn test_tsm_write_2() {
+        let mut blk_1 =
+            NullableDataBlock::new(1024, ValueType::Integer, DataBlockEncoding::default());
+        let mut blk_2 =
+            NullableDataBlock::new(1024, ValueType::Integer, DataBlockEncoding::default());
+        for i in 0..500 {
+            blk_1.append_value(i, Some(FieldVal::Integer(i)));
+            blk_2.append_value(i, None);
+        }
+        for i in 500..1000 {
+            blk_1.append_null(i);
+            blk_2.append_value(i, Some(FieldVal::Integer(i)));
+        }
+        #[rustfmt::skip]
+        let data = HashMap::from([
+            (1, vec![blk_1, blk_2]),
+        ]);
+
+        let dir = Path::new(TEST_PATH).join("2");
         let file_name = "_000001.tsm";
         write_to_tsm(&dir, file_name, &data);
         check_tsm(dir.join(file_name), &data);

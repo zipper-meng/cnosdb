@@ -23,8 +23,8 @@ use crate::{
     summary::{CompactMeta, VersionEdit},
     tseries_family::{ColumnFile, TimeRange},
     tsm::{
-        self, codec::Encoding, BlockMeta, BlockMetaIterator, ColumnReader, DataBlock, Index,
-        IndexIterator, IndexMeta, IndexReader, TsmReader, TsmWriter,
+        self, codec::Encoding, BlockMeta, BlockMetaIterator, ColumnReader, Index, IndexIterator,
+        IndexMeta, IndexReader, NullableDataBlock, TsmReader, TsmWriter,
     },
     Error, LevelId,
 };
@@ -74,7 +74,7 @@ enum CompactingBlock {
     DataBlock {
         priority: usize,
         field_id: FieldId,
-        data_block: DataBlock,
+        data_block: NullableDataBlock,
     },
     Raw {
         priority: usize,
@@ -86,25 +86,21 @@ enum CompactingBlock {
 impl CompactingBlock {
     /// Sort the given `CompactingBlock`s by priority, transform all of them
     /// into CompactingBlock::DataBlock (for CompactingBlock::Raw)
-    fn rebuild_data_blocks(mut source: Vec<Self>) -> Result<Vec<DataBlock>> {
+    fn rebuild_data_blocks(mut source: Vec<Self>) -> Result<Vec<NullableDataBlock>> {
         source.sort_by_key(|k| match k {
             CompactingBlock::DataBlock { priority, .. } => *priority,
             CompactingBlock::Raw { priority, .. } => *priority,
         });
 
-        let mut res: Vec<DataBlock> = Vec::with_capacity(source.len());
+        let mut res: Vec<NullableDataBlock> = Vec::with_capacity(source.len());
         for cb in source.into_iter() {
             match cb {
                 CompactingBlock::DataBlock { data_block, .. } => {
                     res.push(data_block);
                 }
                 CompactingBlock::Raw { meta, raw, .. } => {
-                    let data_block = tsm::decode_data_block(
-                        &raw,
-                        meta.field_type(),
-                        meta.val_off() - meta.offset(),
-                    )
-                    .context(error::ReadTsmSnafu)?;
+                    let data_block =
+                        tsm::decode_data_block(&raw, &meta).context(error::ReadTsmSnafu)?;
                     res.push(data_block);
                 }
             }
@@ -299,8 +295,10 @@ impl CompactIterator {
                         // 2.2.2
                         let merging_data_blks = CompactingBlock::rebuild_data_blocks(merging_blks)?;
                         merging_blks = Vec::new();
-                        let merged_data_blks =
-                            DataBlock::merge_blocks(merging_data_blks, self.max_datablock_values);
+                        let merged_data_blks = NullableDataBlock::merge_blocks(
+                            merging_data_blks,
+                            self.max_datablock_values,
+                        );
 
                         for (i, data_block) in merged_data_blks.into_iter().enumerate() {
                             if data_block.len() < self.max_datablock_values as usize {
@@ -366,7 +364,7 @@ impl CompactIterator {
         if !merging_blks.is_empty() {
             let merging_data_blks = CompactingBlock::rebuild_data_blocks(merging_blks)?;
             let merged_data_blks =
-                DataBlock::merge_blocks(merging_data_blks, self.max_datablock_values);
+                NullableDataBlock::merge_blocks(merging_data_blks, self.max_datablock_values);
 
             for (i, data_block) in merged_data_blks.into_iter().enumerate() {
                 self.merged_blocks.push_back(CompactingBlock::DataBlock {
@@ -584,13 +582,16 @@ mod test {
         kv_option::Options,
         summary::VersionEdit,
         tseries_family::{ColumnFile, LevelInfo, TimeRange, Version},
-        tsm::{self, codec::DataBlockEncoding, DataBlock, Tombstone, TsmReader, TsmTombstone},
+        tsm::{
+            self, codec::DataBlockEncoding, DataBlock, NullableDataBlock, Tombstone, TsmReader,
+            TsmTombstone,
+        },
         TseriesFamilyId,
     };
 
     fn write_data_blocks_to_column_file(
         dir: impl AsRef<Path>,
-        data: Vec<HashMap<FieldId, Vec<DataBlock>>>,
+        data: Vec<HashMap<FieldId, Vec<NullableDataBlock>>>,
         tsf_id: TseriesFamilyId,
         tsf_opt: Arc<Options>,
     ) -> (u64, Vec<Arc<ColumnFile>>) {
@@ -623,9 +624,9 @@ mod test {
 
     fn read_data_blocks_from_column_file(
         path: impl AsRef<Path>,
-    ) -> HashMap<FieldId, Vec<DataBlock>> {
+    ) -> HashMap<FieldId, Vec<NullableDataBlock>> {
         let tsm_reader = TsmReader::open(path).unwrap();
-        let mut data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
+        let mut data: HashMap<FieldId, Vec<NullableDataBlock>> = HashMap::new();
         for idx in tsm_reader.index_iterator() {
             let field_id = idx.field_id();
             for blk_meta in idx.block_iterator() {
@@ -649,7 +650,7 @@ mod test {
     fn check_column_file(
         dir: impl AsRef<Path>,
         version_edit: VersionEdit,
-        expected_data: HashMap<FieldId, Vec<DataBlock>>,
+        expected_data: HashMap<FieldId, Vec<NullableDataBlock>>,
     ) {
         let path = get_result_file_path(dir, version_edit);
         let data = read_data_blocks_from_column_file(path);
@@ -711,26 +712,26 @@ mod test {
         #[rustfmt::skip]
         let data = vec![
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }]),
-                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }]),
-                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }]),
+                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }.into()]),
+                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }.into()]),
+                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }.into()]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }]),
-                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }]),
-                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }]),
+                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }.into()]),
+                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }.into()]),
+                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }.into()]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
-                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
-                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
+                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
+                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
+                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
             ]),
         ];
         #[rustfmt::skip]
         let expected_data = HashMap::from([
-            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
-            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
-            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
+            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
+            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
+            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
         ]);
 
         let dir = "/tmp/test/compaction";
@@ -750,26 +751,26 @@ mod test {
         #[rustfmt::skip]
         let data = vec![
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }]),
-                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }]),
-                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }]),
+                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }.into()]),
+                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }.into()]),
+                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }.into()]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }]),
-                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }]),
-                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }]),
+                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }.into()]),
+                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }.into()]),
+                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }.into()]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
-                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
-                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
+                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
+                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
+                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
             ]),
         ];
         #[rustfmt::skip]
         let expected_data = HashMap::from([
-            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
-            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
-            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
+            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
+            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
+            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
         ]);
 
         let dir = "/tmp/test/compaction/1";
@@ -787,28 +788,28 @@ mod test {
     #[test]
     fn test_compaction_2() {
         #[rustfmt::skip]
-        let data = vec![
+        let data: Vec<HashMap<FieldId, Vec<NullableDataBlock>>> = vec![
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5], enc: DataBlockEncoding::default() }]),
-                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5], enc: DataBlockEncoding::default() }]),
-                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }]),
+                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5], enc: DataBlockEncoding::default() }.into()]),
+                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5], enc: DataBlockEncoding::default() }.into()]),
+                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }.into()]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }]),
-                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }]),
-                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6, 7], val: vec![4, 5, 6, 8], enc: DataBlockEncoding::default() }]),
+                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }.into()]),
+                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }.into()]),
+                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6, 7], val: vec![4, 5, 6, 8], enc: DataBlockEncoding::default() }.into()]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
-                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
-                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default()}]),
+                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
+                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
+                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
             ]),
         ];
         #[rustfmt::skip]
         let expected_data = HashMap::from([
-            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
-            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
-            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
+            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
+            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
+            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }.into()]),
         ]);
 
         let dir = "/tmp/test/compaction/2";
@@ -833,7 +834,10 @@ mod test {
     /// - Float: 1.0
     /// - Boolean: true
     /// - Unknown: will create a panic
-    fn generate_data_block(value_type: ValueType, data_descriptors: Vec<(i64, i64)>) -> DataBlock {
+    fn generate_data_block(
+        value_type: ValueType,
+        data_descriptors: Vec<(i64, i64)>,
+    ) -> NullableDataBlock {
         match value_type {
             ValueType::Unsigned => {
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(1000);
@@ -849,6 +853,7 @@ mod test {
                     val: val_vec,
                     enc: DataBlockEncoding::default(),
                 }
+                .into()
             }
             ValueType::Integer => {
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(1000);
@@ -864,6 +869,7 @@ mod test {
                     val: val_vec,
                     enc: DataBlockEncoding::default(),
                 }
+                .into()
             }
             ValueType::String => {
                 let word = b"1".to_vec();
@@ -880,6 +886,7 @@ mod test {
                     val: val_vec,
                     enc: DataBlockEncoding::default(),
                 }
+                .into()
             }
             ValueType::Float => {
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(10000);
@@ -895,6 +902,7 @@ mod test {
                     val: val_vec,
                     enc: DataBlockEncoding::default(),
                 }
+                .into()
             }
             ValueType::Boolean => {
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(10000);
@@ -910,6 +918,7 @@ mod test {
                     val: val_vec,
                     enc: DataBlockEncoding::default(),
                 }
+                .into()
             }
             ValueType::Unknown => {
                 panic!("value type is Unknown")
@@ -966,7 +975,7 @@ mod test {
             ]),
         ];
         #[rustfmt::skip]
-        let expected_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from(
+        let expected_data: HashMap<FieldId, Vec<NullableDataBlock>> = HashMap::from(
             [
                 // 1, 1~6500
                 (1, vec![
@@ -1107,7 +1116,7 @@ mod test {
             ]),
         ];
         #[rustfmt::skip]
-        let expected_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from(
+        let expected_data: HashMap<FieldId, Vec<NullableDataBlock>> = HashMap::from(
             [
                 // 1, 1~6500
                 (1, vec![
