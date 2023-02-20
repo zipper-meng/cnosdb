@@ -1,58 +1,41 @@
 use std::collections::HashMap;
 use std::panic;
 use std::sync::Arc;
-use std::time::Duration;
 
-use config::ClusterConfig;
-use datafusion::prelude::Column;
-use flatbuffers::FlatBufferBuilder;
-use futures::stream::SelectNextSome;
-use futures::FutureExt;
-use libc::printf;
-use meta::meta_manager::RemoteMetaManager;
 use meta::MetaRef;
-use metrics::{incr_compaction_failed, incr_compaction_success, sample_tskv_compaction_duration};
 use models::codec::Encoding;
-use models::predicate::domain::{ColumnDomains, PredicateRef};
-use models::schema::{
-    make_owner, DatabaseSchema, TableColumn, TableSchema, TskvTableSchema, DEFAULT_CATALOG,
-};
+use models::predicate::domain::ColumnDomains;
+use models::schema::{make_owner, DatabaseSchema, TableColumn, DEFAULT_CATALOG};
 use models::utils::unite_id;
-use models::{
-    ColumnId, FieldId, FieldInfo, InMemPoint, SeriesId, SeriesKey, Tag, Timestamp, ValueType,
-};
+use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
 use protos::models as fb_models;
-use snafu::{OptionExt, ResultExt};
+use snafu::ResultExt;
 use tokio::runtime::Runtime;
-use tokio::sync::broadcast::{self, Receiver as BroadcastReceiver, Sender as BroadcastSender};
 use tokio::sync::mpsc::{self, Receiver, Sender};
-use tokio::sync::{oneshot, watch, RwLock};
-use tokio::time::Instant;
-use trace::{debug, error, info, trace, warn};
+use tokio::sync::{oneshot, Mutex, RwLock};
+use tokio_util::sync::CancellationToken;
+use trace::{debug, error, info, warn};
 
+use crate::background_task::BackgroundTask;
 use crate::compaction::{
-    self, run_flush_memtable_job, CompactReq, CompactTask, FlushReq, LevelCompactionPicker, Picker,
+    self, run_flush_memtable_job, CompactTask, FlushReq, LevelCompactionPicker, Picker,
 };
 use crate::context::{self, GlobalContext, GlobalSequenceContext, GlobalSequenceTask};
 use crate::database::Database;
 use crate::engine::Engine;
-use crate::error::{self, IndexErrSnafu, MetaSnafu, Result, SchemaSnafu, SendSnafu};
-use crate::file_system::file_manager::{self, FileManager};
+use crate::error::{self, Result};
+use crate::file_system::file_manager;
 use crate::index::IndexResult;
 use crate::kv_option::{Options, StorageOptions};
-use crate::memcache::{DataType, MemCache};
 use crate::record_file::Reader;
 use crate::schema::error::SchemaError;
-use crate::summary::{
-    self, Summary, SummaryProcessor, SummaryTask, VersionEdit, WriteSummaryRequest,
-};
-use crate::tseries_family::{SuperVersion, TimeRange, TseriesFamily, Version};
+use crate::summary::{self, Summary, SummaryProcessor, SummaryTask, VersionEdit};
+use crate::tseries_family::{SuperVersion, TimeRange};
 use crate::tsm::codec::get_str_codec;
-use crate::tsm::{DataBlock, TsmTombstone, MAX_BLOCK_VALUES};
 use crate::version_set::VersionSet;
-use crate::wal::{self, WalEntryType, WalManager, WalTask};
-use crate::{database, file_utils, version_set, Error, TseriesFamilyId};
+use crate::wal::{self, WalManager, WalTask};
+use crate::{database, file_utils, Error, TseriesFamilyId};
 
 pub const COMPACT_REQ_CHANNEL_CAP: usize = 16;
 pub const SUMMARY_REQ_CHANNEL_CAP: usize = 16;
@@ -67,12 +50,13 @@ pub struct TsKv {
     meta_manager: MetaRef,
 
     runtime: Arc<Runtime>,
+    cancellation_token: CancellationToken,
+    task_handles: Arc<Mutex<Vec<BackgroundTask<()>>>>,
     wal_sender: Sender<WalTask>,
     flush_task_sender: Sender<FlushReq>,
     compact_task_sender: Sender<CompactTask>,
     summary_task_sender: Sender<SummaryTask>,
     global_seq_task_sender: Sender<GlobalSequenceTask>,
-    close_sender: BroadcastSender<Sender<()>>,
 }
 
 impl TsKv {
@@ -88,7 +72,6 @@ impl TsKv {
             mpsc::channel::<SummaryTask>(SUMMARY_REQ_CHANNEL_CAP);
         let (global_seq_task_sender, global_seq_task_receiver) =
             mpsc::channel::<GlobalSequenceTask>(GLOBAL_TASK_REQ_CHANNEL_CAP);
-        let (close_sender, _close_receiver) = broadcast::channel(1);
         let (version_set, summary) = Self::recover_summary(
             runtime.clone(),
             meta_manager.clone(),
@@ -108,47 +91,67 @@ impl TsKv {
             version_set,
             meta_manager,
             runtime: runtime.clone(),
+            cancellation_token: CancellationToken::new(),
+            task_handles: Arc::new(Mutex::new(vec![])),
             wal_sender,
             flush_task_sender: flush_task_sender.clone(),
             compact_task_sender: compact_task_sender.clone(),
             summary_task_sender: summary_task_sender.clone(),
             global_seq_task_sender: global_seq_task_sender.clone(),
-            close_sender,
         };
 
+        // Put background task handlers
+        let mut task_handles = core.task_handles.lock().await;
+
         let wal_manager = core.recover_wal().await;
-        core.run_wal_job(wal_manager, wal_receiver);
-        core.run_flush_job(
+        task_handles.push(wal::run_wal_job(
+            core.runtime.clone(),
+            core.cancellation_token.clone(),
+            wal_manager,
+            wal_receiver,
+        ));
+        task_handles.push(core.run_flush_job(
             flush_task_receiver,
             summary.global_context(),
             summary.version_set(),
             summary_task_sender.clone(),
             compact_task_sender.clone(),
-        );
-        let _ = compaction::job::run(
+        ));
+        task_handles.push(compaction::job::run(
             shared_options.storage.clone(),
             runtime,
+            core.cancellation_token.clone(),
             compact_task_receiver,
             summary.global_context(),
             summary.version_set(),
             summary_task_sender.clone(),
-        );
-        core.run_summary_job(summary, summary_task_receiver);
-        context::run_global_context_job(
+        ));
+        task_handles.push(core.run_summary_job(summary, summary_task_receiver));
+        task_handles.push(context::run_global_context_job(
             core.runtime.clone(),
             global_seq_task_receiver,
             global_seq_ctx,
-        );
+        ));
+
+        drop(task_handles);
+
         Ok(core)
     }
 
     pub async fn close(&self) {
-        let (tx, mut rx) = mpsc::channel(1);
-        if let Err(e) = self.close_sender.send(tx) {
-            error!("Failed to broadcast close signal: {:?}", e);
+        self.cancellation_token.cancel();
+        let mut task_handles = self.task_handles.lock().await;
+        let mut close_handles = vec![];
+        while !task_handles.is_empty() {
+            let task = task_handles.remove(0);
+            info!("Job '{}' closing", task.name());
+            close_handles.push((task.name(), self.runtime.spawn(task.until_close())));
         }
-        while let Some(_x) = rx.recv().await {
-            continue;
+        for (name, jh) in close_handles {
+            match jh.await {
+                Ok(_) => info!("Job '{}' closed.", name),
+                Err(e) => error!("Failed to close job '{}': {:?}", name, e),
+            }
         }
         info!("TsKv closed");
     }
@@ -163,13 +166,17 @@ impl TsKv {
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
         let summary_dir = opt.storage.summary_dir();
         if !file_manager::try_exists(&summary_dir) {
-            std::fs::create_dir_all(&summary_dir)
-                .context(error::IOSnafu)
-                .unwrap();
+            if let Err(e) = std::fs::create_dir_all(&summary_dir) {
+                panic!(
+                    "Failed to create directory '{}': {:?}",
+                    summary_dir.display(),
+                    e
+                );
+            }
         }
         let summary_file = file_utils::make_summary_file(&summary_dir, 0);
         let summary = if file_manager::try_exists(&summary_file) {
-            Summary::recover(
+            match Summary::recover(
                 meta,
                 opt,
                 runtime,
@@ -179,11 +186,19 @@ impl TsKv {
                 true,
             )
             .await
-            .unwrap()
+            {
+                Ok(s) => s,
+                Err(e) => panic!(
+                    "Failed to recover from summary file '{}': {:?}",
+                    summary_file.display(),
+                    e
+                ),
+            }
         } else {
-            Summary::new(opt, runtime, global_seq_task_sender)
-                .await
-                .unwrap()
+            match Summary::new(opt, runtime, global_seq_task_sender).await {
+                Ok(s) => s,
+                Err(e) => panic!("Failed to create new summary: {:?}", e),
+            }
         };
         let version_set = summary.version_set();
 
@@ -195,87 +210,11 @@ impl TsKv {
             .await
             .unwrap();
 
+        if let Err(e) = wal_manager.recover(self, self.global_ctx.clone()).await {
+            panic!("Failed to recover from wal: {:?}", e);
+        }
+
         wal_manager
-            .recover(self, self.global_ctx.clone())
-            .await
-            .unwrap();
-
-        wal_manager
-    }
-
-    pub(crate) fn run_wal_job(&self, mut wal_manager: WalManager, mut receiver: Receiver<WalTask>) {
-        async fn on_write(
-            wal_manager: &mut WalManager,
-            points: Arc<Vec<u8>>,
-            cb: oneshot::Sender<Result<(u64, usize)>>,
-            id: TseriesFamilyId,
-            tenant: Arc<Vec<u8>>,
-        ) {
-            let ret = wal_manager
-                .write(WalEntryType::Write, points, id, tenant)
-                .await;
-            let send_ret = cb.send(ret);
-            if let Err(e) = send_ret {
-                warn!("send WAL write result failed: {:?}", e);
-            }
-        }
-
-        async fn on_tick(wal_manager: &WalManager) {
-            if let Err(e) = wal_manager.sync().await {
-                error!("Failed flushing WAL file: {:?}", e);
-            }
-        }
-
-        async fn on_cancel(wal_manager: WalManager) {
-            info!("Job 'WAL' closing.");
-            if let Err(e) = wal_manager.close().await {
-                error!("Failed to close job 'WAL': {:?}", e);
-            }
-            info!("Job 'WAL' closed.");
-        }
-
-        info!("Job 'WAL' starting.");
-        let mut close_receiver = self.close_sender.subscribe();
-        let _ = self.runtime.spawn(async move {
-            info!("Job 'WAL' started.");
-
-            let sync_interval = wal_manager.sync_interval();
-            if sync_interval == Duration::ZERO {
-                loop {
-                    tokio::select! {
-                        wal_task = receiver.recv() => {
-                            match wal_task {
-                                Some(WalTask::Write { id, points, tenant, cb }) => on_write(&mut wal_manager, points, cb, id, tenant).await,
-                                _ => break
-                            }
-                        }
-                        close_task = close_receiver.recv() => {
-                            on_cancel(wal_manager).await;
-                            break;
-                        }
-                    }
-                }
-            } else {
-                let mut ticker = tokio::time::interval(sync_interval);
-                loop {
-                    tokio::select! {
-                        wal_task = receiver.recv() => {
-                            match wal_task {
-                                Some(WalTask::Write { id, points, tenant, cb }) => on_write(&mut wal_manager, points, cb, id, tenant).await,
-                                _ => break
-                            }
-                        }
-                        _ = ticker.tick() => {
-                            on_tick(&mut wal_manager).await;
-                        }
-                        close_task = close_receiver.recv() => {
-                            on_cancel(wal_manager).await;
-                            break;
-                        }
-                    }
-                }
-            }
-        });
     }
 
     fn run_flush_job(
@@ -285,34 +224,74 @@ impl TsKv {
         version_set: Arc<RwLock<VersionSet>>,
         summary_task_sender: Sender<SummaryTask>,
         compact_task_sender: Sender<CompactTask>,
-    ) {
+    ) -> BackgroundTask<()> {
         let runtime = self.runtime.clone();
+        info!("Job 'flush' starting");
+        let can_tok = self.cancellation_token.clone();
         let f = async move {
-            while let Some(x) = receiver.recv().await {
-                runtime.spawn(run_flush_memtable_job(
-                    x,
-                    ctx.clone(),
-                    version_set.clone(),
-                    summary_task_sender.clone(),
-                    Some(compact_task_sender.clone()),
-                ));
+            info!("Job 'flush' started");
+            loop {
+                tokio::select! {
+                    flush_task = receiver.recv() => {
+                        match flush_task {
+                            Some(x) => {
+                                match run_flush_memtable_job(
+                                    x,
+                                    ctx.clone(),
+                                    version_set.clone(),
+                                    summary_task_sender.clone(),
+                                    Some(compact_task_sender.clone()),
+                                ).await {
+                                    Ok(_) => {}
+                                    Err(err) => {
+                                        warn!("Flush failed: {:?}", err)
+                                    }
+                                }
+                            },
+                            None => break,
+                        }
+                    },
+                    _ = can_tok.cancelled() => {
+                        break;
+                    }
+
+                }
             }
         };
-        self.runtime.spawn(f);
-        info!("Flush task handler started");
+
+        BackgroundTask::new("flush".to_string(), self.runtime.spawn(f), true)
     }
 
-    fn run_summary_job(&self, summary: Summary, mut summary_task_receiver: Receiver<SummaryTask>) {
+    fn run_summary_job(
+        &self,
+        summary: Summary,
+        mut summary_task_receiver: Receiver<SummaryTask>,
+    ) -> BackgroundTask<()> {
+        info!("Job 'summary' starting");
+        let can_tok = self.cancellation_token.clone();
         let f = async move {
+            info!("Job 'summary' started");
             let mut summary_processor = SummaryProcessor::new(Box::new(summary));
-            while let Some(x) = summary_task_receiver.recv().await {
-                debug!("Apply Summary task");
-                summary_processor.batch(x);
-                summary_processor.apply().await;
+            loop {
+                tokio::select! {
+                    summary_task = summary_task_receiver.recv() => {
+                        match summary_task {
+                            Some(x) => {
+                                debug!("Apply Summary task");
+                                summary_processor.batch(x);
+                                summary_processor.apply().await;
+                            },
+                            None => break,
+                        }
+                    },
+                    _ = can_tok.cancelled() => {
+                        break;
+                    }
+                }
             }
         };
-        self.runtime.spawn(f);
-        info!("Summary task handler started");
+
+        BackgroundTask::new("summary".to_string(), self.runtime.spawn(f), true)
     }
 
     // fn run_timer_job(&self, pub_sender: Sender<()>) {

@@ -1,18 +1,15 @@
 #![allow(dead_code)]
-#![allow(dead_code)]
-#![allow(unreachable_patterns)]
-#![allow(unused_imports, unused_variables)]
+#![allow(unreachable_patterns, unused_variables)]
+#![allow(unused_imports)]
 
 pub use error::{Error, Result};
 pub use kv_option::Options;
 pub use kvcore::TsKv;
-use protos::kv_service::WritePointsResponse;
 pub use summary::{print_summary_statistics, Summary, VersionEdit};
-use tokio::sync::oneshot;
 pub use tseries_family::TimeRange;
 pub use tsm::print_tsm_statistics;
-use utils::BloomFilter;
 
+mod background_task;
 pub mod byte_utils;
 mod compaction;
 mod context;

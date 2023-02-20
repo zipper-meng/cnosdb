@@ -20,29 +20,31 @@
 //! +------------+---------------+--------------+--------------+
 //! ```
 
+mod job;
+pub use job::run_wal_job;
+mod reader;
+mod writer;
+
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::string::String;
 use std::sync::Arc;
 
-use datafusion::parquet::data_type::AsBytes;
-use models::auth::user::{ROOT, ROOT_PWD};
 use models::codec::Encoding;
 use protos::kv_service::{Meta, WritePointsRequest};
 use snafu::ResultExt;
-use tokio::sync::{oneshot, RwLock};
+use tokio::sync::oneshot;
 use trace::{debug, error, info, warn};
 
 use crate::byte_utils::{decode_be_u32, decode_be_u64};
 use crate::context::{GlobalContext, GlobalSequenceContext};
-use crate::error::{self, Error, Result};
-use crate::file_system::file_manager::{self, FileManager};
+use crate::error::{Error, Result};
+use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
-use crate::record_file::{self, Record, RecordDataType, RecordDataVersion};
 use crate::tsm::codec::get_str_codec;
-use crate::tsm::{DecodeSnafu, EncodeSnafu};
-use crate::version_set::VersionSet;
-use crate::{engine, file_utils, TseriesFamilyId};
+use crate::wal::reader::{read_footer, WalReader};
+use crate::wal::writer::WalWriter;
+use crate::{engine, file_utils, tsm, TseriesFamilyId};
 
 const ENTRY_TYPE_LEN: usize = 1;
 const ENTRY_SEQUENCE_LEN: usize = 8;
@@ -115,127 +117,6 @@ impl WalEntryBlock {
     }
 }
 
-fn build_footer(min_sequence: u64, max_sequence: u64) -> [u8; record_file::FILE_FOOTER_LEN] {
-    let mut footer = [0_u8; record_file::FILE_FOOTER_LEN];
-    footer[0..4].copy_from_slice(&FOOTER_MAGIC_NUMBER.to_be_bytes());
-    footer[16..24].copy_from_slice(&min_sequence.to_be_bytes());
-    footer[24..32].copy_from_slice(&max_sequence.to_be_bytes());
-    footer
-}
-
-/// Reads a wal file and parse footer, returns sequence range
-async fn read_footer(path: impl AsRef<Path>) -> Result<Option<(u64, u64)>> {
-    if file_manager::try_exists(&path) {
-        let reader = WalReader::open(path).await?;
-        Ok(Some((reader.min_sequence, reader.max_sequence)))
-    } else {
-        Ok(None)
-    }
-}
-
-struct WalWriter {
-    id: u64,
-    inner: record_file::Writer,
-    size: u64,
-    path: PathBuf,
-    config: Arc<WalOptions>,
-
-    buf: Vec<u8>,
-    min_sequence: u64,
-    max_sequence: u64,
-}
-
-impl WalWriter {
-    pub async fn open(
-        config: Arc<WalOptions>,
-        id: u64,
-        path: impl AsRef<Path>,
-        min_seq: u64,
-    ) -> Result<Self> {
-        let path = path.as_ref();
-
-        // Use min_sequence existing in file, otherwise in parameter
-        let (writer, min_sequence, max_sequence) = if file_manager::try_exists(path) {
-            let writer = record_file::Writer::open(path, RecordDataType::Wal).await?;
-            let (min_sequence, max_sequence) = match writer.footer() {
-                Some(footer) => WalReader::parse_footer(footer).unwrap_or((min_seq, min_seq)),
-                None => (min_seq, min_seq),
-            };
-            (writer, min_sequence, max_sequence)
-        } else {
-            (
-                record_file::Writer::open(path, RecordDataType::Wal).await?,
-                min_seq,
-                min_seq,
-            )
-        };
-
-        let size = writer.file_size();
-
-        Ok(Self {
-            id,
-            inner: writer,
-            size,
-            path: PathBuf::from(path),
-            config,
-            buf: Vec::new(),
-            min_sequence,
-            max_sequence,
-        })
-    }
-
-    /// Writes data, returns data sequence and data size.
-    pub async fn write(
-        &mut self,
-        typ: WalEntryType,
-        data: Arc<Vec<u8>>,
-        id: TseriesFamilyId,
-        tenant: Arc<Vec<u8>>,
-    ) -> Result<(u64, usize)> {
-        let seq = self.max_sequence;
-        let tenant_len = tenant.len() as u64;
-
-        let written_size = self
-            .inner
-            .write_record(
-                RecordDataVersion::V1 as u8,
-                RecordDataType::Wal as u8,
-                [
-                    &[typ as u8][..],
-                    &seq.to_be_bytes(),
-                    &id.to_be_bytes(),
-                    &tenant_len.to_be_bytes(),
-                    &tenant,
-                    &data,
-                ]
-                .as_slice(),
-            )
-            .await?;
-
-        if self.config.sync {
-            self.inner.sync().await?;
-        }
-        // write & fsync succeed
-        self.max_sequence += 1;
-        self.size += written_size as u64;
-        Ok((seq, written_size))
-    }
-
-    pub async fn sync(&self) -> Result<()> {
-        self.inner.sync().await
-    }
-
-    pub async fn close(mut self) -> Result<()> {
-        info!(
-            "Closing wal with sequence: [{}, {})",
-            self.min_sequence, self.max_sequence
-        );
-        let footer = build_footer(self.min_sequence, self.max_sequence);
-        self.inner.write_footer(footer).await?;
-        self.inner.close().await
-    }
-}
-
 pub struct WalManager {
     config: Arc<WalOptions>,
     global_seq_ctx: Arc<GlobalSequenceContext>,
@@ -245,7 +126,6 @@ pub struct WalManager {
 }
 
 unsafe impl Send for WalManager {}
-
 unsafe impl Sync for WalManager {}
 
 impl WalManager {
@@ -288,7 +168,7 @@ impl WalManager {
         let new_wal = file_utils::make_wal_file(&config.path, next_file_id);
         let current_file =
             WalWriter::open(config.clone(), next_file_id, new_wal, pre_max_seq).await?;
-        info!("WAL '{}' starts write", current_file.id);
+        info!("WAL '{}' starts write", current_file.id());
         let current_dir = config.path.clone();
         Ok(WalManager {
             config,
@@ -300,42 +180,45 @@ impl WalManager {
     }
 
     pub fn current_seq_no(&self) -> u64 {
-        self.current_file.max_sequence
+        self.current_file.max_sequence()
     }
 
     async fn roll_wal_file(&mut self, max_file_size: u64) -> Result<()> {
-        if self.current_file.size > max_file_size {
+        if self.current_file.size() > max_file_size {
             info!(
                 "WAL '{}' is full at seq '{}', begin rolling.",
-                self.current_file.id, self.current_file.max_sequence
+                self.current_file.id(),
+                self.current_file.max_sequence()
             );
 
-            let new_file_id = self.current_file.id + 1;
+            let new_file_id = self.current_file.id() + 1;
             let new_file_name = file_utils::make_wal_file(&self.config.path, new_file_id);
 
             let new_file = WalWriter::open(
                 self.config.clone(),
                 new_file_id,
                 new_file_name,
-                self.current_file.max_sequence,
+                self.current_file.max_sequence(),
             )
             .await?;
             info!(
                 "WAL '{}' starts write at seq {}",
-                self.current_file.id, self.current_file.max_sequence
+                self.current_file.id(),
+                self.current_file.max_sequence()
             );
 
             let mut old_file = std::mem::replace(&mut self.current_file, new_file);
-            if old_file.max_sequence <= old_file.min_sequence {
-                old_file.max_sequence = old_file.min_sequence;
+            if old_file.max_sequence() <= old_file.min_sequence() {
+                old_file.set_max_sequence(old_file.min_sequence());
             } else {
-                old_file.max_sequence -= 1;
+                old_file.set_max_sequence(old_file.max_sequence() - 1);
             }
             self.old_file_max_sequence
-                .insert(old_file.id, old_file.max_sequence);
+                .insert(old_file.id(), old_file.max_sequence());
             old_file.close().await?;
 
             self.check_to_delete().await;
+            info!("WAL '{}' starts write", self.current_file.id());
         }
         Ok(())
     }
@@ -395,7 +278,7 @@ impl WalManager {
             }
             // If this file has no footer, try to read all it's records.
             // If max_sequence of this file is greater than min_log_seq, read all it's records.
-            if reader.max_sequence == 0 || reader.max_sequence >= min_log_seq {
+            if reader.max_sequence() == 0 || reader.max_sequence() >= min_log_seq {
                 Self::read_wal_to_engine(&mut reader, engine, min_log_seq).await?;
             }
         }
@@ -420,7 +303,9 @@ impl WalManager {
                     match e.typ {
                         WalEntryType::Write => {
                             let mut dst = Vec::new();
-                            decoder.decode(e.data(), &mut dst).context(DecodeSnafu)?;
+                            decoder
+                                .decode(e.data(), &mut dst)
+                                .context(tsm::DecodeSnafu)?;
                             debug_assert_eq!(dst.len(), 1);
                             let id = e.vnode_id();
                             let tenant =
@@ -470,82 +355,6 @@ impl WalManager {
 
     pub fn sync_interval(&self) -> std::time::Duration {
         self.config.sync_interval
-    }
-}
-
-pub struct WalReader {
-    inner: record_file::Reader,
-    /// Min write sequence in the wal file, may be 0 if wal file is new or
-    /// CnosDB was crushed or force-killed.
-    min_sequence: u64,
-    /// Max write sequence in the wal file, may be 0 if wal file is new or
-    /// CnosDB was crushed or force-killed.
-    max_sequence: u64,
-}
-
-impl WalReader {
-    pub async fn open(path: impl AsRef<Path>) -> Result<Self> {
-        let reader = record_file::Reader::open(&path).await?;
-
-        let (min_sequence, max_sequence) = match reader.footer() {
-            Some(footer) => Self::parse_footer(footer).unwrap_or((0_u64, 0_u64)),
-            None => (0_u64, 0_u64),
-        };
-
-        Ok(Self {
-            inner: reader,
-            min_sequence,
-            max_sequence,
-        })
-    }
-
-    /// Parses wal footer, returns sequence range.
-    pub fn parse_footer(footer: [u8; record_file::FILE_FOOTER_LEN]) -> Option<(u64, u64)> {
-        let magic_number = decode_be_u32(&footer[0..4]);
-        if magic_number != FOOTER_MAGIC_NUMBER {
-            // There is no footer in wal file.
-            return None;
-        }
-        let min_sequence = decode_be_u64(&footer[16..24]);
-        let max_sequence = decode_be_u64(&footer[24..32]);
-        Some((min_sequence, max_sequence))
-    }
-
-    pub async fn next_wal_entry(&mut self) -> Result<Option<WalEntryBlock>> {
-        let data = match self.inner.read_record().await {
-            Ok(r) => r.data,
-            Err(Error::Eof) => {
-                return Ok(None);
-            }
-            Err(e) => {
-                error!("Error reading wal: {:?}", e);
-                return Err(Error::WalTruncated);
-            }
-        };
-        if data.len() < ENTRY_HEADER_LEN {
-            error!("Error reading wal: block length too small: {}", data.len());
-            return Ok(None);
-        }
-        Ok(Some(WalEntryBlock::new(data[0].into(), data)))
-    }
-
-    pub fn path(&self) -> PathBuf {
-        self.inner.path()
-    }
-
-    pub fn len(&self) -> u64 {
-        self.inner.len()
-    }
-
-    /// If this record file has some records in it.
-    pub fn is_empty(&self) -> bool {
-        match self
-            .len()
-            .checked_sub((record_file::FILE_MAGIC_NUMBER_LEN + record_file::FILE_FOOTER_LEN) as u64)
-        {
-            Some(d) => d == 0,
-            None => true,
-        }
     }
 }
 

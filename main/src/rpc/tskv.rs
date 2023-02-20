@@ -8,7 +8,7 @@ use tokio::sync::mpsc::{self};
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tonic::{Request, Response, Status, Streaming};
-use trace::debug;
+use trace::{debug, warn};
 use tskv::engine::EngineRef;
 
 pub struct TskvServiceImpl {

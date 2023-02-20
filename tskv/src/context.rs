@@ -6,6 +6,7 @@ use parking_lot::RwLock;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Receiver;
 
+use crate::background_task::BackgroundTask;
 use crate::TseriesFamilyId;
 
 #[derive(Default, Debug)]
@@ -177,12 +178,13 @@ pub(crate) fn run_global_context_job(
     runtime: Arc<Runtime>,
     mut receiver: Receiver<GlobalSequenceTask>,
     global_sequence_context: Arc<GlobalSequenceContext>,
-) {
-    runtime.spawn(async move {
+) -> BackgroundTask<()> {
+    let jh = runtime.spawn(async move {
         while let Some(t) = receiver.recv().await {
             global_sequence_context.next_stage(t.del_ts_family, t.ts_family_min_seq);
         }
     });
+    BackgroundTask::new("global_sequence".to_string(), jh, false)
 }
 
 #[cfg(test)]
