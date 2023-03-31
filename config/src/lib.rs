@@ -3,6 +3,7 @@ mod check;
 mod cluster_config;
 mod codec;
 mod deployment_config;
+mod environment;
 mod hinted_off_config;
 mod limiter_config;
 mod log_config;
@@ -17,6 +18,7 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use check::{CheckConfig, CheckConfigResult};
+use environment::OverrideByEnv;
 use serde::{Deserialize, Serialize};
 
 pub use crate::cache_config::*;
@@ -51,11 +53,18 @@ impl Config {
     }
 
     pub fn override_by_env(&mut self) {
-        self.cluster.override_by_env();
+        if let Ok(val) = std::env::var("CNOSDB_REPORTING_DISABLED") {
+            self.reporting_disabled = val.parse::<bool>().unwrap();
+        }
+        self.deployment.override_by_env();
+        self.query.override_by_env();
         self.storage.override_by_env();
         self.wal.override_by_env();
         self.cache.override_by_env();
-        self.query.override_by_env();
+        self.log.override_by_env();
+        self.security.override_by_env();
+        self.cluster.override_by_env();
+        self.hinted_off.override_by_env();
     }
 
     pub fn to_string_pretty(&self) -> String {

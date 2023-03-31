@@ -4,6 +4,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
+use crate::environment::OverrideByEnv;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ClusterConfig {
@@ -59,30 +60,6 @@ impl ClusterConfig {
     fn default_cold_data_server() -> bool {
         false
     }
-
-    pub fn override_by_env(&mut self) {
-        if let Ok(name) = std::env::var("CNOSDB_CLUSTER_NAME") {
-            self.name = name;
-        }
-        if let Ok(meta) = std::env::var("CNOSDB_CLUSTER_META") {
-            self.meta_service_addr = meta;
-        }
-        if let Ok(id) = std::env::var("CNOSDB_NODE_ID") {
-            self.node_id = id.parse::<u64>().unwrap();
-        }
-
-        if let Ok(val) = std::env::var("CNOSDB_http_listen_addr") {
-            self.http_listen_addr = val;
-        }
-
-        if let Ok(val) = std::env::var("CNOSDB_grpc_listen_addr") {
-            self.grpc_listen_addr = val;
-        }
-
-        if let Ok(val) = std::env::var("CNOSDB_flight_rpc_listen_addr") {
-            self.flight_rpc_listen_addr = val;
-        }
-    }
 }
 
 impl Default for ClusterConfig {
@@ -96,6 +73,30 @@ impl Default for ClusterConfig {
             flight_rpc_listen_addr: Self::default_flight_rpc_listen_addr(),
             store_metrics: Self::default_store_metrics(),
             cold_data_server: Self::default_cold_data_server(),
+        }
+    }
+}
+
+impl OverrideByEnv for ClusterConfig {
+    fn override_by_env(&mut self) {
+        if let Ok(id) = std::env::var("CNOSDB_CLUSTER_NODE_ID") {
+            self.node_id = id.parse::<u64>().unwrap();
+        }
+        if let Ok(name) = std::env::var("CNOSDB_CLUSTER_NAME") {
+            self.name = name;
+        }
+        if let Ok(addr) = std::env::var("CNOSDB_CLUSTER_META_SERVICE_ADDR") {
+            self.meta_service_addr = addr;
+        }
+
+        if let Ok(addr) = std::env::var("CNOSDB_CLUSTER_HTTP_LISTEN_ADDR") {
+            self.http_listen_addr = addr;
+        }
+        if let Ok(addr) = std::env::var("CNOSDB_CLUSTER_GRPC_LISTEN_ADDR") {
+            self.grpc_listen_addr = addr;
+        }
+        if let Ok(addr) = std::env::var("CNOSDB_CLUSTER_FLIGHT_RPC_LISTEN_ADDR") {
+            self.flight_rpc_listen_addr = addr;
         }
     }
 }

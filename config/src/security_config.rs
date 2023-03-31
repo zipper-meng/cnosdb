@@ -3,10 +3,19 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
+use crate::environment::OverrideByEnv;
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct SecurityConfig {
     pub tls_config: Option<TLSConfig>,
+}
+
+impl OverrideByEnv for SecurityConfig {
+    fn override_by_env(&mut self) {
+        if let Some(ref mut tls) = self.tls_config {
+            tls.override_by_env();
+        }
+    }
 }
 
 impl CheckConfig for SecurityConfig {
@@ -50,6 +59,17 @@ impl Default for TLSConfig {
         Self {
             certificate: Self::default_certificate(),
             private_key: Self::default_private_key(),
+        }
+    }
+}
+
+impl OverrideByEnv for TLSConfig {
+    fn override_by_env(&mut self) {
+        if let Ok(cer) = std::env::var("CNOSDB_SECURITY_TLS_CERTIFICATE") {
+            self.certificate = cer;
+        }
+        if let Ok(key) = std::env::var("CNOSDB_SECURITY_TLS_PRIVATE_KEY") {
+            self.private_key = key;
         }
     }
 }

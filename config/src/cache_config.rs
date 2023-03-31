@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::bytes_num;
+use crate::environment::OverrideByEnv;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct CacheConfig {
@@ -21,15 +22,6 @@ impl CacheConfig {
     fn default_max_immutable_number() -> u16 {
         4
     }
-
-    pub fn override_by_env(&mut self) {
-        if let Ok(size) = std::env::var("CNOSDB_CACHE_MAX_BUFFER_SIZE") {
-            self.max_buffer_size = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_CACHE_MAX_IMMUTABLE_NUMBER") {
-            self.max_immutable_number = size.parse::<u16>().unwrap();
-        }
-    }
 }
 
 impl Default for CacheConfig {
@@ -37,6 +29,17 @@ impl Default for CacheConfig {
         Self {
             max_buffer_size: Self::default_max_buffer_size(),
             max_immutable_number: Self::default_max_immutable_number(),
+        }
+    }
+}
+
+impl OverrideByEnv for CacheConfig {
+    fn override_by_env(&mut self) {
+        if let Ok(size) = std::env::var("CNOSDB_CACHE_MAX_BUFFER_SIZE") {
+            self.max_buffer_size = size.parse::<u64>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_CACHE_MAX_IMMUTABLE_NUMBER") {
+            self.max_immutable_number = size.parse::<u16>().unwrap();
         }
     }
 }

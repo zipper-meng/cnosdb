@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::{bytes_num, duration};
+use crate::environment::OverrideByEnv;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct WalConfig {
@@ -62,21 +63,6 @@ impl WalConfig {
         Duration::from_secs(0)
     }
 
-    pub fn override_by_env(&mut self) {
-        if let Ok(enabled) = std::env::var("CNOSDB_WAL_ENABLED") {
-            self.enabled = enabled.as_str() == "true";
-        }
-        if let Ok(path) = std::env::var("CNOSDB_WAL_PATH") {
-            self.path = path;
-        }
-        if let Ok(cap) = std::env::var("CNOSDB_WAL_REQ_CHANNEL_CAP") {
-            self.wal_req_channel_cap = cap.parse::<usize>().unwrap();
-        }
-        if let Ok(sync) = std::env::var("CNOSDB_WAL_SYNC") {
-            self.sync = sync.as_str() == sync;
-        }
-    }
-
     pub fn introspect(&mut self) {
         // Unit of wal.sync_interval is seconds
         self.sync_interval = Duration::from_secs(self.sync_interval.as_secs());
@@ -93,6 +79,32 @@ impl Default for WalConfig {
             flush_trigger_total_file_size: Self::default_flush_trigger_total_file_size(),
             sync: Self::default_sync(),
             sync_interval: Self::default_sync_interval(),
+        }
+    }
+}
+
+impl OverrideByEnv for WalConfig {
+    fn override_by_env(&mut self) {
+        if let Ok(enabled) = std::env::var("CNOSDB_WAL_ENABLED") {
+            self.enabled = enabled.as_str() == "true";
+        }
+        if let Ok(path) = std::env::var("CNOSDB_WAL_PATH") {
+            self.path = path;
+        }
+        if let Ok(cap) = std::env::var("CNOSDB_WAL_REQ_CHANNEL_CAP") {
+            self.wal_req_channel_cap = cap.parse::<usize>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_WAL_MAX_FILE_SIZE") {
+            self.max_file_size = size.parse::<u64>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_WAL_FLUSH_TRIGGER_TOTAL_FILE_SIZE") {
+            self.flush_trigger_total_file_size = size.parse::<u64>().unwrap();
+        }
+        if let Ok(sync) = std::env::var("CNOSDB_WAL_SYNC") {
+            self.sync = sync.as_str() == sync;
+        }
+        if let Ok(dur) = std::env::var("CNOSDB_WAL_SYNC_INTERVAL") {
+            self.sync_interval = duration::parse_duration(&dur).unwrap();
         }
     }
 }

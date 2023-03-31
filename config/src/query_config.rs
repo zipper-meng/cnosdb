@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
+use crate::environment::OverrideByEnv;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct QueryConfig {
@@ -32,21 +33,6 @@ impl QueryConfig {
     fn default_auth_enabled() -> bool {
         false
     }
-
-    pub fn override_by_env(&mut self) {
-        if let Ok(size) = std::env::var("MAX_SERVER_CONNECTIONS") {
-            self.max_server_connections = size.parse::<u32>().unwrap();
-        }
-        if let Ok(size) = std::env::var("QUERY_SQL_LIMIT") {
-            self.query_sql_limit = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("WRITE_SQL_LIMIT") {
-            self.write_sql_limit = size.parse::<u64>().unwrap();
-        }
-        if let Ok(val) = std::env::var("AUTH_ENABLED") {
-            self.auth_enabled = val.parse::<bool>().unwrap();
-        }
-    }
 }
 
 impl Default for QueryConfig {
@@ -56,6 +42,23 @@ impl Default for QueryConfig {
             query_sql_limit: Self::default_query_sql_limit(),
             write_sql_limit: Self::default_write_sql_limit(),
             auth_enabled: Self::default_auth_enabled(),
+        }
+    }
+}
+
+impl OverrideByEnv for QueryConfig {
+    fn override_by_env(&mut self) {
+        if let Ok(size) = std::env::var("CNOSDB_QUERY_MAX_SERVER_CONNECTIONS") {
+            self.max_server_connections = size.parse::<u32>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_QUERY_QUERY_SQL_LIMIT") {
+            self.query_sql_limit = size.parse::<u64>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_QUERY_WRITE_SQL_LIMIT") {
+            self.write_sql_limit = size.parse::<u64>().unwrap();
+        }
+        if let Ok(val) = std::env::var("CNOSDB_QUERY_AUTH_ENABLED") {
+            self.auth_enabled = val.parse::<bool>().unwrap();
         }
     }
 }

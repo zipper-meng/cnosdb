@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
+use crate::environment::OverrideByEnv;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct DeploymentConfig {
@@ -34,6 +35,20 @@ impl Default for DeploymentConfig {
             mode: Self::default_mode(),
             cpu: Self::default_cpu(),
             memory: Self::default_memory(),
+        }
+    }
+}
+
+impl OverrideByEnv for DeploymentConfig {
+    fn override_by_env(&mut self) {
+        if let Ok(mode) = std::env::var("CNOSDB_DEPLOYMENT_MODE") {
+            self.mode = mode;
+        }
+        if let Ok(num) = std::env::var("CNOSDB_DEPLOYMENT_CPU") {
+            self.cpu = num.parse::<usize>().unwrap();
+        }
+        if let Ok(num) = std::env::var("CNOSDB_DEPLOYMENT_MEMORY") {
+            self.memory = num.parse::<usize>().unwrap();
         }
     }
 }

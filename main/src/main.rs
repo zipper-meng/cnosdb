@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 
-use std::fmt::Display;
 use std::path::Path;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -89,21 +88,21 @@ struct RunArgs {
 #[clap(rename_all = "snake_case")]
 enum DeploymentMode {
     /// Default, Run query and tskv engines.
-    QueryTskv,
-    /// Only run the tskv engine.
-    Tskv,
-    /// Only run the query engine.
-    Query,
+    Bundle,
     /// Stand-alone deployment.
     Singleton,
+    /// Only run the tskv engine.
+    Store,
+    /// Only run the query engine.
+    Query,
 }
 
 impl FromStr for DeploymentMode {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
         let mode = match s.to_ascii_lowercase().as_str() {
-            "query_tskv" => Self::QueryTskv,
-            "tskv" => Self::Tskv,
+            "bundle" => Self::Bundle,
+            "store" => Self::Store,
             "query" => Self::Query,
             "singleton" => Self::Singleton,
             _ => {
@@ -116,13 +115,13 @@ impl FromStr for DeploymentMode {
     }
 }
 
-impl Display for DeploymentMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl DeploymentMode {
+    fn mode(&self) -> String {
         match self {
-            DeploymentMode::QueryTskv => write!(f, "query_tskv"),
-            DeploymentMode::Tskv => write!(f, "tskv"),
-            DeploymentMode::Query => write!(f, "query"),
-            DeploymentMode::Singleton => write!(f, "singleton"),
+            DeploymentMode::Bundle => "bundle".to_string(),
+            DeploymentMode::Store => "store".to_string(),
+            DeploymentMode::Query => "query".to_string(),
+            DeploymentMode::Singleton => "singleton".to_string(),
         }
     }
 }
@@ -207,13 +206,13 @@ fn main() -> Result<(), std::io::Error> {
         }
 
         let storage = match deployment_mode {
-            DeploymentMode::QueryTskv => builder.build_query_storage(&mut server).await,
-            DeploymentMode::Tskv => builder.build_storage_server(&mut server).await,
+            DeploymentMode::Bundle => builder.build_query_storage(&mut server).await,
+            DeploymentMode::Store => builder.build_storage_server(&mut server).await,
             DeploymentMode::Query => builder.build_query_server(&mut server).await,
             DeploymentMode::Singleton => builder.build_singleton(&mut server).await,
         };
 
-        info!("CnosDB server start as {} mode", deployment_mode);
+        info!("CnosDB server start as {} mode", deployment_mode.mode());
         server.start().expect("CnosDB server start.");
         signal::block_waiting_ctrl_c();
         server.stop(true).await;
@@ -227,13 +226,14 @@ fn main() -> Result<(), std::io::Error> {
 }
 
 fn parse_config(config_path: Option<impl AsRef<Path>>) -> config::Config {
-    let global_config = if let Some(p) = config_path {
+    let mut global_config = if let Some(p) = config_path {
         println!("----------\nStart with configuration:");
         config::get_config(p).unwrap()
     } else {
         println!("----------\nStart with default configuration:");
         config::Config::default()
     };
+    global_config.override_by_env();
     println!("{}----------", global_config.to_string_pretty());
 
     global_config
@@ -276,7 +276,7 @@ fn get_final_deployment_mode(
 /// the command line has higher priority
 fn set_cli_args_to_config(args: &RunArgs, config: &mut Config) {
     if let Some(mode) = args.deployment_mode {
-        config.deployment.mode = mode.to_string();
+        config.deployment.mode = mode.mode();
     }
 
     if let Some(m) = args.memory {

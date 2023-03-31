@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
 use crate::codec::{bytes_num, duration};
+use crate::environment::OverrideByEnv;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct StorageConfig {
@@ -89,41 +90,6 @@ impl StorageConfig {
         false
     }
 
-    pub fn override_by_env(&mut self) {
-        if let Ok(path) = std::env::var("CNOSDB_APPLICATION_PATH") {
-            self.path = path;
-        }
-        if let Ok(size) = std::env::var("CNOSDB_SUMMARY_MAX_SUMMARY_SIZE") {
-            self.max_summary_size = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_BASE_FILE_SIZE") {
-            self.base_file_size = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_FLUSH_REQ_CHANNEL_CAP") {
-            self.flush_req_channel_cap = size.parse::<usize>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_LEVEL") {
-            self.max_level = size.parse::<u16>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_COMPACT_TRIGGER_FILE_NUM") {
-            self.compact_trigger_file_num = size.parse::<u32>().unwrap();
-        }
-        if let Ok(dur) = std::env::var("CNOSDB_STORAGE_compact_trigger_cold_duration") {
-            self.compact_trigger_cold_duration = duration::parse_duration(&dur).unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_COMPACT_SIZE") {
-            self.max_compact_size = size.parse::<u64>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_CONCURRENT_COMPACTION") {
-            self.max_concurrent_compaction = size.parse::<u16>().unwrap();
-        }
-        if let Ok(size) = std::env::var("CNOSDB_STORAGE_STRICT_WRITE") {
-            self.strict_write = size.parse::<bool>().unwrap();
-        }
-
-        self.introspect();
-    }
-
     pub fn introspect(&mut self) {
         // Unit of storage.compact_trigger_cold_duration is seconds
         self.compact_trigger_cold_duration =
@@ -145,6 +111,43 @@ impl Default for StorageConfig {
             max_concurrent_compaction: Self::default_max_concurrent_compaction(),
             strict_write: Self::default_strict_write(),
         }
+    }
+}
+
+impl OverrideByEnv for StorageConfig {
+    fn override_by_env(&mut self) {
+        if let Ok(path) = std::env::var("CNOSDB_STORAGE_PATH") {
+            self.path = path;
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_SUMMARY_SIZE") {
+            self.max_summary_size = size.parse::<u64>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_BASE_FILE_SIZE") {
+            self.base_file_size = size.parse::<u64>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_FLUSH_REQ_CHANNEL_CAP") {
+            self.flush_req_channel_cap = size.parse::<usize>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_LEVEL") {
+            self.max_level = size.parse::<u16>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_COMPACT_TRIGGER_FILE_NUM") {
+            self.compact_trigger_file_num = size.parse::<u32>().unwrap();
+        }
+        if let Ok(dur) = std::env::var("CNOSDB_STORAGE_COMPACT_TRIGGER_COLD_DURATION") {
+            self.compact_trigger_cold_duration = duration::parse_duration(&dur).unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_COMPACT_SIZE") {
+            self.max_compact_size = size.parse::<u64>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_MAX_CONCURRENT_COMPACTION") {
+            self.max_concurrent_compaction = size.parse::<u16>().unwrap();
+        }
+        if let Ok(size) = std::env::var("CNOSDB_STORAGE_STRICT_WRITE") {
+            self.strict_write = size.parse::<bool>().unwrap();
+        }
+
+        self.introspect();
     }
 }
 

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
+use crate::environment::OverrideByEnv;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct HintedOffConfig {
@@ -20,15 +21,6 @@ impl HintedOffConfig {
     fn default_path() -> String {
         "/tmp/cnosdb/hh".to_string()
     }
-
-    pub fn override_by_env(&mut self) {
-        if let Ok(enable) = std::env::var("CNOSDB_HINTEDOFF_ENABLE") {
-            self.enable = enable.parse::<bool>().unwrap();
-        }
-        if let Ok(path) = std::env::var("CNOSDB_HINTEDOFF_PATH") {
-            self.path = path;
-        }
-    }
 }
 
 impl Default for HintedOffConfig {
@@ -36,6 +28,17 @@ impl Default for HintedOffConfig {
         Self {
             enable: Self::default_enable(),
             path: Self::default_path(),
+        }
+    }
+}
+
+impl OverrideByEnv for HintedOffConfig {
+    fn override_by_env(&mut self) {
+        if let Ok(enable) = std::env::var("CNOSDB_HINTEDOFF_ENABLE") {
+            self.enable = enable.parse::<bool>().unwrap();
+        }
+        if let Ok(path) = std::env::var("CNOSDB_HINTEDOFF_PATH") {
+            self.path = path;
         }
     }
 }

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 use crate::check::{CheckConfig, CheckConfigItemResult, CheckConfigResult};
+use crate::environment::OverrideByEnv;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct TokioTrace {
@@ -26,15 +27,6 @@ impl LogConfig {
     fn default_path() -> String {
         "data/log".to_string()
     }
-
-    pub fn override_by_env(&mut self) {
-        if let Ok(level) = std::env::var("CNOSDB_LOG_LEVEL") {
-            self.level = level;
-        }
-        if let Ok(path) = std::env::var("CNOSDB_LOG_PATH") {
-            self.path = path;
-        }
-    }
 }
 
 impl Default for LogConfig {
@@ -43,6 +35,17 @@ impl Default for LogConfig {
             level: Self::default_level(),
             path: Self::default_path(),
             tokio_trace: None,
+        }
+    }
+}
+
+impl OverrideByEnv for LogConfig {
+    fn override_by_env(&mut self) {
+        if let Ok(level) = std::env::var("CNOSDB_LOG_LEVEL") {
+            self.level = level;
+        }
+        if let Ok(path) = std::env::var("CNOSDB_LOG_PATH") {
+            self.path = path;
         }
     }
 }
