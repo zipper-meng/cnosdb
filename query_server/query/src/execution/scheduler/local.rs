@@ -6,7 +6,7 @@ use datafusion::execution::context::TaskContext;
 use datafusion::physical_plan::coalesce_partitions::CoalescePartitionsExec;
 use datafusion::physical_plan::ExecutionPlan;
 use spi::query::scheduler::{ExecutionResults, Scheduler};
-use trace::info;
+// use trace::info;
 
 pub struct LocalScheduler {}
 
@@ -17,7 +17,7 @@ impl Scheduler for LocalScheduler {
         plan: Arc<dyn ExecutionPlan>,
         context: Arc<TaskContext>,
     ) -> Result<ExecutionResults, DataFusionError> {
-        info!("Init local executor of query engine.");
+        // info!("Init local executor of query engine.");
 
         let partition_count = plan.output_partitioning().partition_count();
 

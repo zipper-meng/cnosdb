@@ -224,15 +224,15 @@ impl CoordService {
             self.metrics.clone(),
         );
 
-        let now = tokio::time::Instant::now();
-        info!("select statement execute now: {:?}", now);
+        // let now = tokio::time::Instant::now();
+        // info!("select statement execute now: {:?}", now);
 
         if let Err(err) = executor.execute().await.map(|_| {
-            info!(
-                "select statement execute success, start at: {:?} elapsed: {:?}",
-                now,
-                now.elapsed(),
-            );
+            // info!(
+            //     "select statement execute success, start at: {:?} elapsed: {:?}",
+            //     now,
+            //     now.elapsed(),
+            // );
         }) {
             if sender.is_closed() {
                 return;
@@ -365,15 +365,15 @@ impl Coordinator for CoordService {
             request,
         };
 
-        let now = tokio::time::Instant::now();
-        info!("write points, now: {:?}", now);
+        // let now = tokio::time::Instant::now();
+        // info!("write points, now: {:?}", now);
         let res = self.writer.write_points(&req).await;
-        info!(
-            "write points result: {:?}, start at: {:?} elapsed: {:?}",
-            res,
-            now,
-            now.elapsed()
-        );
+        // info!(
+        //     "write points result: {:?}, start at: {:?} elapsed: {:?}",
+        //     res,
+        //     now,
+        //     now.elapsed()
+        // );
 
         res
     }
@@ -399,23 +399,23 @@ impl Coordinator for CoordService {
     async fn broadcast_command(&self, req: AdminCommandRequest) -> CoordinatorResult<()> {
         let nodes = self.meta.admin_meta().data_nodes().await;
 
-        let now = tokio::time::Instant::now();
+        // let now = tokio::time::Instant::now();
         let mut requests = vec![];
         for node in nodes.iter() {
-            info!("exec command:{:?} on node:{:?}, now:{:?}", req, node, now);
+            // info!("exec command:{:?} on node:{:?}, now:{:?}", req, node, now);
 
             requests.push(self.exec_admin_command_on_node(node.id, req.clone()));
         }
 
         let result = futures::future::try_join_all(requests).await;
 
-        info!(
-            "exec command:{:?} at:{:?}, elapsed:{:?}, result:{:?}",
-            req,
-            now,
-            now.elapsed(),
-            result
-        );
+        // info!(
+        //     "exec command:{:?} at:{:?}, elapsed:{:?}, result:{:?}",
+        //     req,
+        //     now,
+        //     now.elapsed(),
+        //     result
+        // );
 
         result?;
         Ok(())

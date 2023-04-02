@@ -71,7 +71,7 @@ pub async fn watch(
     app: Data<MetaApp>,
     req: Json<(String, String, HashSet<String>, u64)>, //client id, cluster,version
 ) -> actix_web::Result<impl Responder> {
-    info!("watch all  args: {:?}", req);
+    // info!("watch all  args: {:?}", req);
     let client = req.0 .0;
     let cluster = req.0 .1;
     let tenants = req.0 .2;

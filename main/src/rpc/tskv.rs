@@ -225,7 +225,7 @@ impl TskvServiceImpl {
             error!("select statement execute failed: {}", err.to_string());
             let _ = sender.send(Err(err)).await;
         } else {
-            info!("select statement execute success");
+            // info!("select statement execute success");
         }
     }
 
@@ -268,7 +268,7 @@ impl TskvServiceImpl {
             info!("select statement execute failed: {}", err.to_string());
             let _ = sender.send(Err(err)).await;
         } else {
-            info!("select statement execute success");
+            // info!("select statement execute success");
         }
     }
 }
@@ -354,7 +354,7 @@ impl TskvService for TskvServiceImpl {
         if let Err(err) = self.kv_inst.write(inner.vnode_id, request).await {
             self.status_response(FAILED_RESPONSE_CODE, err.to_string())
         } else {
-            info!("success write data to vnode: {}", inner.vnode_id);
+            // info!("success write data to vnode: {}", inner.vnode_id);
             self.status_response(SUCCESS_RESPONSE_CODE, "".to_string())
         }
     }

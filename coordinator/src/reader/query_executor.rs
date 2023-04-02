@@ -89,12 +89,12 @@ impl QueryExecutor {
     pub async fn execute(&self) -> CoordinatorResult<()> {
         let mut routines = vec![];
         let mapping = self.map_vnode().await?;
-        let now = tokio::time::Instant::now();
+        // let now = tokio::time::Instant::now();
         for (node_id, vnodes) in mapping.iter() {
-            info!(
-                "execute select on node {}, vnode list: {:?} now: {:?}",
-                node_id, vnodes, now
-            );
+            // info!(
+            //     "execute select on node {}, vnode list: {:?} now: {:?}",
+            //     node_id, vnodes, now
+            // );
 
             let routine = self.node_executor(*node_id, vnodes.clone());
             routines.push(routine);
@@ -102,12 +102,12 @@ impl QueryExecutor {
 
         let res = futures::future::try_join_all(routines).await.map(|_| ());
 
-        info!(
-            "parallel execute select on vnodes over, start at: {:?} elapsed: {:?}, result: {:?}",
-            now,
-            now.elapsed(),
-            res,
-        );
+        // info!(
+        //     "parallel execute select on vnodes over, start at: {:?} elapsed: {:?}, result: {:?}",
+        //     now,
+        //     now.elapsed(),
+        //     res,
+        // );
 
         res
     }
@@ -121,10 +121,10 @@ impl QueryExecutor {
                 let mut routines = vec![];
                 let mapping = self.try_map_vnode(&vnodes).await?;
                 for (tmp_id, tmp_vnodes) in mapping.iter() {
-                    info!(
-                        "try execute select on node {}, vnode list: {:?}",
-                        tmp_id, tmp_vnodes
-                    );
+                    // info!(
+                    //     "try execute select on node {}, vnode list: {:?}",
+                    //     tmp_id, tmp_vnodes
+                    // );
 
                     let routine = self.remote_node_executor(*tmp_id, tmp_vnodes.clone());
                     routines.push(routine);
@@ -176,21 +176,21 @@ impl QueryExecutor {
         node_id: u64,
         vnodes: Vec<VnodeInfo>,
     ) -> CoordinatorResult<()> {
-        let now = tokio::time::Instant::now();
-        info!(
-            "execute select command on remote node: {} vnodes: {:?} now: {:?}",
-            node_id, vnodes, now
-        );
+        // let now = tokio::time::Instant::now();
+        // info!(
+        //     "execute select command on remote node: {} vnodes: {:?} now: {:?}",
+        //     node_id, vnodes, now
+        // );
 
         let res = self.warp_remote_node_executor(node_id, vnodes).await;
 
-        info!(
-            "execute select command on remote node over: {}  start at: {:?}, elapsed: {:?}, result: {:?}",
-            node_id,
-            now,
-            now.elapsed(),
-            res
-        );
+        // info!(
+        //     "execute select command on remote node over: {}  start at: {:?}, elapsed: {:?}, result: {:?}",
+        //     node_id,
+        //     now,
+        //     now.elapsed(),
+        //     res
+        // );
 
         res
     }
@@ -320,20 +320,20 @@ impl QueryExecutor {
 
     pub async fn local_node_executor(&self, vnodes: Vec<VnodeInfo>) -> CoordinatorResult<()> {
         let mut routines = vec![];
-        let now = tokio::time::Instant::now();
+        // let now = tokio::time::Instant::now();
         for vnode in vnodes.iter() {
-            info!("query local vnode: {:?}, now: {:?}", vnode, now);
+            // info!("query local vnode: {:?}, now: {:?}", vnode, now);
             let routine = self.local_vnode_executor(vnode.clone());
             routines.push(routine);
         }
 
         let res = futures::future::try_join_all(routines).await.map(|_| ());
-        info!(
-            "parallel query local vnode over, start at: {:?} elapsed: {:?}, result: {:?}",
-            now,
-            now.elapsed(),
-            res,
-        );
+        // info!(
+        //     "parallel query local vnode over, start at: {:?} elapsed: {:?}, result: {:?}",
+        //     now,
+        //     now.elapsed(),
+        //     res,
+        // );
 
         res
     }

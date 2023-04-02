@@ -329,12 +329,12 @@ impl PointWriter {
         }
 
         let mut requests = vec![];
-        let now = tokio::time::Instant::now();
+        // let now = tokio::time::Instant::now();
         for (_id, points) in mapping.points.iter_mut() {
             points.finish()?;
 
             for vnode in points.repl_set.vnodes.iter() {
-                info!("write points on vnode {:?},  now: {:?}", vnode, now);
+                // info!("write points on vnode {:?},  now: {:?}", vnode, now);
 
                 let request =
                     self.write_to_node(vnode.id, &req.tenant, vnode.node_id, points.data.clone());
@@ -344,12 +344,12 @@ impl PointWriter {
 
         let res = futures::future::try_join_all(requests).await.map(|_| ());
 
-        info!(
-            "parallel write points on vnode over, start at: {:?} elapsed: {:?}, result: {:?}",
-            now,
-            now.elapsed(),
-            res,
-        );
+        // info!(
+        //     "parallel write points on vnode over, start at: {:?} elapsed: {:?}, result: {:?}",
+        //     now,
+        //     now.elapsed(),
+        //     res,
+        // );
 
         res
     }
