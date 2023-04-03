@@ -1,0 +1,48 @@
+FROM --platform=linux/amd64 centos:centos8.4.2105
+
+RUN dnf -y --disablerepo '*' --enablerepo=extras swap centos-linux-repos centos-stream-repos
+RUN dnf -y distro-sync
+
+RUN dnf install -y \
+       pkg-config \
+       openssl \
+       openssl-devel \
+       wget \
+       cmake \
+       unzip \
+       curl \
+       git \
+       gcc-toolset-10 \
+    && dnf clean all
+
+# Install protobuf-compiler
+RUN curl -LO https://github.com/protocolbuffers/protobuf/releases/download/v22.2/protoc-22.2-linux-x86_64.zip \
+    && unzip protoc-22.2-linux-x86_64.zip -d $HOME/protobuf \
+    && mv $HOME/protobuf/bin/* /usr/local/bin/ \
+    && mv $HOME/protobuf/include/* /usr/local/include/ \
+    && rm -rf $HOME/protobuf \
+    && rm -f protoc-22.2-linux-x86_64.zip
+
+# Install flatbuffers
+RUN git clone -b v23.3.3 --depth 1 https://github.com/google/flatbuffers.git && cd flatbuffers \
+    && source /opt/rh/gcc-toolset-10/enable \
+    && cmake -G "Unix Makefiles" -DCMAKE_BUILD_TYPE=Release \
+    && make install \
+    && cd .. && rm -rf flatbuffers
+# RUN curl -LO https://github.com/google/flatbuffers/releases/download/v23.3.3/Linux.flatc.binary.g++-10.zip \
+#     && unzip -q Linux.flatc.binary.g++-10.zip -d $HOME/bin \
+#     && mv $HOME/bin/flatc /usr/bin/flatc \
+#     && rm -f Linux.flatc.binary.g++-10.zip
+
+# Install Rust
+RUN curl https://sh.rustup.rs -sSf | sh -s -- --no-modify-path --default-toolchain none -y
+
+# Update environment
+ENV PATH /root/.cargo/bin:$PATH
+
+# Install the Rust toolchain
+RUN rustup self update \
+  && rustup set profile minimal \
+  && rustup default nightly-2023-03-10
+
+WORKDIR /cnosdb

@@ -1,0 +1,3 @@
+FROM --platform=linux/amd64 alpine:3
+
+RUN apk add apk-tools openssl busybox musl xz
