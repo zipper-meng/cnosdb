@@ -255,7 +255,7 @@ pub fn get_disk_info(path_buf: &str) -> io::Result<u64> {
 
     let mut statfs = MaybeUninit::<libc::statfs>::zeroed();
     let c_storage_path = CString::new(path).unwrap();
-    check_err(unsafe { libc::statfs(c_storage_path.as_ptr() as *const i8, statfs.as_mut_ptr()) })?;
+    check_err(unsafe { libc::statfs(c_storage_path.as_ptr(), statfs.as_mut_ptr()) })?;
 
     let statfs = unsafe { statfs.assume_init() };
 

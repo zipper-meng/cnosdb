@@ -1163,6 +1163,7 @@ impl<'a> ExtParser<'a> {
             } else if self.parse_cnos_keyword(CnosKeyWord::COPY_OPTIONS) {
                 // COPY_OPTIONS = ({
                 //     ON_ERROR = { continue | abort }
+                //     AUTO_INFER_SCHEMA = { true | false }
                 //     | , ...
                 // } [, ...])
                 copy_options = self.parse_options()?;
