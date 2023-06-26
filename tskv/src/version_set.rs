@@ -4,6 +4,7 @@ use std::sync::Arc;
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
+use models::meta_data::VnodeId;
 use models::schema::{make_owner, split_owner, DatabaseSchema};
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
@@ -17,7 +18,7 @@ use crate::database::Database;
 use crate::error::{MetaSnafu, Result};
 use crate::summary::VersionEdit;
 use crate::tseries_family::{TseriesFamily, Version};
-use crate::{ColumnFileId, Options, TseriesFamilyId};
+use crate::{ColumnFileId, Options};
 
 #[derive(Debug)]
 pub struct VersionSet {
@@ -51,7 +52,7 @@ impl VersionSet {
         opt: Arc<Options>,
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
-        ver_set: HashMap<TseriesFamilyId, Arc<Version>>,
+        ver_set: HashMap<VnodeId, Arc<Version>>,
         flush_task_sender: Sender<FlushReq>,
         compact_task_sender: Sender<CompactTask>,
         metrics_register: Arc<MetricsRegister>,
@@ -227,7 +228,7 @@ impl VersionSet {
     /// Get GlobalSequenceContext to store current minimum sequence number of all TseriesFamilies,
     /// one use is fetching wal files which could be deleted.
     pub async fn get_global_sequence_context(&self) -> GlobalSequenceContext {
-        let mut tsf_seq_map: HashMap<TseriesFamilyId, u64> = HashMap::new();
+        let mut tsf_seq_map: HashMap<VnodeId, u64> = HashMap::new();
         for (_, database) in self.dbs.iter() {
             for (tsf_id, tsf) in database.read().await.ts_families().iter() {
                 tsf_seq_map.insert(*tsf_id, tsf.read().await.seq_no());

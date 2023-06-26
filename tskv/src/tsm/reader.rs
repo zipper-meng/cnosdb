@@ -1,15 +1,14 @@
 use std::fmt::Debug;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::{FieldId, ValueType};
 use parking_lot::RwLock;
-use snafu::{ResultExt, Snafu};
+use snafu::ResultExt;
 use utils::BloomFilter;
 
 use crate::byte_utils::{self, decode_be_i64, decode_be_u16, decode_be_u64};
-use crate::error::{self, Error, Result};
 use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
@@ -21,38 +20,9 @@ use crate::tsm::codec::{
 use crate::tsm::tombstone::TsmTombstone;
 use crate::tsm::{
     get_data_block_meta_unchecked, get_index_meta_unchecked, BlockEntry, BlockMeta, DataBlock,
-    Index, IndexEntry, IndexMeta, BLOCK_META_SIZE, BLOOM_FILTER_SIZE, FOOTER_SIZE, INDEX_META_SIZE,
-    MAX_BLOCK_VALUES,
+    Index, IndexEntry, IndexMeta, TsmError, TsmResult, BLOCK_META_SIZE, BLOOM_FILTER_SIZE,
+    FOOTER_SIZE, INDEX_META_SIZE, MAX_BLOCK_VALUES,
 };
-
-pub type ReadTsmResult<T, E = ReadTsmError> = std::result::Result<T, E>;
-
-#[derive(Snafu, Debug)]
-#[snafu(visibility(pub))]
-pub enum ReadTsmError {
-    #[snafu(display("IO error: {}", source))]
-    IO { source: std::io::Error },
-
-    #[snafu(display("Decode error: {}", source))]
-    Decode {
-        source: Box<dyn std::error::Error + Send + Sync>,
-    },
-
-    #[snafu(display("Datablock crc32 check failed"))]
-    CrcCheck,
-
-    #[snafu(display("TSM file is lost: {}", reason))]
-    FileNotFound { reason: String },
-
-    #[snafu(display("TSM file is invalid: {}", reason))]
-    Invalid { reason: String },
-}
-
-impl From<ReadTsmError> for Error {
-    fn from(rte: ReadTsmError) -> Self {
-        Error::ReadTsm { source: rte }
-    }
-}
 
 /// Disk-based index reader
 pub struct IndexFile {
@@ -69,13 +39,15 @@ pub struct IndexFile {
 }
 
 impl IndexFile {
-    pub(crate) async fn open(reader: Arc<AsyncFile>) -> ReadTsmResult<Self> {
+    pub(crate) async fn open(path: impl AsRef<Path>) -> TsmResult<Self> {
+        let path = path.as_ref();
+        let reader = Arc::new(file_manager::open_file(path).await.unwrap());
         let file_len = reader.len();
         let mut footer = [0_u8; FOOTER_SIZE];
         reader
             .read_at(file_len - FOOTER_SIZE as u64, &mut footer)
             .await
-            .context(IOSnafu)?;
+            .with_context(|_| super::ReadSnafu { path: path.clone() })?;
         let bloom_filter = BloomFilter::with_data(&footer[..BLOOM_FILTER_SIZE]);
         let index_offset = decode_be_u64(&footer[BLOOM_FILTER_SIZE..]);
         Ok(Self {
@@ -92,14 +64,16 @@ impl IndexFile {
     }
 
     // TODO: not implemented
-    pub(crate) async fn next_index_entry(&mut self) -> ReadTsmResult<Option<IndexEntry>> {
+    pub(crate) async fn next_index_entry(&mut self) -> TsmResult<Option<IndexEntry>> {
         if self.pos >= self.end_pos {
             return Ok(None);
         }
         self.reader
             .read_at(self.pos, &mut self.idx_meta_buf[..])
             .await
-            .context(IOSnafu)?;
+            .with_context(|_| super::ReadSnafu {
+                path: self.path().clone(),
+            })?;
         self.pos += INDEX_META_SIZE as u64;
         let (entry, blk_count) = IndexEntry::decode(&self.idx_meta_buf);
         self.index_block_idx = 0;
@@ -109,19 +83,25 @@ impl IndexFile {
     }
 
     // TODO: not implemented
-    pub(crate) async fn next_block_entry(&mut self) -> ReadTsmResult<Option<BlockEntry>> {
+    pub(crate) async fn next_block_entry(&mut self) -> TsmResult<Option<BlockEntry>> {
         if self.index_block_idx >= self.index_block_count {
             return Ok(None);
         }
         self.reader
             .read_at(self.pos, &mut self.blk_meta_buf[..])
             .await
-            .context(IOSnafu)?;
+            .with_context(|_| super::ReadSnafu {
+                path: self.path().clone(),
+            })?;
         self.pos += BLOCK_META_SIZE as u64;
         let entry = BlockEntry::decode(&self.blk_meta_buf);
         self.index_block_idx += 1;
 
         Ok(Some(entry))
+    }
+
+    fn path(&self) -> &PathBuf {
+        self.reader.open_path()
     }
 }
 
@@ -182,14 +162,15 @@ pub async fn print_tsm_statistics(path: impl AsRef<Path>, show_tombstone: bool) 
     println!("PointsCount: {}", points_cnt);
 }
 
-pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<Index> {
+pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> TsmResult<Index> {
     let len = reader.len();
     if len < FOOTER_SIZE as u64 {
-        return Err(ReadTsmError::Invalid {
-            reason: format!(
-                "TSM file ({}) size less than FOOTER_SIZE({})",
+        return Err(TsmError::InvalidFile {
+            source: format!(
+                "TSM file ({}) size less than footer size({})",
                 tsm_id, FOOTER_SIZE
-            ),
+            )
+            .into(),
         });
     }
     let mut buf = [0u8; FOOTER_SIZE];
@@ -198,22 +179,30 @@ pub async fn load_index(tsm_id: u64, reader: Arc<AsyncFile>) -> ReadTsmResult<In
     reader
         .read_at(len - FOOTER_SIZE as u64, &mut buf)
         .await
-        .context(IOSnafu)?;
+        .with_context(|_| super::ReadSnafu {
+            path: PathBuf::new(),
+        })?;
     let bloom_filter = BloomFilter::with_data(&buf[..BLOOM_FILTER_SIZE]);
     let offset = decode_be_u64(&buf[BLOOM_FILTER_SIZE..]);
     if offset > len - FOOTER_SIZE as u64 {
-        return Err(ReadTsmError::Invalid {
-            reason: format!(
+        return Err(TsmError::InvalidFile {
+            source: format!(
                 "TSM file ({}) size less than index offset({})",
                 tsm_id, offset
-            ),
+            )
+            .into(),
         });
     }
     let data_len = (len - offset - FOOTER_SIZE as u64) as usize;
     // TODO if data_len is too big, read data part in parts and do not store it.
     let mut data = vec![0_u8; data_len];
     // Read index data
-    reader.read_at(offset, &mut data).await.context(IOSnafu)?;
+    reader
+        .read_at(offset, &mut data)
+        .await
+        .with_context(|_| super::ReadSnafu {
+            path: PathBuf::new(),
+        })?;
 
     // Decode index data
     let assumed_field_count = (data_len / (INDEX_META_SIZE + BLOCK_META_SIZE)) + 1;
@@ -242,10 +231,8 @@ pub struct IndexReader {
 }
 
 impl IndexReader {
-    pub async fn open(tsm_id: u64, reader: Arc<AsyncFile>) -> Result<Self> {
-        let idx = load_index(tsm_id, reader)
-            .await
-            .context(error::ReadTsmSnafu)?;
+    pub async fn open(tsm_id: u64, reader: Arc<AsyncFile>) -> TsmResult<Self> {
+        let idx = load_index(tsm_id, reader).await?;
 
         Ok(Self {
             index_ref: Arc::new(idx),
@@ -466,13 +453,20 @@ pub struct TsmReader {
 }
 
 impl TsmReader {
-    pub async fn open(tsm_path: impl AsRef<Path>) -> Result<Self> {
+    pub async fn open(tsm_path: impl AsRef<Path>) -> TsmResult<Self> {
         let path = tsm_path.as_ref().to_path_buf();
-        let file_id = file_utils::get_tsm_file_id_by_path(&path)?;
-        let tsm = Arc::new(file_manager::open_file(tsm_path).await?);
+        let file_id =
+            file_utils::get_tsm_file_id_by_path(&path).context(super::InvalidFileNameSnafu)?;
+        let tsm = Arc::new(
+            file_manager::open_file(tsm_path)
+                .await
+                .context(super::OpenSnafu)?,
+        );
         let tsm_idx = IndexReader::open(file_id, tsm.clone()).await?;
         let tombstone_path = path.parent().unwrap_or_else(|| Path::new("/"));
-        let tombstone = TsmTombstone::open(tombstone_path, file_id).await?;
+        let tombstone = TsmTombstone::open(tombstone_path, file_id)
+            .await
+            .context(super::TombstoneSnafu)?;
         Ok(Self {
             file_id,
             reader: tsm,
@@ -490,7 +484,7 @@ impl TsmReader {
     }
 
     /// Returns a DataBlock without tombstone
-    pub async fn get_data_block(&self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
+    pub async fn get_data_block(&self, block_meta: &BlockMeta) -> TsmResult<DataBlock> {
         let _blk_range = (block_meta.min_ts(), block_meta.max_ts());
         let mut buf = vec![0_u8; block_meta.size() as usize];
         let mut blk = read_data_block(
@@ -512,7 +506,7 @@ impl TsmReader {
         &self,
         block_meta: &BlockMeta,
         dst: &mut Vec<u8>,
-    ) -> ReadTsmResult<usize> {
+    ) -> TsmResult<usize> {
         let data_len = block_meta.size() as usize;
         if dst.len() < data_len {
             dst.resize(data_len, 0);
@@ -520,7 +514,9 @@ impl TsmReader {
         self.reader
             .read_at(block_meta.offset(), &mut dst[..data_len])
             .await
-            .context(IOSnafu)?;
+            .with_context(|_| super::ReadSnafu {
+                path: PathBuf::new(),
+            })?;
         Ok(data_len)
     }
 
@@ -555,6 +551,10 @@ impl TsmReader {
     pub(crate) fn bloom_filter(&self) -> Arc<BloomFilter> {
         self.index_reader.index_ref.bloom_filter()
     }
+
+    pub(crate) fn path(&self) -> &PathBuf {
+        self.reader.open_path()
+    }
 }
 
 impl Debug for TsmReader {
@@ -581,7 +581,7 @@ impl ColumnReader {
         }
     }
 
-    async fn decode(&mut self, block_meta: &BlockMeta) -> ReadTsmResult<DataBlock> {
+    async fn decode(&mut self, block_meta: &BlockMeta) -> TsmResult<DataBlock> {
         let (_offset, size) = (block_meta.offset(), block_meta.size());
         self.buf.resize(size as usize, 0);
         read_data_block(
@@ -596,9 +596,9 @@ impl ColumnReader {
 }
 
 impl ColumnReader {
-    pub async fn next(&mut self) -> Option<Result<DataBlock>> {
+    pub async fn next(&mut self) -> Option<TsmResult<DataBlock>> {
         if let Some(dbm) = self.inner.next() {
-            let res = self.decode(&dbm).await.context(error::ReadTsmSnafu);
+            let res = self.decode(&dbm).await;
             return Some(res);
         }
         None
@@ -611,37 +611,38 @@ async fn read_data_block(
     field_type: ValueType,
     offset: u64,
     val_off: u64,
-) -> ReadTsmResult<DataBlock> {
-    reader.read_at(offset, buf).await.context(IOSnafu)?;
+) -> TsmResult<DataBlock> {
+    reader
+        .read_at(offset, buf)
+        .await
+        .with_context(|_| super::ReadSnafu {
+            path: PathBuf::new(),
+        })?;
     decode_data_block(buf, field_type, val_off - offset)
 }
 
-pub fn decode_data_block(
-    buf: &[u8],
-    field_type: ValueType,
-    val_off: u64,
-) -> ReadTsmResult<DataBlock> {
+pub fn decode_data_block(buf: &[u8], field_type: ValueType, val_off: u64) -> TsmResult<DataBlock> {
     debug_assert!(buf.len() >= 8);
     if buf.len() < 8 {
-        return Err(ReadTsmError::Decode {
-            source: "buffer too short".into(),
+        return Err(TsmError::Decode {
+            source: "invalid data: too short".into(),
         });
     }
 
     if byte_utils::decode_be_u32(&buf[..4]) != crc32fast::hash(&buf[4..val_off as usize]) {
-        return Err(ReadTsmError::CrcCheck);
+        return Err(TsmError::CrcCheck);
     }
     let mut ts = Vec::with_capacity(MAX_BLOCK_VALUES as usize);
     let ts_encoding = get_encoding(&buf[4..val_off as usize]);
     let ts_codec = get_ts_codec(ts_encoding);
     ts_codec
         .decode(&buf[4..val_off as usize], &mut ts)
-        .context(DecodeSnafu)?;
+        .context(super::DecodeSnafu)?;
 
     if byte_utils::decode_be_u32(&buf[val_off as usize..])
         != crc32fast::hash(&buf[(val_off + 4) as usize..])
     {
-        return Err(ReadTsmError::CrcCheck);
+        return Err(TsmError::CrcCheck);
     }
     let data = &buf[(val_off + 4) as usize..];
     match field_type {
@@ -650,7 +651,9 @@ pub fn decode_data_block(
             let mut val = Vec::with_capacity(ts.len());
             let val_encoding = get_encoding(data);
             let val_codec = get_f64_codec(val_encoding);
-            val_codec.decode(data, &mut val).context(DecodeSnafu)?;
+            val_codec
+                .decode(data, &mut val)
+                .context(super::DecodeSnafu)?;
             Ok(DataBlock::F64 {
                 ts,
                 val,
@@ -662,7 +665,9 @@ pub fn decode_data_block(
             let mut val = Vec::with_capacity(ts.len());
             let val_encoding = get_encoding(data);
             let val_codec = get_i64_codec(val_encoding);
-            val_codec.decode(data, &mut val).context(DecodeSnafu)?;
+            val_codec
+                .decode(data, &mut val)
+                .context(super::DecodeSnafu)?;
             Ok(DataBlock::I64 {
                 ts,
                 val,
@@ -674,7 +679,9 @@ pub fn decode_data_block(
             let mut val = Vec::with_capacity(ts.len());
             let val_encoding = get_encoding(data);
             let val_codec = get_bool_codec(val_encoding);
-            val_codec.decode(data, &mut val).context(DecodeSnafu)?;
+            val_codec
+                .decode(data, &mut val)
+                .context(super::DecodeSnafu)?;
             Ok(DataBlock::Bool {
                 ts,
                 val,
@@ -686,7 +693,9 @@ pub fn decode_data_block(
             let mut val = Vec::with_capacity(ts.len());
             let val_encoding = get_encoding(data);
             let val_codec = get_str_codec(val_encoding);
-            val_codec.decode(data, &mut val).context(DecodeSnafu)?;
+            val_codec
+                .decode(data, &mut val)
+                .context(super::DecodeSnafu)?;
             Ok(DataBlock::Str {
                 ts,
                 val,
@@ -698,18 +707,21 @@ pub fn decode_data_block(
             let mut val = Vec::with_capacity(ts.len());
             let val_encoding = get_encoding(data);
             let val_codec = get_u64_codec(val_encoding);
-            val_codec.decode(data, &mut val).context(DecodeSnafu)?;
+            val_codec
+                .decode(data, &mut val)
+                .context(super::DecodeSnafu)?;
             Ok(DataBlock::U64 {
                 ts,
                 val,
                 enc: DataBlockEncoding::new(ts_encoding, val_encoding),
             })
         }
-        _ => Err(ReadTsmError::Decode {
-            source: From::from(format!(
+        _ => Err(TsmError::Decode {
+            source: format!(
                 "cannot decode block {:?} with no unknown value type",
                 field_type
-            )),
+            )
+            .into(),
         }),
     }
 }
@@ -725,18 +737,22 @@ pub mod tsm_reader_tests {
     use models::{FieldId, Timestamp};
     use snafu::ResultExt;
 
-    use crate::error::{self, Error, Result};
     use crate::file_system::file_manager::{self};
-    use crate::file_utils;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::tsm_writer_tests::write_to_tsm;
-    use crate::tsm::{BlockEntry, DataBlock, IndexEntry, IndexFile, TsmReader, TsmTombstone};
+    use crate::tsm::{
+        BlockEntry, DataBlock, IndexEntry, IndexFile, TsmError, TsmReader, TsmResult, TsmTombstone,
+    };
+    use crate::{file_utils, tsm};
 
-    async fn prepare(dir: impl AsRef<Path>) -> Result<(PathBuf, PathBuf)> {
+    async fn prepare(dir: impl AsRef<Path>) -> TsmResult<(PathBuf, PathBuf)> {
         if file_manager::try_exists(&dir) {
             let _ = std::fs::remove_dir_all(&dir);
         }
-        std::fs::create_dir_all(&dir).context(error::IOSnafu)?;
+        std::fs::create_dir_all(&dir).map_err(|e| TsmError::Other {
+            path: dir.as_ref().to_path_buf(),
+            message: e.to_string(),
+        })?;
 
         let tsm_file = file_utils::make_tsm_file_name(&dir, 1);
         let tombstone_file = file_utils::make_tsm_tombstone_file_name(&dir, 1);
@@ -762,9 +778,14 @@ pub mod tsm_reader_tests {
         ]);
 
         write_to_tsm(&tsm_file, &ori_data).await?;
-        let mut tombstone = TsmTombstone::with_path(&tombstone_file).await?;
-        tombstone.add_range(&[1], &TimeRange::new(2, 4)).await?;
-        tombstone.flush().await?;
+        let mut tombstone = TsmTombstone::with_path(&tombstone_file)
+            .await
+            .context(tsm::TombstoneSnafu)?;
+        tombstone
+            .add_range(&[1], &TimeRange::new(2, 4))
+            .await
+            .context(tsm::TombstoneSnafu)?;
+        tombstone.flush().await.context(tsm::TombstoneSnafu)?;
 
         Ok((tsm_file, tombstone_file))
     }
@@ -772,14 +793,11 @@ pub mod tsm_reader_tests {
     pub(crate) async fn read_and_check(
         reader: &TsmReader,
         expected_data: &HashMap<FieldId, Vec<DataBlock>>,
-    ) -> Result<()> {
+    ) -> TsmResult<()> {
         let mut read_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::new();
         for idx in reader.index_iterator() {
             for blk in idx.block_iterator() {
-                let data_blk = reader
-                    .get_data_block(&blk)
-                    .await
-                    .context(error::ReadTsmSnafu)?;
+                let data_blk = reader.get_data_block(&blk).await?;
                 read_data.entry(idx.field_id()).or_default().push(data_blk);
             }
         }
@@ -794,8 +812,9 @@ pub mod tsm_reader_tests {
             }
         }) {
             Ok(_) => Ok(()),
-            Err(e) => Err(Error::CommonError {
-                reason: format!("{:?}", e),
+            Err(e) => Err(TsmError::Other {
+                path: reader.path().clone(),
+                message: format!("{:?}", e),
             }),
         }
     }
@@ -951,8 +970,7 @@ pub mod tsm_reader_tests {
             tombstone_file.to_str().unwrap()
         );
 
-        let file = Arc::new(file_manager::open_file(&tsm_file).await.unwrap());
-        let mut idx_file = IndexFile::open(file).await.unwrap();
+        let mut idx_file = IndexFile::open(&tsm_file).await.unwrap();
         let mut idx_metas: Vec<IndexEntry> = Vec::new();
         let mut blk_metas: Vec<BlockEntry> = Vec::new();
 

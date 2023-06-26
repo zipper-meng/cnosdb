@@ -23,7 +23,7 @@
 //! ### Wal
 //! ```text
 //! +------------+--------------+---------------+--------------+--------------+
-//! | 0: 4 bytes | 4: 4 bytes   | 8: 8 bytes   | 16: 8 bytes  | 24: 8 bytes  |
+//! | 0: 4 bytes | 4: 4 bytes   | 8: 8 bytes   | 16: 8 bytes  | 24: 8 bytes   |
 //! +------------+--------------+---------------+--------------+--------------+
 //! | "walo"     | crc32_number | padding_zeros | min_sequence | max_sequence |
 //! +------------+--------------+---------------+--------------+--------------+
@@ -37,10 +37,14 @@ mod reader;
 mod record;
 mod writer;
 
+use std::fmt::Display;
+
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 pub use reader::*;
 pub use record::*;
 pub use writer::*;
+
+use crate::file_system::FileSystemError;
 
 pub const FILE_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'R', b'E', b'C', b'O']);
 pub const FILE_MAGIC_NUMBER_LEN: usize = 4;
@@ -84,3 +88,81 @@ pub enum RecordDataType {
     Wal = 8,
     IndexLog = 16,
 }
+
+impl Display for RecordDataType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            RecordDataType::Summary => write!(f, "summary"),
+            RecordDataType::Tombstone => write!(f, "tombstone"),
+            RecordDataType::Wal => write!(f, "WAL"),
+            RecordDataType::IndexLog => write!(f, "indexlog"),
+        }
+    }
+}
+
+#[derive(snafu::Snafu, Debug)]
+pub enum RecordFileError {
+    #[snafu(display("Internal handled: the end of the record file"))]
+    Eof,
+
+    #[snafu(display("Internal handled: cannot detect the footer of the record file"))]
+    NoFooter,
+
+    #[snafu(display("Failed to open record file '{}': {}", path.display(), source))]
+    OpenFile {
+        path: std::path::PathBuf,
+        source: FileSystemError,
+    },
+
+    #[snafu(display("Failed to create record file '{}': {}", path.display(), source))]
+    CreateFile {
+        path: std::path::PathBuf,
+        source: FileSystemError,
+    },
+
+    #[snafu(display("Failed to read record file '{}': {}", path.display(), source))]
+    ReadFile {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Failed to seek record file '{}': {}", path.display(), source))]
+    SeekFile {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Failed to write record file '{}': {}", path.display(), source))]
+    WriteFile {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Failed to sync record file: {}", source))]
+    SyncFile {
+        path: std::path::PathBuf,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Error of record file: '{}': {}", path.display(), message))]
+    Other {
+        path: std::path::PathBuf,
+        message: String,
+    },
+
+    #[snafu(display("Failed to read record file '{}': pos ({pos}) is too large (> {file_len})", path.display()))]
+    PosOverflow {
+        path: std::path::PathBuf,
+        pos: u64,
+        file_len: u64,
+    },
+
+    #[snafu(display("Failed to write record file '{}': record(type: {data_type}) has len ({data_len}) that is not a valid u32", path.display()))]
+    LenOverFlow {
+        path: std::path::PathBuf,
+        data_type: u8,
+        data_len: u64,
+    },
+}
+
+pub type RecordFileResult<T> = Result<T, RecordFileError>;

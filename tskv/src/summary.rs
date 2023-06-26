@@ -8,34 +8,71 @@ use lru_cache::asynchronous::ShardedCache;
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
+use models::meta_data::VnodeId;
 use models::Timestamp;
 use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
+use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::oneshot::Sender as OneShotSender;
-use tokio::sync::RwLock;
+use tokio::sync::{oneshot, RwLock};
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
 use crate::context::{GlobalContext, GlobalSequenceTask};
-use crate::error::{Error, Result};
 use crate::file_system::file_manager::try_exists;
+use crate::file_system::{self, FileSystemError, FileSystemResult};
 use crate::kv_option::{Options, StorageOptions, DELTA_PATH, TSM_PATH};
 use crate::memcache::MemCache;
-use crate::record_file::{Reader, RecordDataType, RecordDataVersion, Writer};
+use crate::record_file::{Reader, RecordDataType, RecordDataVersion, RecordFileError, Writer};
 use crate::tseries_family::{ColumnFile, LevelInfo, Version};
-use crate::tsm::TsmReader;
+use crate::tsm::{ReadTsmError, TsmError, TsmReader};
 use crate::version_set::VersionSet;
-use crate::{byte_utils, file_utils, ColumnFileId, LevelId, TseriesFamilyId};
+use crate::{byte_utils, file_utils, ColumnFileId, LevelId};
 
 const MAX_BATCH_SIZE: usize = 64;
+
+#[derive(snafu::Snafu, Debug)]
+pub enum SummaryError {
+    #[snafu(display("Failed to open summary: {source}"))]
+    Open { source: RecordFileError },
+
+    #[snafu(display("Failed to read summary: {source}"))]
+    Read { source: RecordFileError },
+
+    #[snafu(display("Failed to write summary: {source}"))]
+    Write { source: RecordFileError },
+
+    #[snafu(display("Failed to sync summary: {source}"))]
+    Sync { source: RecordFileError },
+
+    #[snafu(display("Failed to rename summary '{}' to '{}': {}", old.display(), new.display(), source))]
+    Rename {
+        old: PathBuf,
+        new: PathBuf,
+        source: std::io::Error,
+    },
+
+    #[snafu(display("Failed to recover summary: {source}"))]
+    RecoverOpenTsm { source: TsmError },
+
+    #[snafu(display("Failed to encode version edit: {source}"))]
+    EncodeVersionEdit { source: bincode::Error },
+
+    #[snafu(display("Failed to decode version edit: {source}"))]
+    DecodeVersionEdit { source: bincode::Error },
+
+    #[snafu(display("Failed to apply edits to summary: {message}"))]
+    ApplyVersionEdit { message: String },
+}
+
+pub type SummaryResult<T> = Result<T, SummaryError>;
 
 #[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
 pub struct CompactMeta {
     pub file_id: ColumnFileId,
     pub file_size: u64,
-    pub tsf_id: TseriesFamilyId,
+    pub tsf_id: VnodeId,
     pub level: LevelId,
     pub min_ts: Timestamp,
     pub max_ts: Timestamp,
@@ -83,7 +120,7 @@ impl CompactMeta {
         &self,
         storage_opt: &StorageOptions,
         database: &str,
-        ts_family_id: TseriesFamilyId,
+        ts_family_id: VnodeId,
     ) -> PathBuf {
         if self.is_delta {
             let base_dir = storage_opt.delta_dir(database, ts_family_id);
@@ -98,9 +135,9 @@ impl CompactMeta {
         &mut self,
         storage_opt: &StorageOptions,
         database: &str,
-        ts_family_id: TseriesFamilyId,
+        ts_family_id: VnodeId,
         file_id: ColumnFileId,
-    ) -> Result<PathBuf> {
+    ) -> FileSystemResult<PathBuf> {
         let old_name = if self.is_delta {
             let base_dir = storage_opt
                 .move_dir(database, ts_family_id)
@@ -119,18 +156,23 @@ impl CompactMeta {
             file_utils::make_tsm_file_name(base_dir, file_id)
         };
         trace::info!("rename file from {:?} to {:?}", &old_name, &new_name);
-        file_utils::rename(old_name, &new_name).await?;
+        file_utils::rename(&old_name, &new_name)
+            .await
+            .with_context(|_| file_system::RenameFileSnafu {
+                old: old_name,
+                new: new_name.clone(),
+            })?;
         self.file_id = file_id;
         Ok(new_name)
     }
 }
 
 pub struct CompactMetaBuilder {
-    pub ts_family_id: TseriesFamilyId,
+    pub ts_family_id: VnodeId,
 }
 
 impl CompactMetaBuilder {
-    pub fn new(ts_family_id: TseriesFamilyId) -> Self {
+    pub fn new(ts_family_id: VnodeId) -> Self {
         Self { ts_family_id }
     }
 
@@ -167,7 +209,7 @@ pub struct VersionEdit {
 
     pub del_tsf: bool,
     pub add_tsf: bool,
-    pub tsf_id: TseriesFamilyId,
+    pub tsf_id: VnodeId,
     pub tsf_name: String,
 }
 
@@ -190,7 +232,7 @@ impl Default for VersionEdit {
 }
 
 impl VersionEdit {
-    pub fn new(vnode_id: TseriesFamilyId) -> Self {
+    pub fn new(vnode_id: VnodeId) -> Self {
         Self {
             tsf_id: vnode_id,
             ..Default::default()
@@ -216,19 +258,18 @@ impl VersionEdit {
         }
     }
 
-    pub fn encode(&self) -> Result<Vec<u8>> {
-        bincode::serialize(self).map_err(|e| Error::RecordFileEncode { source: (e) })
+    pub fn encode(&self) -> SummaryResult<Vec<u8>> {
+        bincode::serialize(self).context(EncodeVersionEditSnafu)
     }
 
-    pub fn decode(buf: &[u8]) -> Result<Self> {
-        bincode::deserialize(buf).map_err(|e| Error::RecordFileDecode { source: (e) })
+    pub fn decode(buf: &[u8]) -> SummaryResult<Self> {
+        bincode::deserialize(buf).context(DecodeVersionEditSnafu)
     }
 
-    pub fn encode_vec(data: &[Self]) -> Result<Vec<u8>> {
+    pub fn encode_vec(data: &[Self]) -> SummaryResult<Vec<u8>> {
         let mut buf: Vec<u8> = Vec::with_capacity(data.len() * 32);
         for ve in data {
-            let ve_buf =
-                bincode::serialize(ve).map_err(|e| Error::RecordFileEncode { source: (e) })?;
+            let ve_buf = bincode::serialize(ve).context(EncodeVersionEditSnafu)?;
             let pos = buf.len();
             buf.resize(pos + 4 + ve_buf.len(), 0_u8);
             buf[pos..pos + 4].copy_from_slice((ve_buf.len() as u32).to_be_bytes().as_slice());
@@ -238,7 +279,7 @@ impl VersionEdit {
         Ok(buf)
     }
 
-    pub fn decode_vec(buf: &[u8]) -> Result<Vec<Self>> {
+    pub fn decode_vec(buf: &[u8]) -> SummaryResult<Vec<Self>> {
         let mut list: Vec<Self> = Vec::with_capacity(buf.len() / 32 + 1);
         let mut pos = 0_usize;
         while pos < buf.len() {
@@ -308,10 +349,12 @@ impl Summary {
         memory_pool: MemoryPoolRef,
         sequence_task_sender: Sender<GlobalSequenceTask>,
         metrics_register: Arc<MetricsRegister>,
-    ) -> Result<Self> {
+    ) -> SummaryResult<Self> {
         let db = VersionEdit::default();
         let path = file_utils::make_summary_file(opt.storage.summary_dir(), 0);
-        let mut w = Writer::open(path, RecordDataType::Summary).await.unwrap();
+        let mut w = Writer::open(path, RecordDataType::Summary)
+            .await
+            .context(OpenSnafu)?;
         let buf = db.encode()?;
         let _ = w
             .write_record(
@@ -319,8 +362,9 @@ impl Summary {
                 RecordDataType::Summary.into(),
                 &[&buf],
             )
-            .await?;
-        w.sync().await?;
+            .await
+            .context(WriteSnafu)?;
+        w.sync().await.context(SyncSnafu)?;
 
         Ok(Self {
             file_no: 0,
@@ -354,7 +398,7 @@ impl Summary {
         compact_task_sender: Sender<CompactTask>,
         load_field_filter: bool,
         metrics_register: Arc<MetricsRegister>,
-    ) -> Result<Self> {
+    ) -> SummaryResult<Self> {
         let summary_path = opt.storage.summary_dir();
         let path = file_utils::make_summary_file(&summary_path, 0);
         let writer = Writer::open(path, RecordDataType::Summary).await.unwrap();
@@ -406,14 +450,13 @@ impl Summary {
         compact_task_sender: Sender<CompactTask>,
         load_field_filter: bool,
         metrics_register: Arc<MetricsRegister>,
-    ) -> Result<VersionSet> {
-        let mut tsf_edits_map: HashMap<TseriesFamilyId, Vec<VersionEdit>> = HashMap::new();
+    ) -> SummaryResult<VersionSet> {
+        let mut tsf_edits_map: HashMap<VnodeId, Vec<VersionEdit>> = HashMap::new();
         let mut database_map: HashMap<String, Arc<String>> = HashMap::new();
-        let mut tsf_database_map: HashMap<TseriesFamilyId, Arc<String>> = HashMap::new();
+        let mut tsf_database_map: HashMap<VnodeId, Arc<String>> = HashMap::new();
 
         loop {
-            let res = reader.read_record().await;
-            match res {
+            match reader.read_record().await {
                 Ok(result) => {
                     let ed = VersionEdit::decode(&result.data)?;
                     if ed.add_tsf {
@@ -433,9 +476,9 @@ impl Summary {
                         data.push(ed);
                     }
                 }
-                Err(Error::Eof) => break,
+                Err(RecordFileError::Eof) => break,
                 Err(e) => {
-                    return Err(e);
+                    return Err(SummaryError::Read { source: e });
                 }
             }
         }
@@ -478,7 +521,9 @@ impl Summary {
             for meta in files.into_values() {
                 let field_filter = if load_field_filter {
                     let tsm_path = meta.file_path(opt.storage.as_ref(), &database, tsf_id);
-                    let tsm_reader = TsmReader::open(tsm_path).await?;
+                    let tsm_reader = TsmReader::open(tsm_path)
+                        .await
+                        .context(RecoverOpenTsmSnafu)?;
                     tsm_reader.bloom_filter()
                 } else {
                     Arc::new(BloomFilter::default())
@@ -526,8 +571,8 @@ impl Summary {
         &mut self,
         version_edits: Vec<VersionEdit>,
         file_metas: HashMap<ColumnFileId, Arc<BloomFilter>>,
-        mem_caches: HashMap<TseriesFamilyId, Vec<Arc<SyncRwLock<MemCache>>>>,
-    ) -> Result<()> {
+        mem_caches: HashMap<VnodeId, Vec<Arc<SyncRwLock<MemCache>>>>,
+    ) -> SummaryResult<()> {
         self.write_summary(version_edits, file_metas, mem_caches)
             .await?;
         self.roll_summary_file().await?;
@@ -539,12 +584,12 @@ impl Summary {
         &mut self,
         version_edits: Vec<VersionEdit>,
         mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>>,
-        mem_caches: HashMap<TseriesFamilyId, Vec<Arc<SyncRwLock<MemCache>>>>,
-    ) -> Result<()> {
-        // Write VersionEdits into summary file and join VersionEdits by Database/TseriesFamilyId.
-        let mut tsf_version_edits: HashMap<TseriesFamilyId, Vec<VersionEdit>> = HashMap::new();
-        let mut tsf_min_seq: HashMap<TseriesFamilyId, u64> = HashMap::new();
-        let mut del_tsf: HashSet<TseriesFamilyId> = HashSet::new();
+        mem_caches: HashMap<VnodeId, Vec<Arc<SyncRwLock<MemCache>>>>,
+    ) -> SummaryResult<()> {
+        // Write VersionEdits into summary file and join VersionEdits by Database/VnodeId.
+        let mut tsf_version_edits: HashMap<VnodeId, Vec<VersionEdit>> = HashMap::new();
+        let mut tsf_min_seq: HashMap<VnodeId, u64> = HashMap::new();
+        let mut del_tsf: HashSet<VnodeId> = HashSet::new();
         for edit in version_edits.into_iter() {
             let buf = edit.encode()?;
             let _ = self
@@ -554,8 +599,9 @@ impl Summary {
                     RecordDataType::Summary.into(),
                     &[&buf],
                 )
-                .await?;
-            self.writer.sync().await?;
+                .await
+                .context(WriteSnafu)?;
+            self.writer.sync().await.context(SyncSnafu)?;
 
             tsf_version_edits
                 .entry(edit.tsf_id)
@@ -604,7 +650,7 @@ impl Summary {
         Ok(())
     }
 
-    async fn roll_summary_file(&mut self) -> Result<()> {
+    async fn roll_summary_file(&mut self) -> SummaryResult<()> {
         if self.writer.file_size() >= self.opt.storage.max_summary_size {
             let (edits, file_metas) = {
                 let vs = self.version_set.read().await;
@@ -707,20 +753,23 @@ pub async fn print_summary_statistics(path: impl AsRef<Path>) {
                 }
             }
             Err(err) => match err {
-                Error::Eof => break,
-                _ => panic!("Errors when read summary file: {}", err),
+                RecordFileError::Eof => break,
+                _ => panic!("Failed to read summary file: {}", err),
             },
         }
         println!("============================================================");
     }
 }
 
+type WriteSummaryResultSender = oneshot::Sender<SummaryResult<()>>;
+type WriteSummaryResultReceiver = oneshot::Receiver<SummaryResult<()>>;
+
 pub struct SummaryProcessor {
     summary: Box<Summary>,
-    cbs: Vec<OneShotSender<Result<()>>>,
+    cbs: Vec<WriteSummaryResultSender>,
     edits: Vec<VersionEdit>,
     file_metas: HashMap<ColumnFileId, Arc<BloomFilter>>,
-    mem_caches: HashMap<TseriesFamilyId, Vec<Arc<SyncRwLock<MemCache>>>>,
+    mem_caches: HashMap<VnodeId, Vec<Arc<SyncRwLock<MemCache>>>>,
 }
 
 impl SummaryProcessor {
@@ -760,9 +809,11 @@ impl SummaryProcessor {
                     let _ = cb.send(Ok(()));
                 }
             }
-            Err(_e) => {
+            Err(e) => {
                 for cb in self.cbs.drain(..) {
-                    let _ = cb.send(Err(Error::ErrApplyEdit));
+                    let _ = cb.send(Err(SummaryError::ApplyVersionEdit {
+                        message: e.to_string(),
+                    }));
                 }
             }
         }
@@ -777,15 +828,15 @@ impl SummaryProcessor {
 pub struct SummaryTask {
     pub request: WriteSummaryRequest,
     pub file_metas: Option<HashMap<ColumnFileId, Arc<BloomFilter>>>,
-    pub mem_caches: Option<HashMap<TseriesFamilyId, Vec<Arc<SyncRwLock<MemCache>>>>>,
+    pub mem_caches: Option<HashMap<VnodeId, Vec<Arc<SyncRwLock<MemCache>>>>>,
 }
 
 impl SummaryTask {
     pub fn new(
         version_edits: Vec<VersionEdit>,
         file_metas: Option<HashMap<ColumnFileId, Arc<BloomFilter>>>,
-        mem_caches: Option<HashMap<TseriesFamilyId, Vec<Arc<SyncRwLock<MemCache>>>>>,
-        call_back: OneShotSender<Result<()>>,
+        mem_caches: Option<HashMap<VnodeId, Vec<Arc<SyncRwLock<MemCache>>>>>,
+        call_back: WriteSummaryResultSender,
     ) -> Self {
         Self {
             request: WriteSummaryRequest {
@@ -801,7 +852,7 @@ impl SummaryTask {
 #[derive(Debug)]
 pub struct WriteSummaryRequest {
     pub version_edits: Vec<VersionEdit>,
-    pub call_back: OneShotSender<Result<()>>,
+    pub call_back: WriteSummaryResultSender,
 }
 
 #[derive(Clone)]

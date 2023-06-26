@@ -1,7 +1,7 @@
 use std::fs::{File, OpenOptions};
 use std::io::{Error, ErrorKind, IoSlice, Result};
 use std::ops::Deref;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use tokio::task::spawn_blocking;
@@ -10,22 +10,40 @@ use super::os;
 use crate::file_system::file::IFile;
 
 #[derive(Debug)]
-#[cfg(not(feature = "io_uring"))]
-struct RawFile(Arc<File>);
+struct RawFile {
+    open_path: Arc<PathBuf>,
+    file: Arc<File>,
 
-#[derive(Debug)]
-#[cfg(feature = "io_uring")]
-struct RawFile(Arc<File>, Arc<rio::Rio>);
+    #[cfg(feature = "io_uring")]
+    rio: Arc<rio::Rio>,
+}
 
 impl RawFile {
+    #[cfg(not(feature = "io_uring"))]
+    fn new(path: Arc<PathBuf>, file: Arc<File>) -> Self {
+        Self {
+            open_path: path,
+            file,
+        }
+    }
+
+    #[cfg(feature = "io_uring")]
+    fn new(path: Arc<PathBuf>, file: Arc<File>, rio: Arc<Rio>) {
+        Self {
+            open_path: path,
+            file,
+            rio,
+        }
+    }
+
     fn file_size(&self) -> Result<u64> {
-        os::file_size(os::fd(self.0.as_ref()))
+        os::file_size(os::fd(self.file.as_ref()))
     }
 
     async fn pwrite(&self, pos: u64, data: &[u8]) -> Result<usize> {
         #[cfg(feature = "io_uring")]
         {
-            let completion = self.1.write_at(&self.0, &data, pos).await?;
+            let completion = self.rio.write_at(&self.std_file, &data, pos).await?;
             Ok(data.len())
         }
 
@@ -33,7 +51,7 @@ impl RawFile {
         {
             let len = data.len();
             let ptr = data.as_ptr() as u64;
-            let fd = os::fd(self.0.as_ref());
+            let fd = os::fd(self.file.as_ref());
             asyncify(move || os::pwrite(fd, pos, len, ptr)).await
         }
     }
@@ -41,14 +59,14 @@ impl RawFile {
     async fn pread(&self, pos: u64, data: &mut [u8]) -> Result<usize> {
         #[cfg(feature = "io_uring")]
         {
-            let completion = self.1.read_at(&self.0, &data, pos).await?;
+            let completion = self.rio.read_at(&self.std_file, &data, pos).await?;
             Ok(data.len())
         }
         #[cfg(not(feature = "io_uring"))]
         {
             let len = data.len();
             let ptr = data.as_ptr() as u64;
-            let fd = os::fd(self.0.as_ref());
+            let fd = os::fd(self.file.as_ref());
             let len = asyncify(move || os::pread(fd, pos, len, ptr)).await?;
             Ok(len)
         }
@@ -57,12 +75,12 @@ impl RawFile {
     async fn sync_data(&self) -> Result<()> {
         #[cfg(feature = "io_uring")]
         {
-            self.1.fsync(&self.0).await?;
+            self.rio.fsync(&self.file).await?;
             Ok(())
         }
         #[cfg(not(feature = "io_uring"))]
         {
-            let file = self.0.clone();
+            let file = self.file.clone();
             asyncify(move || file.sync_data()).await
         }
     }
@@ -70,12 +88,12 @@ impl RawFile {
     async fn truncate(&self, size: u64) -> Result<()> {
         #[cfg(feature = "io_uring")]
         {
-            let file = self.0.clone();
+            let file = self.file.clone();
             asyncify(move || file.set_len(size)).await
         }
         #[cfg(not(feature = "io_uring"))]
         {
-            let file = self.0.clone();
+            let file = self.file.clone();
             asyncify(move || file.set_len(size)).await
         }
     }
@@ -163,24 +181,28 @@ impl AsyncFile {
         ctx: Arc<FsRuntime>,
         options: OpenOptions,
     ) -> Result<AsyncFile> {
-        let path = path.as_ref().to_owned();
+        let path = Arc::new(path.as_ref().to_path_buf());
+        let path_to_open = path.clone();
+        let file = asyncify(move || options.open(path_to_open.as_ref())).await?;
         #[cfg(feature = "io_uring")]
         {
-            let file = asyncify(move || options.open(path)).await?;
-            let inner = RawFile(Arc::new(file), ctx.rio.clone());
+            let inner = RawFile::new(path, Arc::new(file), ctx.rio.clone());
             let size = inner.file_size()?;
             Ok(AsyncFile { inner, ctx, size })
         }
         #[cfg(not(feature = "io_uring"))]
         {
-            let file = asyncify(move || options.open(path)).await?;
-            let inner = RawFile(Arc::new(file));
+            let inner = RawFile::new(path, Arc::new(file));
             let size = inner.file_size()?;
             Ok(AsyncFile { inner, ctx, size })
         }
     }
 
     pub fn fd(&self) -> usize {
-        os::fd(&self.inner.0)
+        os::fd(&self.inner.file)
+    }
+
+    pub fn open_path(&self) -> &PathBuf {
+        &self.inner.open_path
     }
 }

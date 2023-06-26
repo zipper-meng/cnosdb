@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use models::meta_data::VnodeId;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::sync::{oneshot, RwLock, Semaphore};
@@ -12,23 +13,22 @@ use crate::context::{GlobalContext, GlobalSequenceContext};
 use crate::kv_option::StorageOptions;
 use crate::summary::SummaryTask;
 use crate::version_set::VersionSet;
-use crate::TseriesFamilyId;
 
 const COMPACT_BATCH_CHECKING_SECONDS: u64 = 1;
 
 struct CompactProcessor {
-    vnode_ids: HashMap<TseriesFamilyId, bool>,
+    vnode_ids: HashMap<VnodeId, bool>,
 }
 
 impl CompactProcessor {
-    fn insert(&mut self, vnode_id: TseriesFamilyId, should_flush: bool) {
+    fn insert(&mut self, vnode_id: VnodeId, should_flush: bool) {
         let old_should_flush = self.vnode_ids.entry(vnode_id).or_insert(should_flush);
         if should_flush && !*old_should_flush {
             *old_should_flush = should_flush
         }
     }
 
-    fn take(&mut self) -> HashMap<TseriesFamilyId, bool> {
+    fn take(&mut self) -> HashMap<VnodeId, bool> {
         std::mem::replace(&mut self.vnode_ids, HashMap::with_capacity(32))
     }
 }
@@ -182,7 +182,7 @@ pub fn run(
 #[cfg(test)]
 mod test {
     use crate::compaction::job::CompactProcessor;
-    use crate::TseriesFamilyId;
+    use crate::VnodeId;
 
     #[test]
     fn test_build_compact_batch() {
@@ -192,8 +192,7 @@ mod test {
         compact_batch_builder.insert(1, true);
         compact_batch_builder.insert(3, true);
         assert_eq!(compact_batch_builder.vnode_ids.len(), 3);
-        let mut keys: Vec<TseriesFamilyId> =
-            compact_batch_builder.vnode_ids.keys().cloned().collect();
+        let mut keys: Vec<VnodeId> = compact_batch_builder.vnode_ids.keys().cloned().collect();
         keys.sort();
         assert_eq!(keys, vec![1, 2, 3]);
         assert_eq!(compact_batch_builder.vnode_ids.get(&1), Some(&true));

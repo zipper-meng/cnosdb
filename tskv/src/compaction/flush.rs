@@ -4,6 +4,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use models::codec::Encoding;
+use models::meta_data::VnodeId;
 use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp, ValueType};
 use parking_lot::RwLock;
 use snafu::ResultExt;
@@ -22,7 +23,7 @@ use crate::tseries_family::Version;
 use crate::tsm::codec::DataBlockEncoding;
 use crate::tsm::{self, DataBlock, TsmWriter};
 use crate::version_set::VersionSet;
-use crate::{ColumnFileId, TseriesFamilyId};
+use crate::ColumnFileId;
 
 struct FlushingBlock {
     pub field_id: FieldId,
@@ -32,7 +33,7 @@ struct FlushingBlock {
 
 pub struct FlushTask {
     mem_caches: Vec<Arc<RwLock<MemCache>>>,
-    ts_family_id: TseriesFamilyId,
+    ts_family_id: VnodeId,
     global_context: Arc<GlobalContext>,
     path_tsm: PathBuf,
     path_delta: PathBuf,
@@ -41,7 +42,7 @@ pub struct FlushTask {
 impl FlushTask {
     pub fn new(
         mem_caches: Vec<Arc<RwLock<MemCache>>>,
-        ts_family_id: TseriesFamilyId,
+        ts_family_id: VnodeId,
         global_context: Arc<GlobalContext>,
         path_tsm: impl AsRef<Path>,
         path_delta: impl AsRef<Path>,
@@ -275,7 +276,7 @@ pub async fn run_flush_memtable_job(
 }
 
 struct WriterWrapper {
-    ts_family_id: TseriesFamilyId,
+    ts_family_id: VnodeId,
     max_level_ts: Timestamp,
     max_data_block_size: usize,
 
@@ -289,11 +290,7 @@ struct WriterWrapper {
 }
 
 impl WriterWrapper {
-    pub fn new(
-        ts_family_id: TseriesFamilyId,
-        max_level_ts: Timestamp,
-        max_data_block_size: usize,
-    ) -> Self {
+    pub fn new(ts_family_id: VnodeId, max_level_ts: Timestamp, max_data_block_size: usize) -> Self {
         let data_block_buffers = [
             DataBlock::new(0, ValueType::Float),
             DataBlock::new(0, ValueType::Integer),

@@ -47,7 +47,6 @@ mod version_set;
 mod wal;
 
 pub type ColumnFileId = u64;
-type TseriesFamilyId = u32;
 type LevelId = u32;
 
 pub fn tenant_name_from_request(req: &protos::kv_service::WritePointsRequest) -> String {
@@ -64,14 +63,14 @@ pub trait Engine: Send + Sync + Debug {
     async fn write(
         &self,
         span_ctx: Option<&SpanContext>,
-        id: u32,
+        vnode_id: VnodeId,
         precision: Precision,
         write_batch: WritePointsRequest,
     ) -> Result<WritePointsResponse>;
 
     async fn write_from_wal(
         &self,
-        id: u32,
+        vnode_id: VnodeId,
         precision: Precision,
         write_batch: WritePointsRequest,
         seq: u64,
@@ -81,10 +80,16 @@ pub trait Engine: Send + Sync + Debug {
 
     async fn drop_table(&self, tenant: &str, database: &str, table: &str) -> Result<()>;
 
-    async fn remove_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()>;
+    async fn remove_tsfamily(&self, tenant: &str, database: &str, vnode_id: VnodeId) -> Result<()>;
 
-    async fn prepare_copy_vnode(&self, tenant: &str, database: &str, vnode_id: u32) -> Result<()>;
-    async fn flush_tsfamily(&self, tenant: &str, database: &str, id: u32) -> Result<()>;
+    async fn prepare_copy_vnode(
+        &self,
+        tenant: &str,
+        database: &str,
+        vnode_id: VnodeId,
+    ) -> Result<()>;
+
+    async fn flush_tsfamily(&self, tenant: &str, database: &str, vnode_id: VnodeId) -> Result<()>;
 
     async fn add_table_column(
         &self,
@@ -123,8 +128,8 @@ pub trait Engine: Send + Sync + Debug {
     async fn get_series_id_by_filter(
         &self,
         tenant: &str,
-        db: &str,
-        tab: &str,
+        database: &str,
+        table: &str,
         vnode_id: VnodeId,
         filter: &ColumnDomains<String>,
     ) -> Result<Vec<SeriesId>>;
@@ -132,16 +137,16 @@ pub trait Engine: Send + Sync + Debug {
     async fn get_series_key(
         &self,
         tenant: &str,
-        db: &str,
-        vnode_id: u32,
-        sid: SeriesId,
+        database: &str,
+        vnode_id: VnodeId,
+        series_id: SeriesId,
     ) -> Result<Option<SeriesKey>>;
 
     async fn get_db_version(
         &self,
         tenant: &str,
-        db: &str,
-        vnode_id: u32,
+        database: &str,
+        vnode_id: VnodeId,
     ) -> Result<Option<Arc<SuperVersion>>>;
 
     fn get_storage_options(&self) -> Arc<StorageOptions>;
@@ -150,20 +155,20 @@ pub trait Engine: Send + Sync + Debug {
         &self,
         tenant: &str,
         database: &str,
-        vnode_id: u32,
+        vnode_id: VnodeId,
     ) -> Result<Option<VersionEdit>>;
 
     async fn apply_vnode_summary(
         &self,
         tenant: &str,
         database: &str,
-        vnode_id: u32,
+        vnode_id: VnodeId,
         summary: VersionEdit,
     ) -> Result<()>;
 
-    async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()>;
+    async fn drop_vnode(&self, vnode_id: VnodeId) -> Result<()>;
 
-    async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> Result<()>;
+    async fn compact(&self, vnode_ids: Vec<VnodeId>) -> Result<()>;
 
     async fn get_vnode_hash_tree(&self, vnode_id: VnodeId) -> Result<RecordBatch>;
 

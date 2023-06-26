@@ -5,9 +5,10 @@ use std::sync::Arc;
 
 use once_cell::sync::OnceCell;
 use snafu::{ResultExt, Snafu};
+use trace::debug;
 
+use super::FileSystemResult;
 use crate::file_system::file::async_file::{AsyncFile, FsRuntime};
-use crate::{error, Error, Result};
 
 #[derive(Snafu, Debug)]
 pub enum FileError {
@@ -54,33 +55,34 @@ impl FileManager {
         &self,
         path: impl AsRef<Path>,
         options: OpenOptions,
-    ) -> Result<AsyncFile> {
+    ) -> FileSystemResult<AsyncFile> {
         AsyncFile::open(path.as_ref(), self.fs_runtime.clone(), options)
             .await
-            .map_err(|e| Error::OpenFile {
+            .with_context(|_| super::OpenFileSnafu {
                 path: path.as_ref().to_path_buf(),
-                source: e,
             })
     }
 
     /// Open a file to read,.
-    pub async fn open_file(&self, path: impl AsRef<Path>) -> Result<AsyncFile> {
+    pub async fn open_file(&self, path: impl AsRef<Path>) -> FileSystemResult<AsyncFile> {
         let mut opt = OpenOptions::new();
         opt.read(true);
         self.open_file_with(path, opt).await
     }
 
-    fn create_dir_if_not_exists(parent: Option<&Path>) -> Result<()> {
+    fn create_dir_if_not_exists(parent: Option<&Path>) -> FileSystemResult<()> {
         if let Some(p) = parent {
             if !try_exists(p) {
-                fs::create_dir_all(p).context(error::IOSnafu)?;
+                fs::create_dir_all(p).with_context(|_| super::CreateDirectorySnafu {
+                    path: p.to_path_buf(),
+                })?;
             }
         }
         Ok(())
     }
 
     /// Create a file if not exists, overwrite if already existed.
-    pub async fn create_file(&self, path: impl AsRef<Path>) -> Result<AsyncFile> {
+    pub async fn create_file(&self, path: impl AsRef<Path>) -> FileSystemResult<AsyncFile> {
         let p = path.as_ref();
         Self::create_dir_if_not_exists(p.parent())?;
         let mut opt = OpenOptions::new();
@@ -89,7 +91,7 @@ impl FileManager {
     }
 
     /// Open a file to read or write(append mode), if file does not exists then create it.
-    pub async fn open_create_file(&self, path: impl AsRef<Path>) -> Result<AsyncFile> {
+    pub async fn open_create_file(&self, path: impl AsRef<Path>) -> FileSystemResult<AsyncFile> {
         let p = path.as_ref();
         Self::create_dir_if_not_exists(p.parent())?;
         let mut opt = OpenOptions::new();
@@ -109,7 +111,10 @@ pub fn list_file_names(dir: impl AsRef<Path>) -> Vec<String> {
         .filter_map(|e| {
             let dir_entry = match e {
                 Ok(dir_entry) if dir_entry.file_type().is_file() => dir_entry,
-                _ => {
+                Ok(_) => return None,
+                Err(e) => {
+                    let p = e.path().map(|p| p.to_path_buf()).unwrap_or_default();
+                    debug!("Failed to list directory '{}': {}", p.display(), e);
                     return None;
                 }
             };
@@ -161,19 +166,19 @@ pub fn try_exists(path: impl AsRef<Path>) -> bool {
 
 /// Open a file to read,.
 #[inline(always)]
-pub async fn open_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
+pub async fn open_file(path: impl AsRef<Path>) -> FileSystemResult<AsyncFile> {
     get_file_manager().open_file(path).await
 }
 
 /// Create a file if not exists, overwrite if already existed.
 #[inline(always)]
-pub async fn create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
+pub async fn create_file(path: impl AsRef<Path>) -> FileSystemResult<AsyncFile> {
     get_file_manager().create_file(path).await
 }
 
 /// Open a file to read or write(append mode), if file does not exists then create it.
 #[inline(always)]
-pub async fn open_create_file(path: impl AsRef<Path>) -> Result<AsyncFile> {
+pub async fn open_create_file(path: impl AsRef<Path>) -> FileSystemResult<AsyncFile> {
     get_file_manager().open_create_file(path).await
 }
 

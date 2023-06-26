@@ -6,6 +6,7 @@ use lru_cache::asynchronous::ShardedCache;
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
+use models::meta_data::VnodeId;
 use models::predicate::domain::TimeRange;
 use models::schema::{DatabaseSchema, Precision, TskvTableSchema};
 use models::utils::unite_id;
@@ -30,7 +31,7 @@ use crate::summary::{SummaryTask, VersionEdit};
 use crate::tseries_family::{LevelInfo, TseriesFamily, Version};
 use crate::version_set::VersionSet;
 use crate::Error::{self, InvalidPoint};
-use crate::{file_utils, ColumnFileId, TseriesFamilyId};
+use crate::{file_utils, ColumnFileId};
 
 pub type FlatBufferPoint<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Point<'a>>>;
 pub type FlatBufferTable<'a> = flatbuffers::Vector<'a, flatbuffers::ForwardsUOffset<Table<'a>>>;
@@ -42,8 +43,8 @@ pub struct Database {
     opt: Arc<Options>,
 
     schemas: Arc<DBschemas>,
-    ts_indexes: HashMap<TseriesFamilyId, Arc<index::ts_index::TSIndex>>,
-    ts_families: HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>>,
+    ts_indexes: HashMap<VnodeId, Arc<index::ts_index::TSIndex>>,
+    ts_families: HashMap<VnodeId, Arc<RwLock<TseriesFamily>>>,
     runtime: Arc<Runtime>,
     memory_pool: MemoryPoolRef,
     metrics_register: Arc<MetricsRegister>,
@@ -124,15 +125,19 @@ impl Database {
                     f.tsf_id = tsf_id;
                     let file_path = f
                         .rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
-                        .await?;
-                    let file_reader = crate::tsm::TsmReader::open(file_path).await?;
+                        .await
+                        .context(error::FileSystemSnafu)?;
+                    let file_reader = crate::tsm::TsmReader::open(file_path)
+                        .await
+                        .context(error::TsmSnafu)?;
                     file_metas.insert(new_file_id, file_reader.bloom_filter());
                 }
                 for f in ve.del_files.iter_mut() {
                     let new_file_id = global_ctx.file_id_next();
                     f.tsf_id = tsf_id;
                     f.rename_file(&self.opt.storage, &self.owner, f.tsf_id, new_file_id)
-                        .await?;
+                        .await
+                        .context(error::FileSystemSnafu)?;
                 }
                 //move index
                 let origin_index = self
@@ -403,7 +408,7 @@ impl Database {
     /// (field-id filter) of db-files.
     pub async fn snapshot(
         &self,
-        vnode_id: Option<TseriesFamilyId>,
+        vnode_id: Option<VnodeId>,
         version_edits: &mut Vec<VersionEdit>,
         file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
     ) {
@@ -440,13 +445,13 @@ impl Database {
         None
     }
 
-    pub fn ts_families(&self) -> &HashMap<TseriesFamilyId, Arc<RwLock<TseriesFamily>>> {
+    pub fn ts_families(&self) -> &HashMap<VnodeId, Arc<RwLock<TseriesFamily>>> {
         &self.ts_families
     }
 
     pub fn for_each_ts_family<F>(&self, func: F)
     where
-        F: FnMut((&TseriesFamilyId, &Arc<RwLock<TseriesFamily>>)),
+        F: FnMut((&VnodeId, &Arc<RwLock<TseriesFamily>>)),
     {
         self.ts_families.iter().for_each(func);
     }
@@ -463,7 +468,7 @@ impl Database {
         None
     }
 
-    pub fn ts_indexes(&self) -> HashMap<TseriesFamilyId, Arc<index::ts_index::TSIndex>> {
+    pub fn ts_indexes(&self) -> HashMap<VnodeId, Arc<index::ts_index::TSIndex>> {
         self.ts_indexes.clone()
     }
 

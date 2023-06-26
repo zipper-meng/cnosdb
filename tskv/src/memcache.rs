@@ -6,6 +6,7 @@ use std::sync::Arc;
 
 use memory_pool::{MemoryConsumer, MemoryPoolRef, MemoryReservation};
 use minivec::{mini_vec, MiniVec};
+use models::meta_data::VnodeId;
 use models::predicate::domain::TimeRange;
 use models::schema::{timestamp_convert, Precision, TableColumn, TskvTableSchema};
 use models::utils::split_id;
@@ -17,7 +18,7 @@ use utils::bitset::BitSet;
 
 use crate::error::Result;
 use crate::Error::CommonError;
-use crate::{byte_utils, Error, TseriesFamilyId};
+use crate::{byte_utils, Error};
 
 #[derive(Debug, Clone)]
 pub enum FieldVal {
@@ -345,7 +346,7 @@ impl SeriesData {
 
 #[derive(Debug)]
 pub struct MemCache {
-    tf_id: TseriesFamilyId,
+    tf_id: VnodeId,
 
     flushing: AtomicBool,
 
@@ -362,7 +363,7 @@ pub struct MemCache {
 }
 
 impl MemCache {
-    pub fn new(tf_id: TseriesFamilyId, max_size: u64, seq: u64, pool: &MemoryPoolRef) -> Self {
+    pub fn new(tf_id: VnodeId, max_size: u64, seq: u64, pool: &MemoryPoolRef) -> Self {
         let part_count = 16;
         let mut partions = Vec::with_capacity(part_count);
         for _i in 0..part_count {
@@ -516,7 +517,7 @@ impl MemCache {
         self.memory.read().size() >= self.max_size as usize
     }
 
-    pub fn tf_id(&self) -> TseriesFamilyId {
+    pub fn tf_id(&self) -> VnodeId {
         self.tf_id
     }
 

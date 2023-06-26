@@ -3,23 +3,23 @@ use std::fmt::{Display, Formatter};
 use std::pin::Pin;
 use std::sync::Arc;
 
+use models::meta_data::VnodeId;
 use models::predicate::domain::TimeRange;
 use models::{FieldId, Timestamp};
 use snafu::ResultExt;
-use trace::{error, info, trace};
 use utils::BloomFilter;
 
 use super::iterator::BufferedIterator;
+use super::{CompactError, CompactResult};
 use crate::compaction::CompactReq;
 use crate::context::GlobalContext;
-use crate::error::{self, Result};
 use crate::summary::{CompactMeta, VersionEdit};
 use crate::tseries_family::TseriesFamily;
 use crate::tsm::{
     self, BlockMeta, BlockMetaIterator, DataBlock, EncodedDataBlock, IndexIterator, IndexMeta,
-    TsmReader, TsmWriter,
+    TsmError, TsmReader, TsmWriter,
 };
-use crate::{ColumnFileId, Error, LevelId, TseriesFamilyId};
+use crate::{ColumnFileId, LevelId};
 
 /// Temporary compacting data block meta
 #[derive(Clone)]
@@ -83,18 +83,18 @@ impl CompactingBlockMeta {
         self.meta.min_ts() <= time_range.max_ts && self.meta.max_ts() >= time_range.min_ts
     }
 
-    pub async fn get_data_block(&self) -> Result<DataBlock> {
+    pub async fn get_data_block(&self) -> CompactResult<DataBlock> {
         self.reader
             .get_data_block(&self.meta)
             .await
-            .context(error::ReadTsmSnafu)
+            .context(super::ReadTsmSnafu)
     }
 
-    pub async fn get_raw_data(&self, dst: &mut Vec<u8>) -> Result<usize> {
+    pub async fn get_raw_data(&self, dst: &mut Vec<u8>) -> CompactResult<usize> {
         self.reader
             .get_raw_data(&self.meta, dst)
             .await
-            .context(error::ReadTsmSnafu)
+            .context(super::ReadTsmSnafu)
     }
 
     pub fn has_tombstone(&self) -> bool {
@@ -131,7 +131,7 @@ impl CompactingBlockMetaGroup {
         mut self,
         previous_block: Option<CompactingBlock>,
         max_block_size: usize,
-    ) -> Result<Vec<CompactingBlock>> {
+    ) -> CompactResult<Vec<CompactingBlock>> {
         if self.blk_metas.is_empty() {
             return Ok(vec![]);
         }
@@ -141,7 +141,7 @@ impl CompactingBlockMetaGroup {
         let merged_block;
         if self.blk_metas.len() == 1 && !self.blk_metas[0].has_tombstone() {
             // Only one compacting block and has no tombstone, write as raw block.
-            trace!("only one compacting block, write as raw block");
+            trace::trace!("only one compacting block, write as raw block");
             let meta_0 = &self.blk_metas[0].meta;
             let mut buf_0 = Vec::with_capacity(meta_0.size() as usize);
             let data_len_0 = self.blk_metas[0].get_raw_data(&mut buf_0).await?;
@@ -167,7 +167,7 @@ impl CompactingBlockMetaGroup {
                     meta_0.field_type(),
                     meta_0.val_off() - meta_0.offset(),
                 )
-                .context(error::ReadTsmSnafu)?;
+                .context(super::ReadTsmSnafu)?;
                 let mut data_block = compacting_block.decode()?;
                 data_block.extend(decoded_raw_block);
 
@@ -183,7 +183,7 @@ impl CompactingBlockMetaGroup {
             }
         } else {
             // One block with tombstone or multi compacting blocks, decode and merge these data block.
-            trace!(
+            trace::trace!(
                 "there are {} compacting blocks, need to decode and merge",
                 self.blk_metas.len()
             );
@@ -211,7 +211,7 @@ impl CompactingBlockMetaGroup {
         &self,
         data_block: DataBlock,
         max_block_size: usize,
-    ) -> Result<Vec<CompactingBlock>> {
+    ) -> CompactResult<Vec<CompactingBlock>> {
         let mut merged_blks = Vec::new();
         if max_block_size == 0 || data_block.len() < max_block_size {
             // Data block elements less than max_block_size, do not encode it.
@@ -223,12 +223,8 @@ impl CompactingBlockMetaGroup {
             let mut end = len.min(max_block_size);
             while start + end < len {
                 // Encode decoded data blocks into chunks.
-                let encoded_blk =
-                    EncodedDataBlock::encode(&data_block, start, end).map_err(|e| {
-                        Error::WriteTsm {
-                            source: tsm::WriteTsmError::Encode { source: e },
-                        }
-                    })?;
+                let encoded_blk = EncodedDataBlock::encode(&data_block, start, end)
+                    .context(super::EncodeSnafu)?;
                 merged_blks.push(CompactingBlock::encoded(0, self.field_id, encoded_blk));
 
                 start += end;
@@ -236,12 +232,8 @@ impl CompactingBlockMetaGroup {
             }
             if start < len {
                 // Encode the remaining decoded data blocks.
-                let encoded_blk =
-                    EncodedDataBlock::encode(&data_block, start, len).map_err(|e| {
-                        Error::WriteTsm {
-                            source: tsm::WriteTsmError::Encode { source: e },
-                        }
-                    })?;
+                let encoded_blk = EncodedDataBlock::encode(&data_block, start, len)
+                    .context(super::EncodeSnafu)?;
                 merged_blks.push(CompactingBlock::encoded(0, self.field_id, encoded_blk));
             }
         }
@@ -341,15 +333,15 @@ impl CompactingBlock {
         }
     }
 
-    pub fn decode(self) -> Result<DataBlock> {
+    pub fn decode(self) -> CompactResult<DataBlock> {
         match self {
             CompactingBlock::Decoded { data_block, .. } => Ok(data_block),
             CompactingBlock::Encoded { data_block, .. } => {
-                data_block.decode().context(error::DecodeSnafu)
+                data_block.decode().context(super::DecodeSnafu)
             }
             CompactingBlock::Raw { raw, meta, .. } => {
                 tsm::decode_data_block(&raw, meta.field_type(), meta.val_off() - meta.offset())
-                    .context(error::ReadTsmSnafu)
+                    .context(super::ReadTsmSnafu)
             }
         }
     }
@@ -485,7 +477,7 @@ impl CompactIterator {
 
         if let Some(f) = self.compacting_files.peek() {
             if self.curr_fid.is_none() {
-                trace!(
+                trace::trace!(
                     "selected new field {:?} from file {} as current field id",
                     f.field_id,
                     f.tsm_reader.file_id()
@@ -494,7 +486,7 @@ impl CompactIterator {
             }
         } else {
             // TODO finished
-            trace!("no file to select, mark finished");
+            trace::trace!("no file to select, mark finished");
             self.finished_reader_cnt += 1;
         }
         while let Some(mut f) = self.compacting_files.pop() {
@@ -504,7 +496,7 @@ impl CompactIterator {
                 if let Some(idx_meta) = f.peek() {
                     self.tmp_tsm_blk_meta_iters.push(idx_meta.block_iterator());
                     self.tmp_tsm_blk_tsm_reader_idx.push(loop_file_i);
-                    trace!("merging idx_meta: field_id: {}, field_type: {:?}, block_count: {}, time_range: {:?}",
+                    trace::trace!("merging idx_meta: field_id: {}, field_type: {:?}, block_count: {}, time_range: {:?}",
                         idx_meta.field_id(),
                         idx_meta.field_type(),
                         idx_meta.block_count(),
@@ -514,7 +506,7 @@ impl CompactIterator {
                     self.compacting_files.push(f);
                 } else {
                     // This tsm-file has been finished
-                    trace!("file {} is finished.", loop_file_i);
+                    trace::trace!("file {} is finished.", loop_file_i);
                     self.finished_readers[loop_file_i] = true;
                     self.finished_reader_cnt += 1;
                 }
@@ -588,7 +580,7 @@ impl CompactIterator {
             .into_iter()
             .filter(|l| !l.is_empty())
             .collect();
-        trace!(
+        trace::trace!(
             "selected merging meta groups: {}",
             blk_meta_groups
                 .iter()
@@ -619,12 +611,12 @@ impl CompactIterator {
         // For each tsm-file, get next index reader for current iteration field id
         self.next_field_id();
 
-        trace!(
+        trace::trace!(
             "selected {} blocks meta iterators",
             self.tmp_tsm_blk_meta_iters.len()
         );
         if self.tmp_tsm_blk_meta_iters.is_empty() {
-            trace!("iteration field_id {:?} is finished", self.curr_fid);
+            trace::trace!("iteration field_id {:?} is finished", self.curr_fid);
             self.curr_fid = None;
             return None;
         }
@@ -647,8 +639,8 @@ fn overlaps_tuples(r1: (i64, i64), r2: (i64, i64)) -> bool {
 pub async fn run_compaction_job(
     request: CompactReq,
     kernel: Arc<GlobalContext>,
-) -> Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
-    info!(
+) -> CompactResult<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
+    trace::info!(
         "Compaction: Running compaction job on ts_family: {} and files: [ {} ]",
         request.ts_family_id,
         request
@@ -684,7 +676,7 @@ pub async fn run_compaction_job(
     let mut iter = CompactIterator::new(tsm_readers, max_block_size, false);
     let tsm_dir = request.storage_opt.tsm_dir(&request.database, tsf_id);
     let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
-    info!(
+    trace::info!(
         "Compaction: File: {} been created (level: {}).",
         tsm_writer.sequence(),
         request.out_level
@@ -695,7 +687,7 @@ pub async fn run_compaction_job(
     let mut previous_merged_block: Option<CompactingBlock> = None;
     let mut fid = iter.curr_fid;
     while let Some(blk_meta_group) = iter.next().await {
-        trace!("===============================");
+        trace::trace!("===============================");
         if fid.is_some() && fid != iter.curr_fid {
             // Iteration of next field id, write previous merged block.
             if let Some(blk) = previous_merged_block.take() {
@@ -711,7 +703,7 @@ pub async fn run_compaction_job(
                 {
                     tsm_writer =
                         tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
-                    info!(
+                    trace::info!(
                         "Compaction: File: {} been created (level: {}).",
                         tsm_writer.sequence(),
                         request.out_level
@@ -748,7 +740,7 @@ pub async fn run_compaction_job(
             .await?
             {
                 tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
-                info!(
+                trace::info!(
                     "Compaction: File: {} been created (level: {}).",
                     tsm_writer.sequence(),
                     request.out_level
@@ -794,7 +786,7 @@ async fn write_tsm(
     file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
     version_edit: &mut VersionEdit,
     request: &CompactReq,
-) -> Result<bool> {
+) -> CompactResult<bool> {
     let write_ret = match blk {
         CompactingBlock::Decoded {
             field_id: fid,
@@ -810,20 +802,20 @@ async fn write_tsm(
     };
     if let Err(e) = write_ret {
         match e {
-            tsm::WriteTsmError::IO { source } => {
+            TsmError::Write { path, source } => {
                 // TODO try re-run compaction on other time.
-                error!("Failed compaction: IO error when write tsm: {:?}", source);
-                return Err(Error::IO { source });
+                trace::error!("Failed compaction: IO error when write tsm: {:?}", source);
+                return Err(CompactError::WriteTsm { source: source });
             }
-            tsm::WriteTsmError::Encode { source } => {
+            TsmError::Encode { source } => {
                 // TODO try re-run compaction on other time.
-                error!(
+                trace::error!(
                     "Failed compaction: encoding error when write tsm: {:?}",
                     source
                 );
-                return Err(Error::Encode { source });
+                return Err(CompactError::Encode { source });
             }
-            tsm::WriteTsmError::MaxFileSizeExceed { .. } => {
+            TsmError::MaxFileSizeExceed { .. } => {
                 finish_write_tsm(
                     tsm_writer,
                     file_metas,
@@ -834,8 +826,8 @@ async fn write_tsm(
                 .await?;
                 return Ok(true);
             }
-            tsm::WriteTsmError::Finished { path } => {
-                error!(
+            TsmError::Finished { path } => {
+                trace::error!(
                     "Trying to write by a finished tsm writer: {}",
                     path.display()
                 );
@@ -852,17 +844,17 @@ async fn finish_write_tsm(
     version_edit: &mut VersionEdit,
     request: &CompactReq,
     max_level_ts: Timestamp,
-) -> Result<()> {
+) -> CompactResult<()> {
     tsm_writer
         .write_index()
         .await
-        .context(error::WriteTsmSnafu)?;
-    tsm_writer.finish().await.context(error::WriteTsmSnafu)?;
+        .context(super::WriteTsmSnafu)?;
+    tsm_writer.finish().await.context(super::WriteTsmSnafu)?;
     file_metas.insert(
         tsm_writer.sequence(),
         Arc::new(tsm_writer.bloom_filter_cloned()),
     );
-    info!(
+    trace::info!(
         "Compaction: File: {} write finished (level: {}, {} B).",
         tsm_writer.sequence(),
         request.out_level,
@@ -875,11 +867,7 @@ async fn finish_write_tsm(
     Ok(())
 }
 
-fn new_compact_meta(
-    tsm_writer: &TsmWriter,
-    tsf_id: TseriesFamilyId,
-    level: LevelId,
-) -> CompactMeta {
+fn new_compact_meta(tsm_writer: &TsmWriter, tsf_id: VnodeId, level: LevelId) -> CompactMeta {
     CompactMeta {
         file_id: tsm_writer.sequence(),
         file_size: tsm_writer.size(),

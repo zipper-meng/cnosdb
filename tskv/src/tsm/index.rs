@@ -8,7 +8,7 @@ use utils::BloomFilter;
 
 use crate::byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64};
 use crate::tsm::{
-    BlockMetaIterator, DataBlock, WriteTsmError, WriteTsmResult, BLOCK_META_SIZE, INDEX_META_SIZE,
+    BlockMetaIterator, DataBlock, TsmError, TsmResult, BLOCK_META_SIZE, INDEX_META_SIZE,
 };
 
 #[derive(Debug, Clone)]
@@ -288,11 +288,11 @@ pub(crate) struct IndexEntry {
 }
 
 impl IndexEntry {
-    pub(crate) fn encode(&self, buf: &mut [u8]) -> WriteTsmResult<()> {
+    pub(crate) fn encode(&self, buf: &mut [u8]) -> TsmResult<()> {
         assert!(buf.len() >= INDEX_META_SIZE);
         if buf.len() < INDEX_META_SIZE {
-            return Err(WriteTsmError::Encode {
-                source: "buffer too short".into(),
+            return Err(TsmError::Encode {
+                source: "encode TSM index: buffer too small".into(),
             });
         }
 

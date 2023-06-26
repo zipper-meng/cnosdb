@@ -16,17 +16,39 @@ use std::path::{Path, PathBuf};
 
 use models::predicate::domain::TimeRange;
 use models::FieldId;
+use snafu::{ResultExt, Snafu};
 use trace::error;
 
 use super::DataBlock;
+use crate::error::GenericError;
 use crate::file_system::file_manager;
-use crate::record_file::{self, RecordDataType, RecordDataVersion};
-use crate::{byte_utils, file_utils, Error, Result};
+use crate::record_file::{self, RecordDataType, RecordDataVersion, RecordFileError};
+use crate::{byte_utils, file_utils};
 
 const TOMBSTONE_FILE_SUFFIX: &str = ".tombstone";
 const FOOTER_MAGIC_NUMBER: u32 = u32::from_be_bytes([b'r', b'o', b'm', b'b']);
 const FOOTER_MAGIC_NUMBER_LEN: usize = 4;
 const ENTRY_LEN: usize = 24; // 8 + 8 + 8
+
+pub type TombstoneResult<T, E = TombstoneError> = std::result::Result<T, E>;
+
+#[derive(Snafu, Debug)]
+pub enum TombstoneError {
+    #[snafu(display("Failed to open tombstone: {source}"))]
+    Open { source: RecordFileError },
+
+    #[snafu(display("Failed to read tombstone: {source}"))]
+    Read { source: RecordFileError },
+
+    #[snafu(display("Failed to write tombstone: {source}"))]
+    Write { source: RecordFileError },
+
+    #[snafu(display("Failed to sync tombstone: {source}"))]
+    Sync { source: RecordFileError },
+
+    #[snafu(display("Invalid tombstone file name: {source}"))]
+    InvalidFileName { source: GenericError },
+}
 
 #[derive(Debug, Clone, Copy)]
 pub struct Tombstone {
@@ -52,12 +74,16 @@ pub struct TsmTombstone {
 }
 
 impl TsmTombstone {
-    pub async fn open(path: impl AsRef<Path>, file_id: u64) -> Result<Self> {
+    pub async fn open(path: impl AsRef<Path>, file_id: u64) -> TombstoneResult<Self> {
         let path = file_utils::make_tsm_tombstone_file_name(path, file_id);
         let (mut reader, writer) = if file_manager::try_exists(&path) {
             (
-                Some(record_file::Reader::open(&path).await?),
-                Some(record_file::Writer::open(&path, RecordDataType::Tombstone).await?),
+                Some(record_file::Reader::open(&path).await.context(OpenSnafu)?),
+                Some(
+                    record_file::Writer::open(&path, RecordDataType::Tombstone)
+                        .await
+                        .context(OpenSnafu)?,
+                ),
             )
         } else {
             (None, None)
@@ -76,22 +102,22 @@ impl TsmTombstone {
     }
 
     #[cfg(test)]
-    pub async fn with_path(path: impl AsRef<Path>) -> Result<Self> {
+    pub async fn with_path(path: impl AsRef<Path>) -> TombstoneResult<Self> {
         let path = path.as_ref();
         let parent = path.parent().expect("a valid tsm/tombstone file path");
-        let tsm_id = file_utils::get_tsm_file_id_by_path(path)?;
+        let tsm_id = file_utils::get_tsm_file_id_by_path(path).context(InvalidFileNameSnafu)?;
         Self::open(parent, tsm_id).await
     }
 
     async fn load_all(
         reader: &mut record_file::Reader,
         tombstones: &mut HashMap<FieldId, Vec<TimeRange>>,
-    ) -> Result<()> {
+    ) -> TombstoneResult<()> {
         loop {
             let data = match reader.read_record().await {
                 Ok(r) => r.data,
-                Err(Error::Eof) => break,
-                Err(e) => return Err(e),
+                Err(RecordFileError::Eof) => break,
+                Err(e) => return Err(TombstoneError::Read { source: e }),
             };
             if data.len() < ENTRY_LEN {
                 error!(
@@ -116,10 +142,17 @@ impl TsmTombstone {
         self.tombstones.is_empty()
     }
 
-    pub async fn add_range(&mut self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
+    pub async fn add_range(
+        &mut self,
+        field_ids: &[FieldId],
+        time_range: &TimeRange,
+    ) -> TombstoneResult<()> {
         if self.writer.is_none() {
-            self.writer =
-                Some(record_file::Writer::open(&self.path, RecordDataType::Tombstone).await?);
+            self.writer = Some(
+                record_file::Writer::open(&self.path, RecordDataType::Tombstone)
+                    .await
+                    .context(OpenSnafu)?,
+            );
         }
         let writer = self.writer.as_mut().expect("initialized file");
 
@@ -133,7 +166,8 @@ impl TsmTombstone {
                     RecordDataType::Tombstone as u8,
                     &[&self.write_buf],
                 )
-                .await?;
+                .await
+                .context(WriteSnafu)?;
 
             self.tombstones
                 .entry(*field_id)
@@ -143,9 +177,9 @@ impl TsmTombstone {
         Ok(())
     }
 
-    pub async fn flush(&mut self) -> Result<()> {
+    pub async fn flush(&mut self) -> TombstoneResult<()> {
         if let Some(w) = self.writer.as_mut() {
-            w.sync().await?;
+            w.sync().await.context(SyncSnafu)?;
         }
         Ok(())
     }

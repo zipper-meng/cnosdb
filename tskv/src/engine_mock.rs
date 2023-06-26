@@ -17,7 +17,7 @@ use crate::error::Result;
 use crate::kv_option::StorageOptions;
 use crate::summary::VersionEdit;
 use crate::tseries_family::SuperVersion;
-use crate::{Engine, TseriesFamilyId};
+use crate::Engine;
 
 #[derive(Debug, Default)]
 pub struct MockEngine {}
@@ -188,11 +188,11 @@ impl Engine for MockEngine {
         todo!()
     }
 
-    async fn drop_vnode(&self, id: TseriesFamilyId) -> Result<()> {
+    async fn drop_vnode(&self, id: VnodeId) -> Result<()> {
         todo!()
     }
 
-    async fn compact(&self, vnode_ids: Vec<TseriesFamilyId>) -> Result<()> {
+    async fn compact(&self, vnode_ids: Vec<VnodeId>) -> Result<()> {
         todo!()
     }
 

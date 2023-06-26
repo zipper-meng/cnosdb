@@ -5,8 +5,8 @@ use std::fmt::{Display, Formatter};
 use minivec::MiniVec;
 use models::predicate::domain::TimeRange;
 use models::{Timestamp, ValueType};
-use trace::error;
 
+use crate::error::GenericError;
 use crate::memcache::DataType;
 use crate::tsm::codec::{
     get_bool_codec, get_encoding, get_f64_codec, get_i64_codec, get_str_codec, get_ts_codec,
@@ -440,7 +440,7 @@ impl DataBlock {
         }
         let data_blocks = match blocks.first() {
             None => {
-                error!("failed to get data block");
+                trace::error!("failed to get data block");
                 return vec![];
             }
             Some(v) => v,
@@ -858,11 +858,7 @@ impl Display for EncodedDataBlock {
 }
 
 impl EncodedDataBlock {
-    pub fn encode(
-        data_block: &DataBlock,
-        start: usize,
-        end: usize,
-    ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn encode(data_block: &DataBlock, start: usize, end: usize) -> Result<Self, GenericError> {
         let ts_sli = data_block.ts();
         let min_ts = ts_sli[start];
         let max_ts = ts_sli[end - 1];
@@ -877,7 +873,7 @@ impl EncodedDataBlock {
         })
     }
 
-    pub fn decode(&self) -> Result<DataBlock, Box<dyn std::error::Error + Send + Sync>> {
+    pub fn decode(&self) -> Result<DataBlock, GenericError> {
         DataBlock::decode(&self.ts, &self.val, self.count, self.field_type)
     }
 }

@@ -10,9 +10,11 @@ use tonic::{Code, Status};
 
 use crate::index::IndexError;
 use crate::schema::error::SchemaError;
-use crate::tsm::{ReadTsmError, WriteTsmError};
+use crate::tsm::TsmError;
+use crate::{file_system, record_file, summary, tsm, wal};
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
+pub type GenericError = Box<dyn std::error::Error + Send + Sync>;
 
 #[derive(Snafu, Debug, ErrorCoder)]
 #[snafu(visibility(pub))]
@@ -108,61 +110,57 @@ pub enum Error {
         message: String,
     },
 
-    #[snafu(display("fails to send to channel"))]
-    Send,
-
-    #[snafu(display("fails to receive from channel"))]
-    Receive {
-        source: tokio::sync::oneshot::error::RecvError,
+    /// Failed to send someting to a channel
+    #[snafu(display("{source}"))]
+    ChannelSend {
+        source: ChannelSendError,
     },
 
-    #[snafu(display("wal truncated"))]
-    WalTruncated,
-
-    #[snafu(display("read/write record file block: {}", reason))]
-    RecordFileIo {
-        reason: String,
+    /// Failed to receive something from a channel
+    #[snafu(display("{source}"))]
+    ChannelReceive {
+        source: ChannelReceiveError,
     },
 
-    #[snafu(display("Unexpected eof"))]
-    Eof,
-
-    #[snafu(display("Failed to encode record file block: {}", source))]
-    RecordFileEncode {
-        source: bincode::Error,
+    #[snafu(display("tskv::file_system: {source}"))]
+    FileSystem {
+        source: file_system::FileSystemError,
     },
 
-    #[snafu(display("Faield to decode record file block: {}", source))]
-    RecordFileDecode {
-        source: bincode::Error,
+    #[snafu(display("tskv::record_file: {source}"))]
+    RecordFile {
+        source: record_file::RecordFileError,
+    },
+
+    /// Failed to write to WAL.
+    #[snafu(display("tskv::wal: {source}"))]
+    Wal {
+        source: wal::WalError,
+    },
+
+    #[snafu(display("tskv::record_file: {source}"))]
+    Summary {
+        source: summary::SummaryError,
+    },
+
+    #[snafu(display("tskv::tsm: {source}"))]
+    Tsm {
+        source: tsm::TsmError,
     },
 
     #[snafu(display("Failed to do encode: {}", source))]
     Encode {
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: GenericError,
     },
 
     #[snafu(display("Faield to do decode: {}", source))]
     Decode {
-        source: Box<dyn std::error::Error + Send + Sync>,
+        source: GenericError,
     },
 
     #[snafu(display("Index: : {}", source))]
     IndexErr {
         source: crate::index::IndexError,
-    },
-
-    #[snafu(display("error apply edits to summary"))]
-    ErrApplyEdit,
-
-    #[snafu(display("read tsm block file error: {}", source))]
-    ReadTsm {
-        source: ReadTsmError,
-    },
-
-    #[snafu(display("write tsm block file error: {}", source))]
-    WriteTsm {
-        source: WriteTsmError,
     },
 
     #[snafu(display("character set error"))]
@@ -237,12 +235,12 @@ impl Error {
 
     pub fn invalid_vnode(&self) -> bool {
         match self {
-            Self::ReadTsm { source } => {
+            Self::Tsm { source } => {
                 matches!(
                     source,
-                    ReadTsmError::CrcCheck
-                        | ReadTsmError::FileNotFound { .. }
-                        | ReadTsmError::Invalid { .. }
+                    TsmError::CrcCheck
+                        | TsmError::FileNotFound { .. }
+                        | TsmError::InvalidFile { .. }
                 )
             }
             _ => false,
@@ -295,7 +293,7 @@ impl From<Status> for Error {
 }
 
 #[test]
-fn test_mod_code() {
+fn test_error_code() {
     let e = Error::Schema {
         source: SchemaError::ColumnAlreadyExists {
             name: "".to_string(),
@@ -303,3 +301,20 @@ fn test_mod_code() {
     };
     assert!(e.code().starts_with("02"));
 }
+
+#[derive(Snafu, Debug)]
+pub enum ChannelSendError {
+    #[snafu(display("Failed to send a WAL task"))]
+    WalTask,
+}
+
+#[derive(Snafu, Debug)]
+pub enum ChannelReceiveError {
+    #[snafu(display("Failed to receive write WAL result: {source}"))]
+    WriteWalResult {
+        source: tokio::sync::oneshot::error::RecvError,
+    },
+}
+
+#[derive(Snafu, Debug)]
+pub enum WalReadError {}

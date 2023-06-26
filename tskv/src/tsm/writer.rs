@@ -3,18 +3,17 @@ use std::io::IoSlice;
 use std::path::{Path, PathBuf};
 
 use models::{FieldId, Timestamp};
-use snafu::{ResultExt, Snafu};
+use snafu::ResultExt;
 use utils::BloomFilter;
 
-use super::EncodedDataBlock;
-use crate::error::{self, Error, Result};
+use crate::error::{self, Result as TskvResult};
 use crate::file_system::file::cursor::FileCursor;
 use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
 use crate::file_utils;
 use crate::tsm::{
-    BlockEntry, BlockMeta, DataBlock, IndexEntry, BLOCK_META_SIZE, BLOOM_FILTER_BITS,
-    INDEX_META_SIZE,
+    BlockEntry, BlockMeta, DataBlock, EncodedDataBlock, IndexEntry, TsmError, TsmResult,
+    BLOCK_META_SIZE, BLOOM_FILTER_BITS, INDEX_META_SIZE,
 };
 
 // A TSM file is composed for four sections: header, blocks, index and the footer.
@@ -58,38 +57,6 @@ const HEADER_LEN: u64 = 5;
 const TSM_MAGIC: [u8; 4] = 0x01346613_u32.to_be_bytes();
 const VERSION: [u8; 1] = [1];
 
-pub type WriteTsmResult<T, E = WriteTsmError> = std::result::Result<T, E>;
-
-#[derive(Snafu, Debug)]
-#[snafu(visibility(pub))]
-pub enum WriteTsmError {
-    #[snafu(display("IO error: {source}"))]
-    IO { source: std::io::Error },
-
-    #[snafu(display("Encode error: {source}"))]
-    Encode {
-        source: Box<dyn std::error::Error + Send + Sync>,
-    },
-
-    #[snafu(display(
-        "File size ({cur_size} B) exceed max_file_size ({max_size} B) after write {write_size} B"
-    ))]
-    MaxFileSizeExceed {
-        cur_size: u64,
-        max_size: u64,
-        write_size: usize,
-    },
-
-    #[snafu(display("Writing to finished tsm writer '{}'", path.display()))]
-    Finished { path: PathBuf },
-}
-
-impl From<WriteTsmError> for Error {
-    fn from(wtr: WriteTsmError) -> Self {
-        Error::WriteTsm { source: wtr }
-    }
-}
-
 struct IndexBuf {
     index_offset: u64,
     buf: BTreeMap<FieldId, IndexEntry>,
@@ -116,7 +83,7 @@ impl IndexBuf {
         self.bloom_filter.insert(&fid.to_be_bytes()[..]);
     }
 
-    pub async fn write_to(&self, writer: &mut FileCursor) -> WriteTsmResult<usize> {
+    pub async fn write_to(&self, writer: &mut FileCursor) -> TsmResult<usize> {
         let mut size = 0_usize;
 
         let mut buf = vec![0_u8; BLOCK_META_SIZE];
@@ -125,11 +92,18 @@ impl IndexBuf {
             writer
                 .write(&buf[..INDEX_META_SIZE])
                 .await
-                .context(IOSnafu)?;
+                .with_context(|_| super::WriteSnafu {
+                    path: writer.open_path().clone(),
+                })?;
             size += INDEX_META_SIZE;
             for blk in idx.blocks.iter() {
                 blk.encode(&mut buf);
-                writer.write(&buf[..]).await.context(IOSnafu)?;
+                writer
+                    .write(&buf[..])
+                    .await
+                    .with_context(|_| super::WriteSnafu {
+                        path: writer.open_path().clone(),
+                    })?;
                 size += BLOCK_META_SIZE;
             }
         }
@@ -178,13 +152,16 @@ impl TsmWriter {
         sequence: u64,
         is_delta: bool,
         max_size: u64,
-    ) -> Result<Self> {
+    ) -> TsmResult<Self> {
         let final_path: PathBuf = path.as_ref().into();
         let mut tmp_path_str = final_path.as_os_str().to_os_string();
         tmp_path_str.push(".tmp");
         let tmp_path = PathBuf::from(tmp_path_str);
 
-        let writer = file_manager::create_file(&tmp_path).await?.into();
+        let writer = file_manager::create_file(&tmp_path)
+            .await
+            .context(super::OpenSnafu)?
+            .into();
         let mut w = Self {
             tmp_path,
             final_path,
@@ -198,10 +175,8 @@ impl TsmWriter {
             max_size,
             index_buf: IndexBuf::new(),
         };
-        write_header_to(&mut w.writer)
-            .await
-            .context(error::WriteTsmSnafu)
-            .map(|s| w.size = s as u64)?;
+        let size = write_header_to(&mut w.writer).await?;
+        w.size += size as u64;
         Ok(w)
     }
 
@@ -239,13 +214,9 @@ impl TsmWriter {
 
     /// Write a DataBlock to tsm file. If the max_size is greater than 0,
     /// then check if the current size exceeded, if so return Err(MaxFileSizeExceed).
-    pub async fn write_block(
-        &mut self,
-        field_id: FieldId,
-        block: &DataBlock,
-    ) -> WriteTsmResult<usize> {
+    pub async fn write_block(&mut self, field_id: FieldId, block: &DataBlock) -> TsmResult<usize> {
         if self.finished {
-            return Err(WriteTsmError::Finished {
+            return Err(TsmError::Finished {
                 path: self.final_path.clone(),
             });
         }
@@ -257,7 +228,7 @@ impl TsmWriter {
         let size = write_block_to(&mut self.writer, &mut self.index_buf, field_id, block).await?;
         self.size += size as u64;
         if self.max_size > 0 && self.size >= self.max_size {
-            Err(WriteTsmError::MaxFileSizeExceed {
+            Err(TsmError::MaxFileSizeExceed {
                 max_size: self.max_size,
                 cur_size: self.size,
                 write_size: size,
@@ -273,9 +244,9 @@ impl TsmWriter {
         &mut self,
         field_id: FieldId,
         block: &EncodedDataBlock,
-    ) -> WriteTsmResult<usize> {
+    ) -> TsmResult<usize> {
         if self.finished {
-            return Err(WriteTsmError::Finished {
+            return Err(TsmError::Finished {
                 path: self.final_path.clone(),
             });
         }
@@ -288,7 +259,7 @@ impl TsmWriter {
             write_encoded_block_to(&mut self.writer, &mut self.index_buf, field_id, block).await?;
         self.size += size as u64;
         if self.max_size > 0 && self.size >= self.max_size {
-            Err(WriteTsmError::MaxFileSizeExceed {
+            Err(TsmError::MaxFileSizeExceed {
                 max_size: self.max_size,
                 cur_size: self.size,
                 write_size: size,
@@ -300,13 +271,9 @@ impl TsmWriter {
 
     /// Write a u8 slice to tsm file. If the max_size is greater than 0,
     /// then check if the current size exceeded, if so return Err(MaxFileSizeExceed).
-    pub async fn write_raw(
-        &mut self,
-        block_meta: &BlockMeta,
-        block: &[u8],
-    ) -> WriteTsmResult<usize> {
+    pub async fn write_raw(&mut self, block_meta: &BlockMeta, block: &[u8]) -> TsmResult<usize> {
         if self.finished {
-            return Err(WriteTsmError::Finished {
+            return Err(TsmError::Finished {
                 path: self.final_path.clone(),
             });
         }
@@ -317,7 +284,7 @@ impl TsmWriter {
             write_raw_data_to(&mut self.writer, &mut self.index_buf, block_meta, block).await?;
         self.size += size as u64;
         if self.max_size > 0 && self.size >= self.max_size {
-            Err(WriteTsmError::MaxFileSizeExceed {
+            Err(TsmError::MaxFileSizeExceed {
                 max_size: self.max_size,
                 cur_size: self.size,
                 write_size: size,
@@ -327,9 +294,9 @@ impl TsmWriter {
         }
     }
 
-    pub async fn write_index(&mut self) -> WriteTsmResult<usize> {
+    pub async fn write_index(&mut self) -> TsmResult<usize> {
         if self.finished {
-            return Err(WriteTsmError::Finished {
+            return Err(TsmError::Finished {
                 path: self.final_path.clone(),
             });
         }
@@ -346,14 +313,22 @@ impl TsmWriter {
         Ok(len1 + len2)
     }
 
-    pub async fn finish(&mut self) -> WriteTsmResult<()> {
+    pub async fn finish(&mut self) -> TsmResult<()> {
         if self.finished {
-            return Err(WriteTsmError::Finished {
+            return Err(TsmError::Finished {
                 path: self.final_path.clone(),
             });
         }
-        self.writer.sync_data().await.context(IOSnafu)?;
-        std::fs::rename(&self.tmp_path, &self.final_path).context(IOSnafu)?;
+        self.writer
+            .sync_data()
+            .await
+            .with_context(|_| super::SyncSnafu {
+                path: self.writer.open_path().clone(),
+            })?;
+        std::fs::rename(&self.tmp_path, &self.final_path).with_context(|_| super::RenameSnafu {
+            old: self.tmp_path.clone(),
+            new: self.final_path.clone(),
+        })?;
         self.finished = true;
         Ok(())
     }
@@ -369,17 +344,19 @@ pub async fn new_tsm_writer(
     tsm_sequence: u64,
     is_delta: bool,
     max_size: u64,
-) -> Result<TsmWriter> {
+) -> TskvResult<TsmWriter> {
     let tsm_path = if is_delta {
         file_utils::make_delta_file_name(dir, tsm_sequence)
     } else {
         file_utils::make_tsm_file_name(dir, tsm_sequence)
     };
-    TsmWriter::open(tsm_path, tsm_sequence, is_delta, max_size).await
+    TsmWriter::open(tsm_path, tsm_sequence, is_delta, max_size)
+        .await
+        .context(error::TsmSnafu)
 }
 
-pub async fn write_header_to(writer: &mut FileCursor) -> WriteTsmResult<usize> {
-    let size = writer
+pub async fn write_header_to(writer: &mut FileCursor) -> TsmResult<usize> {
+    writer
         .write_vec(
             [
                 IoSlice::new(TSM_MAGIC.as_slice()),
@@ -388,9 +365,9 @@ pub async fn write_header_to(writer: &mut FileCursor) -> WriteTsmResult<usize> {
             .as_mut_slice(),
         )
         .await
-        .context(IOSnafu)?;
-
-    Ok(size)
+        .with_context(|_| super::WriteSnafu {
+            path: writer.open_path().clone(),
+        })
 }
 
 async fn write_raw_data_to(
@@ -398,7 +375,7 @@ async fn write_raw_data_to(
     index_buf: &mut IndexBuf,
     block_meta: &BlockMeta,
     block: &[u8],
-) -> WriteTsmResult<usize> {
+) -> TsmResult<usize> {
     let mut size = 0_usize;
     let offset = writer.pos();
     writer
@@ -407,7 +384,9 @@ async fn write_raw_data_to(
         .map(|s| {
             size += s;
         })
-        .context(IOSnafu)?;
+        .with_context(|_| super::WriteSnafu {
+            path: writer.open_path().clone(),
+        })?;
 
     index_buf.insert_block_meta(
         IndexEntry {
@@ -426,7 +405,7 @@ async fn write_block_to(
     index_buf: &mut IndexBuf,
     field_id: FieldId,
     block: &DataBlock,
-) -> WriteTsmResult<usize> {
+) -> TsmResult<usize> {
     if block.is_empty() {
         return Ok(0);
     }
@@ -436,7 +415,7 @@ async fn write_block_to(
     // TODO Make encoding result streamable
     let (ts_buf, data_buf) = block
         .encode(0, block.len(), block.encodings())
-        .context(EncodeSnafu)?;
+        .context(super::EncodeSnafu)?;
 
     let size = writer
         .write_vec(
@@ -449,7 +428,9 @@ async fn write_block_to(
             .as_mut_slice(),
         )
         .await
-        .context(IOSnafu)?;
+        .with_context(|_| super::WriteSnafu {
+            path: writer.open_path().clone(),
+        })?;
 
     index_buf.insert_block_meta(
         IndexEntry {
@@ -469,7 +450,7 @@ async fn write_encoded_block_to(
     index_buf: &mut IndexBuf,
     field_id: FieldId,
     block: &EncodedDataBlock,
-) -> WriteTsmResult<usize> {
+) -> TsmResult<usize> {
     if block.count == 0 || block.ts.is_empty() {
         return Ok(0);
     }
@@ -486,7 +467,9 @@ async fn write_encoded_block_to(
             .as_mut_slice(),
         )
         .await
-        .context(IOSnafu)?;
+        .with_context(|_| super::WriteSnafu {
+            path: writer.open_path().clone(),
+        })?;
 
     let time_range = block.time_range.expect("EncodedDataBlock is not empty");
 
@@ -514,7 +497,7 @@ async fn write_footer_to(
     writer: &mut FileCursor,
     bloom_filter: &BloomFilter,
     index_offset: u64,
-) -> WriteTsmResult<usize> {
+) -> TsmResult<usize> {
     let size = writer
         .write_vec(
             [
@@ -524,48 +507,50 @@ async fn write_footer_to(
             .as_mut_slice(),
         )
         .await
-        .context(IOSnafu)?;
+        .with_context(|_| super::WriteSnafu {
+            path: writer.open_path().clone(),
+        })?;
     Ok(size)
 }
 
 #[cfg(test)]
 pub mod tsm_writer_tests {
     use std::collections::HashMap;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
     use models::FieldId;
     use snafu::ResultExt;
 
-    use crate::error::{self, Result};
     use crate::file_system::file_manager::{self};
     use crate::file_utils::{self, make_tsm_file_name};
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::tsm_reader_tests::read_and_check;
-    use crate::tsm::{DataBlock, TsmReader, TsmWriter};
+    use crate::tsm::{self, DataBlock, TsmError, TsmReader, TsmResult, TsmWriter};
 
     const TEST_PATH: &str = "/tmp/test/tsm_writer";
 
     pub async fn write_to_tsm(
         path: impl AsRef<Path>,
         data: &HashMap<FieldId, Vec<DataBlock>>,
-    ) -> Result<()> {
-        let tsm_seq = file_utils::get_tsm_file_id_by_path(&path)?;
+    ) -> TsmResult<()> {
+        let tsm_seq =
+            file_utils::get_tsm_file_id_by_path(&path).context(tsm::InvalidFileNameSnafu)?;
         let path = path.as_ref();
         let dir = path.parent().unwrap();
         if !file_manager::try_exists(dir) {
-            std::fs::create_dir_all(dir).context(super::IOSnafu)?;
+            std::fs::create_dir_all(dir).map_err(|e| TsmError::Other {
+                path: PathBuf::new(),
+                message: format!("Failed to create directory '{}'", dir.display()),
+            })?;
         }
         let mut writer = TsmWriter::open(path, tsm_seq, false, 0).await?;
         for (fid, blks) in data.iter() {
             for blk in blks.iter() {
-                writer
-                    .write_block(*fid, blk)
-                    .await
-                    .context(error::WriteTsmSnafu)?;
+                writer.write_block(*fid, blk).await?;
             }
         }
-        writer.write_index().await.context(error::WriteTsmSnafu)?;
-        writer.finish().await.context(error::WriteTsmSnafu)
+        writer.write_index().await?;
+        writer.finish().await
     }
 
     #[tokio::test]

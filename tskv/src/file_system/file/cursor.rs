@@ -1,5 +1,6 @@
 use std::io::{Error, ErrorKind, IoSlice, Result, SeekFrom};
 use std::ops::Deref;
+use std::path::PathBuf;
 
 use crate::file_system::file::async_file::AsyncFile;
 use crate::file_system::file::IFile;
@@ -72,6 +73,10 @@ impl FileCursor {
         }
         .ok_or_else(|| Error::new(ErrorKind::InvalidInput, "underflow or overflow during seek"))?;
         Ok(self.pos)
+    }
+
+    pub fn open_path(&self) -> &PathBuf {
+        self.file.open_path()
     }
 }
 

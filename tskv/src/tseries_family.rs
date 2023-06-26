@@ -8,11 +8,12 @@ use lru_cache::asynchronous::ShardedCache;
 use memory_pool::MemoryPoolRef;
 use metrics::gauge::U64Gauge;
 use metrics::metric_register::MetricsRegister;
-use models::meta_data::VnodeStatus;
+use models::meta_data::{VnodeId, VnodeStatus};
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::schema::{split_owner, TableColumn};
 use models::{FieldId, SchemaId, SeriesId, Timestamp};
 use parking_lot::RwLock;
+use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Sender;
 use tokio::time::Instant;
@@ -21,14 +22,14 @@ use trace::{debug, error, info, warn};
 use utils::BloomFilter;
 
 use crate::compaction::{CompactTask, FlushReq};
-use crate::error::Result;
+use crate::error::{self, Result};
 use crate::file_utils::{make_delta_file_name, make_tsm_file_name};
 use crate::kv_option::{CacheOptions, StorageOptions};
 use crate::memcache::{DataType, FieldVal, MemCache, RowGroup};
 use crate::summary::{CompactMeta, VersionEdit};
-use crate::tsm::{DataBlock, TsmReader, TsmTombstone};
-use crate::Error::CommonError;
-use crate::{ColumnFileId, LevelId, TseriesFamilyId};
+use crate::tsm::{DataBlock, TsmError, TsmReader, TsmTombstone};
+use crate::Error::{self, CommonError};
+use crate::{ColumnFileId, LevelId};
 
 #[derive(Debug)]
 pub struct ColumnFile {
@@ -110,9 +111,21 @@ impl ColumnFile {
     pub async fn add_tombstone(&self, field_ids: &[FieldId], time_range: &TimeRange) -> Result<()> {
         let dir = self.path.parent().expect("file has parent");
         // TODO flock tombstone file.
-        let mut tombstone = TsmTombstone::open(dir, self.file_id).await?;
-        tombstone.add_range(field_ids, time_range).await?;
-        tombstone.flush().await?;
+        let mut tombstone =
+            TsmTombstone::open(dir, self.file_id)
+                .await
+                .map_err(|e| Error::Tsm {
+                    source: TsmError::Tombstone { source: e },
+                })?;
+        tombstone
+            .add_range(field_ids, time_range)
+            .await
+            .map_err(|e| Error::Tsm {
+                source: TsmError::Tombstone { source: e },
+            })?;
+        tombstone.flush().await.map_err(|e| Error::Tsm {
+            source: TsmError::Tombstone { source: e },
+        })?;
         Ok(())
     }
 }
@@ -343,7 +356,7 @@ impl LevelInfo {
 
 #[derive(Debug)]
 pub struct Version {
-    pub ts_family_id: TseriesFamilyId,
+    pub ts_family_id: VnodeId,
     pub database: Arc<String>,
     pub storage_opt: Arc<StorageOptions>,
     /// The max seq_no of write batch in wal flushed to column file.
@@ -357,7 +370,7 @@ pub struct Version {
 impl Version {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        ts_family_id: TseriesFamilyId,
+        ts_family_id: VnodeId,
         database: Arc<String>,
         storage_opt: Arc<StorageOptions>,
         last_seq: u64,
@@ -453,7 +466,7 @@ impl Version {
         self.max_level_ts = max_ts;
     }
 
-    pub fn tf_id(&self) -> TseriesFamilyId {
+    pub fn tf_id(&self) -> VnodeId {
         self.ts_family_id
     }
 
@@ -469,6 +482,7 @@ impl Version {
         self.storage_opt.clone()
     }
 
+    /// Get `ColumnFile`s which overlaps thie time_range, and contains any of the field_ids.
     pub fn column_files(
         &self,
         field_ids: &[FieldId],
@@ -486,11 +500,6 @@ impl Version {
             .collect()
     }
 
-    // todo:
-    pub fn get_ts_overlap(&self, _level: u32, _ts_min: i64, _ts_max: i64) -> Vec<Arc<ColumnFile>> {
-        vec![]
-    }
-
     pub async fn get_tsm_reader(&self, path: impl AsRef<Path>) -> Result<Arc<TsmReader>> {
         let path = format!("{}", path.as_ref().display());
         let tsm_reader = match self.tsm_reader_cache.get(&path).await {
@@ -500,7 +509,7 @@ impl Version {
                 match lock.get(&path) {
                     Some(val) => val.clone(),
                     None => {
-                        let tsm_reader = TsmReader::open(&path).await?;
+                        let tsm_reader = TsmReader::open(&path).await.context(error::TsmSnafu)?;
                         lock.insert(path, Arc::new(tsm_reader)).unwrap().clone()
                     }
                 }
@@ -641,7 +650,7 @@ impl TsfMetrics {
 
 #[derive(Debug)]
 pub struct TseriesFamily {
-    tf_id: TseriesFamilyId,
+    tf_id: VnodeId,
     database: Arc<String>,
     mut_cache: Arc<RwLock<MemCache>>,
     immut_cache: Vec<Arc<RwLock<MemCache>>>,
@@ -664,7 +673,7 @@ impl TseriesFamily {
     pub const MAX_DATA_BLOCK_SIZE: u32 = 1000;
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        tf_id: TseriesFamilyId,
+        tf_id: VnodeId,
         database: Arc<String>,
         cache: MemCache,
         version: Arc<Version>,
@@ -940,7 +949,7 @@ impl TseriesFamily {
         version_edit
     }
 
-    pub fn tf_id(&self) -> TseriesFamilyId {
+    pub fn tf_id(&self) -> VnodeId {
         self.tf_id
     }
 
@@ -1035,7 +1044,7 @@ pub mod test_tseries_family {
     use crate::tseries_family::{TimeRange, TseriesFamily, Version};
     use crate::tsm::TsmTombstone;
     use crate::version_set::VersionSet;
-    use crate::TseriesFamilyId;
+    use crate::VnodeId;
 
     #[tokio::test]
     async fn test_version_apply_version_edits_1() {
@@ -1262,7 +1271,7 @@ pub mod test_tseries_family {
     pub(crate) fn build_version_by_column_files(
         storage_opt: Arc<StorageOptions>,
         database: Arc<String>,
-        ts_family_id: TseriesFamilyId,
+        ts_family_id: VnodeId,
         mut files: Vec<Arc<ColumnFile>>,
     ) -> Version {
         files.sort_by_key(|f| f.file_id);
@@ -1363,7 +1372,7 @@ pub mod test_tseries_family {
     // Util function for testing with summary modification.
     async fn update_ts_family_version(
         version_set: Arc<tokio::sync::RwLock<VersionSet>>,
-        ts_family_id: TseriesFamilyId,
+        ts_family_id: VnodeId,
         mut summary_task_receiver: Receiver<SummaryTask>,
     ) {
         let mut version_edits: Vec<VersionEdit> = Vec::new();

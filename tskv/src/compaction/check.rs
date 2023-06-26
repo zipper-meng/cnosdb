@@ -10,6 +10,7 @@ use datafusion::arrow::datatypes::{
     DataType as ArrowDataType, Field as ArrowField, Schema, SchemaRef,
 };
 use datafusion::arrow::record_batch::RecordBatch;
+use models::meta_data::VnodeId;
 use models::predicate::domain::TimeRange;
 use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp};
 use tokio::sync::RwLock;
@@ -18,7 +19,6 @@ use crate::compaction::CompactIterator;
 use crate::error::{Error, Result};
 use crate::tseries_family::TseriesFamily;
 use crate::tsm::{DataBlock, TsmReader};
-use crate::TseriesFamilyId;
 
 const DEFAULT_DURATION: i64 = 24 * 60 * 60 * 1_000_000_000;
 
@@ -34,14 +34,14 @@ pub fn hash_to_string(hash: Hash) -> String {
 
 #[derive(Default, Debug)]
 pub struct VnodeHashTreeNode {
-    pub vnode_id: TseriesFamilyId,
+    pub vnode_id: VnodeId,
     pub fields: Vec<FieldHashTreeNode>,
     min_ts: Timestamp,
     max_ts: Timestamp,
 }
 
 impl VnodeHashTreeNode {
-    pub fn with_capacity(vnode_id: TseriesFamilyId, capacity: usize) -> Self {
+    pub fn with_capacity(vnode_id: VnodeId, capacity: usize) -> Self {
         Self {
             vnode_id,
             fields: Vec::with_capacity(capacity),
@@ -358,7 +358,7 @@ fn hash_partial_datablock(
 
 async fn read_from_compact_iterator(
     mut _iter: CompactIterator,
-    _vnode_id: TseriesFamilyId,
+    _vnode_id: VnodeId,
     _time_range_nanosec: i64,
 ) -> Result<HashMap<FieldId, Vec<(TimeRange, Hash)>>> {
     // let mut fid_tr_hash_val_map: HashMap<FieldId, Vec<(TimeRange, Hash)>> = HashMap::new();
@@ -477,7 +477,7 @@ mod test {
     use crate::tseries_family::TseriesFamily;
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::DataBlock;
-    use crate::{Engine, Options, TsKv, TseriesFamilyId};
+    use crate::{Engine, Options, TsKv, VnodeId};
 
     fn parse_nanos(datetime: &str) -> Timestamp {
         NaiveDateTime::parse_from_str(datetime, "%Y-%m-%d %H:%M:%S")
@@ -692,7 +692,7 @@ mod test {
 
     async fn do_write_batch(
         engine: &TsKv,
-        vnode_id: TseriesFamilyId,
+        vnode_id: VnodeId,
         timestamps: Vec<i64>,
         tenant: &str,
         database: &str,
@@ -854,7 +854,7 @@ mod test {
         runtime: Arc<Runtime>,
         meta_manager: MetaRef,
         meta_client: MetaClientRef,
-        vnode_id: TseriesFamilyId,
+        vnode_id: VnodeId,
         tenant: &str,
         database: &str,
         table: &str,
@@ -969,7 +969,7 @@ mod test {
         let _ = std::fs::remove_dir_all(&base_dir);
         let tenant_name = "cnosdb".to_string();
         let database_name = "test_get_vnode_hash_tree".to_string();
-        let vnode_id: TseriesFamilyId = 1;
+        let vnode_id: VnodeId = 1;
         let table_name = "test_table".to_string();
 
         let timestamps = vec![

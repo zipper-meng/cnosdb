@@ -5,8 +5,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use config::Config;
-
-use crate::TseriesFamilyId;
+use models::meta_data::VnodeId;
 
 const SUMMARY_PATH: &str = "summary";
 pub const INDEX_PATH: &str = "index";
@@ -66,35 +65,35 @@ impl StorageOptions {
         self.path.join(DATA_PATH).join(database)
     }
 
-    pub fn ts_family_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+    pub fn ts_family_dir(&self, database: &str, ts_family_id: VnodeId) -> PathBuf {
         self.database_dir(database).join(ts_family_id.to_string())
     }
 
-    pub fn index_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+    pub fn index_dir(&self, database: &str, ts_family_id: VnodeId) -> PathBuf {
         self.database_dir(database)
             .join(ts_family_id.to_string())
             .join(INDEX_PATH)
     }
 
-    pub fn tsm_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+    pub fn tsm_dir(&self, database: &str, ts_family_id: VnodeId) -> PathBuf {
         self.database_dir(database)
             .join(ts_family_id.to_string())
             .join(TSM_PATH)
     }
 
-    pub fn move_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+    pub fn move_dir(&self, database: &str, ts_family_id: VnodeId) -> PathBuf {
         self.database_dir(database)
             .join(ts_family_id.to_string())
             .join(MOVE_PATH)
     }
 
-    pub fn delta_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+    pub fn delta_dir(&self, database: &str, ts_family_id: VnodeId) -> PathBuf {
         self.database_dir(database)
             .join(ts_family_id.to_string())
             .join(DELTA_PATH)
     }
 
-    pub fn tsfamily_dir(&self, database: &str, ts_family_id: TseriesFamilyId) -> PathBuf {
+    pub fn tsfamily_dir(&self, database: &str, ts_family_id: VnodeId) -> PathBuf {
         self.database_dir(database).join(ts_family_id.to_string())
     }
 }

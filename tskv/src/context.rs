@@ -2,11 +2,10 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
+use models::meta_data::VnodeId;
 use parking_lot::RwLock;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::Receiver;
-
-use crate::TseriesFamilyId;
 
 #[derive(Default, Debug)]
 pub struct GlobalContext {
@@ -72,7 +71,7 @@ pub struct GlobalSequenceContext {
 }
 
 impl GlobalSequenceContext {
-    pub fn new(tsf_seq_map: HashMap<TseriesFamilyId, u64>) -> Self {
+    pub fn new(tsf_seq_map: HashMap<VnodeId, u64>) -> Self {
         let mut inner = GlobalSequenceContextInner {
             min_seq: 0_u64,
             tsf_seq_map,
@@ -87,8 +86,8 @@ impl GlobalSequenceContext {
     /// Write lock the inner, apply arguments, then update atomic min_seq.
     pub fn next_stage(
         &self,
-        del_ts_family: HashSet<TseriesFamilyId>,
-        ts_family_min_seq: HashMap<TseriesFamilyId, u64>,
+        del_ts_family: HashSet<VnodeId>,
+        ts_family_min_seq: HashMap<VnodeId, u64>,
     ) {
         let mut inner = self.inner.write();
 
@@ -116,7 +115,7 @@ impl GlobalSequenceContext {
         self.inner.read().max_seq()
     }
 
-    pub fn cloned(&self) -> HashMap<TseriesFamilyId, u64> {
+    pub fn cloned(&self) -> HashMap<VnodeId, u64> {
         self.inner.read().tsf_seq_map.clone()
     }
 }
@@ -146,7 +145,7 @@ struct GlobalSequenceContextInner {
     /// among all `TseriesFamily`s in all `Database`s.ß
     min_seq: u64,
     /// Maps `TseriesFamily`-ID to it's last sequence number flushed to disk.
-    tsf_seq_map: HashMap<TseriesFamilyId, u64>,
+    tsf_seq_map: HashMap<VnodeId, u64>,
 }
 
 impl GlobalSequenceContextInner {
@@ -173,8 +172,8 @@ impl GlobalSequenceContextInner {
 }
 
 pub struct GlobalSequenceTask {
-    pub del_ts_family: HashSet<TseriesFamilyId>,
-    pub ts_family_min_seq: HashMap<TseriesFamilyId, u64>,
+    pub del_ts_family: HashSet<VnodeId>,
+    pub ts_family_min_seq: HashMap<VnodeId, u64>,
 }
 
 /// Start a async job to maintain GlobalSequenceCOntext.

@@ -1,11 +1,17 @@
+use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
 use lazy_static::lazy_static;
 use regex::Regex;
 use tokio::fs;
 
+use crate::error::GenericError;
 use crate::file_system::file_manager;
-use crate::{Error, Result};
+
+const INDEX_BINLOG: &str = "index binlog";
+const SUMMARY: &str = "summary";
+const WAL: &str = "wal";
+const TSM: &str = "tsm";
 
 lazy_static! {
     static ref SUMMARY_FILE_NAME_PATTERN: Regex = Regex::new(r"summary-\d{6}").unwrap();
@@ -14,6 +20,35 @@ lazy_static! {
     static ref SCHEMA_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d{6}\.schema").unwrap();
     static ref HINTEDOFF_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d{6}\.hh").unwrap();
     static ref INDEX_BINLOG_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d{6}\.binlog").unwrap();
+}
+
+fn err_path_terminates_with_double_dot<T>(path: &Path) -> Result<T, GenericError> {
+    Err(format!("path '{}' terminates in '..'", path.display()).into())
+}
+
+fn err_file_name_is_not_utf8<T>(
+    file_type: &'static str,
+    file_name: &OsStr,
+) -> Result<T, GenericError> {
+    Err(format!(
+        "{file_type} file's name '{}' is not valid utf8 string",
+        file_name.to_string_lossy()
+    )
+    .into())
+}
+
+fn err_file_does_not_have_id<T>(
+    file_type: &'static str,
+    file_name: &str,
+) -> Result<T, GenericError> {
+    Err(format!("{file_type} file's name '{file_name}' does not contain an id").into())
+}
+
+fn err_file_have_invalid_id<T>(
+    file_type: &'static str,
+    file_name: &str,
+) -> Result<T, GenericError> {
+    Err(format!("{file_type} file's name '{file_name}' contains an invalid id").into())
 }
 
 // Summary file.
@@ -31,27 +66,20 @@ pub fn check_summary_file_name(file_name: &str) -> bool {
     SUMMARY_FILE_NAME_PATTERN.is_match(file_name)
 }
 
-pub async fn rename(old_name: impl AsRef<Path>, new_name: impl AsRef<Path>) -> Result<()> {
+pub async fn rename(old_name: impl AsRef<Path>, new_name: impl AsRef<Path>) -> std::io::Result<()> {
     fs::create_dir_all(new_name.as_ref().parent().unwrap()).await?;
-    fs::rename(old_name, new_name)
-        .await
-        .map_err(|e| Error::IO { source: e })
+    fs::rename(old_name, new_name).await
 }
 
-pub fn get_summary_file_id(file_name: &str) -> Result<u64> {
+pub fn get_summary_file_id(file_name: &str) -> Result<u64, GenericError> {
     if !check_summary_file_name(file_name) {
-        return Err(Error::InvalidFileName {
-            file_name: file_name.to_string(),
-            message: "summary file name does not contain an id".to_string(),
-        });
+        return err_file_does_not_have_id(SUMMARY, file_name);
     }
     let (_, file_number) = file_name.split_at(8);
-    file_number
-        .parse::<u64>()
-        .map_err(|_| Error::InvalidFileName {
-            file_name: file_name.to_string(),
-            message: "summary file name contains an invalid id".to_string(),
-        })
+    match file_number.parse::<u64>() {
+        Err(_) => err_file_have_invalid_id(SUMMARY, file_name),
+        Ok(id) => Ok(id),
+    }
 }
 
 // index binlog files.
@@ -65,20 +93,15 @@ pub fn check_index_binlog_file_name(file_name: &str) -> bool {
     INDEX_BINLOG_FILE_NAME_PATTERN.is_match(file_name)
 }
 
-pub fn get_index_binlog_file_id(file_name: &str) -> Result<u64> {
+pub fn get_index_binlog_file_id(file_name: &str) -> Result<u64, GenericError> {
     if !check_index_binlog_file_name(file_name) {
-        return Err(Error::InvalidFileName {
-            file_name: file_name.to_string(),
-            message: "index binlog file name does not contain an id".to_string(),
-        });
+        return err_file_does_not_have_id(INDEX_BINLOG, file_name);
     }
     let file_number = &file_name[1..7];
-    file_number
-        .parse::<u64>()
-        .map_err(|_| Error::InvalidFileName {
-            file_name: file_name.to_string(),
-            message: "index binlog file name contains an invalid id".to_string(),
-        })
+    match file_number.parse::<u64>() {
+        Err(_) => err_file_have_invalid_id(INDEX_BINLOG, file_name),
+        Ok(id) => Ok(id),
+    }
 }
 
 // WAL (write ahead log) file.
@@ -91,20 +114,15 @@ pub fn check_wal_file_name(file_name: &str) -> bool {
     WAL_FILE_NAME_PATTERN.is_match(file_name)
 }
 
-pub fn get_wal_file_id(file_name: &str) -> Result<u64> {
+pub fn get_wal_file_id(file_name: &str) -> Result<u64, GenericError> {
     if !check_wal_file_name(file_name) {
-        return Err(Error::InvalidFileName {
-            file_name: file_name.to_string(),
-            message: "wal file name does not contain an id".to_string(),
-        });
+        return err_file_does_not_have_id(WAL, file_name);
     }
     let file_number = &file_name[1..7];
-    file_number
-        .parse::<u64>()
-        .map_err(|_| Error::InvalidFileName {
-            file_name: file_name.to_string(),
-            message: "wal file name contains an invalid id".to_string(),
-        })
+    match file_number.parse::<u64>() {
+        Err(_) => err_file_have_invalid_id(WAL, file_name),
+        Ok(id) => Ok(id),
+    }
 }
 
 // TSM file
@@ -113,28 +131,26 @@ pub fn make_tsm_file_name(path: impl AsRef<Path>, sequence: u64) -> PathBuf {
     path.as_ref().join(p)
 }
 
-pub fn get_tsm_file_id_by_path(tsm_path: impl AsRef<Path>) -> Result<u64> {
+pub fn get_tsm_file_id_by_path(tsm_path: impl AsRef<Path>) -> Result<u64, GenericError> {
     let path = tsm_path.as_ref();
-    let file_name = path
-        .file_name()
-        .expect("path must not be '..'")
-        .to_str()
-        .expect("file name must be UTF-8 string");
-    if file_name.len() == 1 {
-        return Err(Error::InvalidFileName {
-            file_name: file_name.to_string(),
-            message: "tsm file name contains an invalid id".to_string(),
-        });
+    let file_name = match path.file_name() {
+        Some(f) => f,
+        None => return err_path_terminates_with_double_dot(path),
+    };
+    let file_name_utf8 = match file_name.to_str() {
+        Some(f) => f,
+        None => return err_file_name_is_not_utf8(TSM, file_name),
+    };
+    if file_name_utf8.len() == 1 {
+        return err_file_have_invalid_id(TSM, file_name_utf8);
     }
-    let start = file_name.find('_').unwrap_or(0_usize) + 1;
-    let end = file_name.find('.').unwrap_or(file_name.len());
-    let file_number = &file_name[start..end];
-    file_number
-        .parse::<u64>()
-        .map_err(|_| Error::InvalidFileName {
-            file_name: file_name.to_string(),
-            message: "tsm file name contains an invalid id".to_string(),
-        })
+    let start = file_name_utf8.find('_').unwrap_or(0_usize) + 1;
+    let end = file_name_utf8.find('.').unwrap_or(file_name_utf8.len());
+    let file_number = &file_name_utf8[start..end];
+    match file_number.parse::<u64>() {
+        Err(_) => err_file_have_invalid_id(TSM, file_name_utf8),
+        Ok(id) => Ok(id),
+    }
 }
 
 // TSM tombstone file
@@ -155,7 +171,7 @@ pub fn get_max_sequence_file_name<F>(
     get_sequence: F,
 ) -> Option<(PathBuf, u64)>
 where
-    F: Fn(&str) -> Result<u64>,
+    F: Fn(&str) -> Result<u64, GenericError>,
 {
     let segments = file_manager::list_file_names(dir);
     if segments.is_empty() {
@@ -199,22 +215,17 @@ pub fn get_file_id_range(dir: impl AsRef<Path>, suffix: &str) -> Option<(u64, u6
         return None;
     }
 
-    let pattern = Regex::new(&(r"_\d{6}\.".to_string() + suffix)).unwrap();
-    let get_file_id = |file_name: &str| -> Result<u64> {
+    let pattern = Regex::new(&(format!("_\\d{{6}}\\.{suffix}"))).unwrap();
+    let get_file_id = |file_name: &str| -> Result<u64, GenericError> {
         if !pattern.is_match(file_name) {
-            return Err(Error::InvalidFileName {
-                file_name: file_name.to_string(),
-                message: "index binlog file name does not contain an id".to_string(),
-            });
+            return err_file_does_not_have_id(INDEX_BINLOG, file_name);
         }
 
         let file_number = &file_name[1..7];
-        file_number
-            .parse::<u64>()
-            .map_err(|_| Error::InvalidFileName {
-                file_name: file_name.to_string(),
-                message: "index binlog file name contains an invalid id".to_string(),
-            })
+        match file_number.parse::<u64>() {
+            Err(_) => err_file_have_invalid_id(INDEX_BINLOG, file_name),
+            Ok(id) => Ok(id),
+        }
     };
 
     let mut max_id = 0;

@@ -5,38 +5,45 @@ use num_traits::ToPrimitive;
 use snafu::ResultExt;
 
 use super::{
-    file_crc_source_len, Reader, RecordDataType, FILE_FOOTER_LEN, FILE_MAGIC_NUMBER,
-    FILE_MAGIC_NUMBER_LEN, RECORD_MAGIC_NUMBER,
+    file_crc_source_len, Reader, RecordDataType, RecordFileError, RecordFileResult,
+    FILE_FOOTER_LEN, FILE_MAGIC_NUMBER, FILE_MAGIC_NUMBER_LEN, RECORD_MAGIC_NUMBER,
 };
-use crate::error::{self, Error, Result};
 use crate::file_system::file::cursor::FileCursor;
 use crate::file_system::file::IFile;
 use crate::file_system::file_manager;
 
 pub struct Writer {
-    path: PathBuf,
     cursor: FileCursor,
     footer: Option<[u8; FILE_FOOTER_LEN]>,
     file_size: u64,
 }
 
 impl Writer {
-    pub async fn open(path: impl AsRef<Path>, _data_type: RecordDataType) -> Result<Self> {
+    pub async fn open(path: impl AsRef<Path>, data_type: RecordDataType) -> RecordFileResult<Self> {
         let path = path.as_ref();
-        let mut cursor: FileCursor = file_manager::open_create_file(path).await?.into();
+        trace::trace!(
+            "Open record file writer (type {data_type}) '{}'",
+            path.display()
+        );
+
+        let mut cursor: FileCursor = file_manager::open_create_file(path)
+            .await
+            .with_context(|_| super::CreateFileSnafu { path: path.clone() })?
+            .into();
         let mut file_size = 0_u64;
         let footer = if cursor.is_empty() {
             // For new file, write file magic number, next write is at 4.
             file_size += cursor
                 .write(&FILE_MAGIC_NUMBER.to_be_bytes())
                 .await
-                .context(error::IOSnafu)? as u64;
+                .with_context(|_| super::WriteFileSnafu { path: path.clone() })?
+                as u64;
             // Get none as footer data.
             None
         } else {
             let footer_data = match Reader::read_footer(&path).await {
                 Ok((_, f)) => Some(f),
-                Err(Error::NoFooter) => None,
+                Err(RecordFileError::NoFooter) => None,
                 Err(e) => {
                     trace::error!(
                         "Failed to read footer of record_file '{}': {e}",
@@ -52,12 +59,11 @@ impl Writer {
             // TODO: truncate this file using seek_pos_end.
             cursor
                 .seek(SeekFrom::End(-(seek_pos_end as i64)))
-                .context(error::IOSnafu)?;
+                .with_context(|_| super::SeekFileSnafu { path: path.clone() })?;
 
             footer_data
         };
         Ok(Writer {
-            path: path.to_path_buf(),
             cursor,
             footer,
             file_size,
@@ -70,17 +76,15 @@ impl Writer {
         data_version: u8,
         data_type: u8,
         data: &[&[u8]],
-    ) -> Result<usize> {
+    ) -> RecordFileResult<usize> {
         let data_len: usize = data.iter().map(|d| (*d).len()).sum();
         let data_len = match data_len.to_u32() {
             Some(v) => v,
             None => {
-                return Err(Error::InvalidParam {
-                    reason: format!(
-                        "record(type: {}) length ({}) is not a valid u32, ignore this record",
-                        data_type,
-                        data.len()
-                    ),
+                return Err(RecordFileError::LenOverFlow {
+                    path: self.path().clone(),
+                    data_type,
+                    data_len: data_len as u64,
                 });
             }
         };
@@ -107,19 +111,20 @@ impl Writer {
         }
 
         // Write record header and record data.
-        let written_size =
-            self.cursor
-                .write_vec(&mut write_buf)
-                .await
-                .map_err(|e| Error::WriteFile {
-                    path: self.path.clone(),
-                    source: e,
-                })?;
+        let written_size = self.cursor.write_vec(&mut write_buf).await.map_err(|e| {
+            RecordFileError::WriteFile {
+                path: self.path().clone(),
+                source: e,
+            }
+        })?;
         self.file_size += written_size as u64;
         Ok(written_size)
     }
 
-    pub async fn write_footer(&mut self, mut footer: [u8; FILE_FOOTER_LEN]) -> Result<usize> {
+    pub async fn write_footer(
+        &mut self,
+        mut footer: [u8; FILE_FOOTER_LEN],
+    ) -> RecordFileResult<usize> {
         self.sync().await?;
 
         // Get file crc
@@ -127,8 +132,8 @@ impl Writer {
         self.cursor
             .read_at(FILE_MAGIC_NUMBER_LEN as u64, &mut buf)
             .await
-            .map_err(|e| Error::ReadFile {
-                path: self.path.clone(),
+            .map_err(|e| RecordFileError::ReadFile {
+                path: self.path().clone(),
                 source: e,
             })?;
         let crc = crc32fast::hash(&buf);
@@ -140,8 +145,8 @@ impl Writer {
         self.cursor
             .write(&footer)
             .await
-            .map_err(|e| Error::WriteFile {
-                path: self.path.clone(),
+            .map_err(|e| RecordFileError::WriteFile {
+                path: self.path().clone(),
                 source: e,
             })
     }
@@ -150,11 +155,16 @@ impl Writer {
         self.footer
     }
 
-    pub async fn sync(&self) -> Result<()> {
-        self.cursor.sync_data().await.context(error::SyncFileSnafu)
+    pub async fn sync(&self) -> RecordFileResult<()> {
+        self.cursor
+            .sync_data()
+            .await
+            .with_context(|_| super::SyncFileSnafu {
+                path: self.path().clone(),
+            })
     }
 
-    pub async fn close(&mut self) -> Result<()> {
+    pub async fn close(&mut self) -> RecordFileResult<()> {
         self.sync().await
     }
 
@@ -162,8 +172,8 @@ impl Writer {
         self.file_size
     }
 
-    pub fn path(&self) -> PathBuf {
-        self.path.clone()
+    pub fn path(&self) -> &PathBuf {
+        self.cursor.open_path()
     }
 }
 
@@ -173,14 +183,13 @@ mod test {
     use serial_test::serial;
 
     use super::Writer;
-    use crate::error::Result;
     use crate::file_system::file_manager;
     use crate::record_file::reader::test::{test_reader, test_reader_read_one};
-    use crate::record_file::{RecordDataType, FILE_FOOTER_LEN};
+    use crate::record_file::{RecordDataType, RecordFileResult, FILE_FOOTER_LEN};
 
     #[tokio::test]
     #[serial]
-    async fn test_writer() -> Result<()> {
+    async fn test_writer() -> RecordFileResult<()> {
         let path = "/tmp/test/record_file/1/test.log";
         if file_manager::try_exists(path) {
             std::fs::remove_file(path).unwrap();
@@ -203,7 +212,7 @@ mod test {
 
     #[tokio::test]
     #[serial]
-    async fn test_writer_truncated() -> Result<()> {
+    async fn test_writer_truncated() -> RecordFileResult<()> {
         let path = "/tmp/test/record_file/2/test.log";
         if file_manager::try_exists(path) {
             std::fs::remove_file(path).unwrap();
