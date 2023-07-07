@@ -1,4 +1,4 @@
-//! # WAL file
+//! # WAL (write ahead log) file
 //!
 //! A WAL file is a [`record_file`].
 //!
@@ -10,20 +10,6 @@
 //! +------------+------------+------------+------------+--------------+-----------------+-----------+
 //! |    type    |  sequence  |  vnode_id  |  precision | tenant_size  |  tenant         |   data    |
 //! +------------+------------+------------+------------+--------------+-----------------+-----------+
-//!
-//! # type = DeleteVnode
-//! +------------+------------+------------+-------------+-------------+----------+
-//! | 0: 1 byte  | 1: 8 bytes | 9: 4 bytes | 13: 8 bytes | 21: n bytes | n bytes  |
-//! +------------+------------+------------+-------------+-------------+----------+
-//! |    type    |  sequence  |  vnode_id  | tenant_size |  tenant     | database |
-//! +------------+------------+------------+-------------+-------------+----------+
-//!
-//! # type = DeleteTable
-//! +------------+------------+-------------+---------------+-----------------+---------------+---------+
-//! | 0: 1 byte  | 1: 8 bytes | 9: 8 bytes  | 17: 4 bytes   | 21: tenant_size | database_size | n bytes |
-//! +------------+------------+-------------+---------------+-----------------+---------------+---------+
-//! |    type    |  sequence  | tenant_size | database_size |  tenant         |  database     | table   |
-//! +------------+------------+-------------+---------------+-----------------+---------------+---------+
 //! ```
 //!
 //! ## Footer
@@ -35,6 +21,7 @@
 //! +------------+---------------+--------------+--------------+
 //! ```
 
+mod mal;
 mod reader;
 mod writer;
 
@@ -51,11 +38,11 @@ pub use reader::print_wal_statistics;
 use snafu::ResultExt;
 use tokio::sync::oneshot;
 
-use self::reader::WalEntry;
 use crate::context::GlobalSequenceContext;
 use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
 use crate::tsm::codec::get_str_codec;
+use crate::wal::reader::WalEntry;
 use crate::{error, file_utils, Engine, Error, Result};
 
 const ENTRY_TYPE_LEN: usize = 1;
@@ -258,8 +245,7 @@ impl WalManager {
 
         // Create a new wal file every time it starts.
         let (pre_max_seq, next_file_id) =
-            match file_utils::get_max_sequence_file_name(&config.path, file_utils::get_wal_file_id)
-            {
+            match file_utils::get_file_with_the_max_id(&config.path, file_utils::get_wal_file_id) {
                 Some((_, id)) => {
                     let path = file_utils::make_wal_file(&config.path, id);
                     let (_, max_seq) = reader::read_footer(&path).await?.unwrap_or((1_u64, 1_u64));
@@ -578,6 +564,34 @@ impl WalManager {
     }
 }
 
+pub fn wal_path_to_mal_path(wal_path: impl AsRef<Path>) -> Result<PathBuf> {
+    let wal_path = wal_path.as_ref();
+    let wal_dir = wal_path.parent().ok_or_else(|| Error::CommonError {
+        reason: format!(
+            "Failed to get parent from wal path '{}'",
+            wal_path.display()
+        ),
+    })?;
+    let wal_file_name = wal_path
+        .file_name()
+        .ok_or_else(|| Error::CommonError {
+            reason: format!(
+                "Failed to get file name from WAL path '{}'",
+                wal_path.display()
+            ),
+        })?
+        .to_str()
+        .ok_or_else(|| Error::CommonError {
+            reason: format!(
+                "Failed to get UTF-8 file name from WAL path '{}'",
+                wal_path.display()
+            ),
+        })?;
+    let wal_id = file_utils::get_wal_file_id(wal_file_name)?;
+
+    Ok(file_utils::make_mal_file(wal_dir, wal_id))
+}
+
 #[cfg(test)]
 mod test {
     use core::panic;
@@ -703,8 +717,6 @@ mod test {
                                     assert_eq!(ety_data, ori_data.as_slice());
                                 }
                             }
-                            WalEntry::DeleteVnode(_) => todo!(),
-                            WalEntry::DeleteTable(_) => todo!(),
                             WalEntry::Unknown => todo!(),
                         }
                     }

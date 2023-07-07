@@ -4,12 +4,14 @@ use std::sync::Arc;
 use models::meta_data::VnodeId;
 use models::schema::Precision;
 
-use super::reader::WalReader;
-use super::{WalEntryType, FOOTER_MAGIC_NUMBER};
+use super::mal::MalWriter;
+use crate::error::Result;
 use crate::file_system::file_manager;
 use crate::kv_option::WalOptions;
+use crate::record_file;
 use crate::record_file::{RecordDataType, RecordDataVersion};
-use crate::{record_file, Result};
+use crate::wal::reader::WalReader;
+use crate::wal::{mal, wal_path_to_mal_path, WalEntryType, FOOTER_MAGIC_NUMBER};
 
 fn build_footer(min_sequence: u64, max_sequence: u64) -> [u8; record_file::FILE_FOOTER_LEN] {
     let mut footer = [0_u8; record_file::FILE_FOOTER_LEN];
@@ -22,6 +24,7 @@ fn build_footer(min_sequence: u64, max_sequence: u64) -> [u8; record_file::FILE_
 pub struct WalWriter {
     id: u64,
     inner: record_file::Writer,
+    mal_writer: mal::MalWriter,
     size: u64,
     path: PathBuf,
     config: Arc<WalOptions>,
@@ -60,9 +63,13 @@ impl WalWriter {
 
         let size = writer.file_size();
 
+        let mal_path = wal_path_to_mal_path(path)?;
+        let mal_writer = mal::MalWriter::open(config.clone(), id, mal_path).await?;
+
         Ok(Self {
             id,
             inner: writer,
+            mal_writer,
             size,
             path: PathBuf::from(path),
             config,

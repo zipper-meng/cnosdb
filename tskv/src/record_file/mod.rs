@@ -84,6 +84,7 @@ pub enum RecordDataType {
     Summary = 1,
     Tombstone = 4,
     Wal = 8,
+    Mal = 9,
     IndexLog = 16,
 }
 
@@ -93,6 +94,7 @@ impl Display for RecordDataType {
             RecordDataType::Summary => write!(f, "summary"),
             RecordDataType::Tombstone => write!(f, "tombstone"),
             RecordDataType::Wal => write!(f, "WAL"),
+            RecordDataType::Mal => write!(f, "MAL"),
             RecordDataType::IndexLog => write!(f, "indexlog"),
         }
     }

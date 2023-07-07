@@ -66,7 +66,7 @@ pub struct IndexBinlog {
 impl IndexBinlog {
     pub async fn new(path: impl AsRef<Path>) -> IndexResult<Self> {
         let data_dir = path.as_ref();
-        let (last, seq) = match file_utils::get_max_sequence_file_name(
+        let (last, seq) = match file_utils::get_file_with_the_max_id(
             data_dir,
             file_utils::get_index_binlog_file_id,
         ) {
