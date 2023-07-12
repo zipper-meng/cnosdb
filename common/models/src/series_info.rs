@@ -91,7 +91,7 @@ impl SeriesKey {
             err: "point tag null bit".to_string(),
         })?;
         let len = tag_names.len();
-        let tag_nullbit = BitSet::new_without_check(len, tag_nullbit_buffer.bytes());
+        let tag_nullbit = BitSet::new_without_check(len, tag_nullbit_buffer.bytes().to_vec());
         let mut tags = Vec::new();
         for (idx, (tag_key, tag_value)) in tag_names
             .iter()

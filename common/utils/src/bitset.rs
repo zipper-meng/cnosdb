@@ -9,16 +9,29 @@ impl BitSet {
         Self::default()
     }
 
-    pub fn new_without_check(len: usize, buffer: &[u8]) -> Self {
-        Self {
-            buffer: buffer.to_vec(),
-            len,
-        }
+    pub fn new_without_check(len: usize, buffer: Vec<u8>) -> Self {
+        Self { buffer, len }
     }
 
     pub fn with_size(count: usize) -> Self {
         let mut bitset = Self::default();
         bitset.append_unset(count);
+        bitset
+    }
+
+    /// Create a bitset with a sequence of index number which means value exists.
+    ///
+    /// The length of the bit set is `len`, but if the max value in `offsets`
+    /// is greater than `len`, then the max value will be the `len`.
+    pub fn with_offsets(len: usize, offsets: &[usize]) -> Self {
+        let mut bitset = match offsets.iter().max() {
+            Some(&max_off) => BitSet::with_size(max_off.max(len)),
+            None => BitSet::default(),
+        };
+        for off in offsets {
+            bitset.set(*off);
+        }
+
         bitset
     }
 
@@ -145,6 +158,23 @@ impl BitSet {
 
     pub fn is_all_unset(&self) -> bool {
         self.buffer.iter().all(|&v| v == 0)
+    }
+}
+
+impl PartialEq for BitSet {
+    fn eq(&self, other: &Self) -> bool {
+        if self.len != other.len {
+            return false;
+        }
+        if self.len == 0 {
+            return true;
+        }
+        let bound = self.len >> 3;
+        if self.buffer[..bound] != other.buffer[..bound] {
+            return false;
+        }
+        let mask = 0xFF >> (8 - (self.len & 7));
+        (self.buffer[bound] & mask) == (other.buffer[bound] & mask)
     }
 }
 
@@ -333,5 +363,53 @@ mod tests {
         let v = BitSet::new();
         assert!(!v.is_all_set());
         assert!(v.is_all_unset());
+    }
+
+    #[test]
+    fn test_with_offsets() {
+        let b = BitSet::with_offsets(0, &[1, 2, 3]);
+        assert_eq!(b.len, 3);
+        assert_eq!(b.buffer, vec![0b_0000_1110]);
+
+        let b = BitSet::with_offsets(10, &[1, 2, 3]);
+        assert_eq!(b.len, 10);
+        assert_eq!(b.buffer, vec![0b_0000_1110, 0b_0000_0000]);
+    }
+
+    #[test]
+    fn test_eq() {
+        {
+            let a = BitSet {
+                buffer: vec![0b_0000_1110],
+                len: 5,
+            };
+            let b = BitSet {
+                buffer: vec![0b_0110_1110],
+                len: 5,
+            };
+            assert_eq!(a, b);
+        }
+        {
+            let a = BitSet {
+                buffer: vec![0b_0000_1110],
+                len: 5,
+            };
+            let b = BitSet {
+                buffer: vec![0b_0111_1110],
+                len: 5,
+            };
+            assert_ne!(a, b);
+        }
+        {
+            let a = BitSet {
+                buffer: vec![0b_0000_1110, 0b_0000_0011],
+                len: 10,
+            };
+            let b = BitSet {
+                buffer: vec![0b_0000_1110, 0b_0110_0011],
+                len: 10,
+            };
+            assert_eq!(a, b);
+        }
     }
 }

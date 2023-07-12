@@ -969,7 +969,7 @@ impl StateMachine {
                 .to_precision(*db_schema.config.precision_or_default()),
         );
         let (group, used) = allocation_replication_set(
-            node_list,
+            &node_list,
             db_schema.config.shard_num_or_default() as u32,
             db_schema.config.replica_or_default() as u32,
             bucket.id + 1,

@@ -14,7 +14,7 @@ use models::schema::{make_owner, DatabaseSchema, Precision, TableColumn};
 use models::utils::unite_id;
 use models::{ColumnId, SeriesId, SeriesKey};
 use protos::kv_service::{WritePointsRequest, WritePointsResponse};
-use protos::{get_db_from_fb_points, models as fb_models};
+use protos::models as fb_models;
 use snafu::ResultExt;
 use tokio::runtime::Runtime;
 use tokio::sync::broadcast::{self, Sender as BroadcastSender};
@@ -502,8 +502,8 @@ impl Engine for TsKv {
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
 
-        let db_name = get_db_from_fb_points(&fb_points)?;
-        let db = self.get_db_or_else_create(&tenant, &db_name).await?;
+        let db_name = fb_points.db_ext()?;
+        let db = self.get_db_or_else_create(&tenant, db_name).await?;
         let ts_index = self.get_ts_index_or_else_create(db.clone(), id).await?;
 
         let tables = fb_points.tables().ok_or(Error::CommonError {
@@ -514,7 +514,7 @@ impl Engine for TsKv {
             let mut span_recorder = span_recorder.child("build write group");
             db.read()
                 .await
-                .build_write_group(&db_name, precision, tables, ts_index)
+                .build_write_group(db_name, precision, tables, ts_index)
                 .await
                 .map_err(|err| {
                     span_recorder.error(err.to_string());
@@ -562,15 +562,15 @@ impl Engine for TsKv {
         let fb_points = flatbuffers::root::<fb_models::Points>(&points)
             .context(error::InvalidFlatbufferSnafu)?;
 
-        let db_name = get_db_from_fb_points(&fb_points)?;
-        let db = self.get_db_or_else_create(&tenant, &db_name).await?;
+        let db_name = fb_points.db_ext()?;
+        let db = self.get_db_or_else_create(&tenant, db_name).await?;
         let ts_index = self.get_ts_index_or_else_create(db.clone(), id).await?;
 
         let write_group = db
             .read()
             .await
             .build_write_group(
-                &db_name,
+                db_name,
                 precision,
                 fb_points.tables().ok_or(Error::CommonError {
                     reason: "points missing table".to_string(),
