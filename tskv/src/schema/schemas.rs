@@ -208,11 +208,17 @@ impl DBschemas {
             Ok(_) => Ok(()),
             Err(e) => {
                 if let MetaError::TableAlreadyExists { .. } = e {
+                    let db = &schema.db;
+                    let table = &schema.name;
                     let schema_get = self
                         .client
                         .get_tskv_table_schema(&schema.db, &schema.name)
-                        .map_err(|_| MetaError::Retry)?
-                        .ok_or(MetaError::Retry)?;
+                        .map_err(|e| MetaError::Retry {
+                            msg: format!("[1]Failed to get table schema {db}.{table}: {e}"),
+                        })?
+                        .ok_or(MetaError::Retry {
+                            msg: format!("[1]Table schema {db}.{table} not found"),
+                        })?;
                     if schema.tenant == schema_get.tenant
                         && schema.db == schema_get.db
                         && schema.columns() == schema_get.columns()
@@ -223,8 +229,12 @@ impl DBschemas {
                             let schema_get = self
                                 .client
                                 .get_tskv_table_schema(&schema.db, &schema.name)
-                                .map_err(|_| MetaError::Retry)?
-                                .ok_or(MetaError::Retry)?;
+                                .map_err(|e| MetaError::Retry {
+                                    msg: format!("[2]Failed to get table schema {db}.{table}: {e}"),
+                                })?
+                                .ok_or(MetaError::Retry {
+                                    msg: format!("[2]Table schema {db}.{table} not found"),
+                                })?;
                             let mut schema = schema.as_ref().clone();
                             schema.schema_id = schema_get.schema_id + 1;
                             let schema = Arc::new(schema);

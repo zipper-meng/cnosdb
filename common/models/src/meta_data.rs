@@ -284,44 +284,49 @@ pub fn get_time_range(ts: i64, duration: i64) -> (i64, i64) {
     }
 }
 
+/// Create `shard` num of `ReplicationSet`s, each of the `ReplicationSet`s has
+/// `replica` num of `VnodeInfo`s, each of the `VnodeInfo`s relates to one of
+/// the `nodes` by round-robin.
+///
+/// The id of each `ReplicationSet`s and `VnodeInfo`s are the increased `begin_seq`,
+/// the returning u32 is `(latest id + 1) - begin_seq`.
 pub fn allocation_replication_set(
-    nodes: Vec<NodeInfo>,
+    nodes: &[NodeInfo],
     shards: u32,
     replica: u32,
     begin_seq: u32,
 ) -> (Vec<ReplicationSet>, u32) {
-    let node_count = nodes.len() as u32;
-    let mut replica = replica;
-    if replica == 0 {
-        replica = 1
-    } else if replica > node_count {
-        replica = node_count
-    }
+    let std_replica: usize = if replica == 0 {
+        1
+    } else if replica as usize > nodes.len() {
+        nodes.len()
+    } else {
+        replica as usize
+    };
 
     let mut incr_id = begin_seq;
-    let mut index = 0;
-    let mut group = vec![];
+    let mut index = 0_usize;
+    let mut repl_sets = Vec::with_capacity(shards as usize);
 
     for _ in 0..shards {
         let mut repl_set = ReplicationSet {
             id: incr_id,
-            vnodes: vec![],
+            vnodes: Vec::with_capacity(std_replica),
         };
         incr_id += 1;
 
-        for _ in 0..replica {
-            repl_set.vnodes.push(VnodeInfo::new(
-                incr_id,
-                nodes.get((index % node_count) as usize).unwrap().id,
-            ));
+        for _ in 0..std_replica {
+            repl_set.vnodes.push(VnodeInfo::new(incr_id, unsafe {
+                nodes.get_unchecked(index % nodes.len()).id
+            }));
             incr_id += 1;
             index += 1;
         }
 
-        group.push(repl_set);
+        repl_sets.push(repl_set);
     }
 
-    (group, incr_id - begin_seq)
+    (repl_sets, incr_id - begin_seq)
 }
 
 pub fn get_disk_info(path: &str) -> std::io::Result<u64> {

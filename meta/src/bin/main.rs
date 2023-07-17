@@ -53,8 +53,10 @@ async fn main() -> std::io::Result<()> {
 
 pub fn get_sled_db(config: &Opt) -> Db {
     let db_path = format!("{}/{}.binlog", config.journal_path, config.id);
-    let db = sled::open(db_path.clone()).unwrap();
-    tracing::info!("get_sled_db: created log at: {:?}", db_path);
+    let db = sled::open(db_path.clone()).unwrap_or_else(|e| {
+        panic!("get_sled_db: failed to get sled db at '{db_path}': {e}");
+    });
+    tracing::info!("get_sled_db: created log at: {db_path}",);
     db
 }
 
