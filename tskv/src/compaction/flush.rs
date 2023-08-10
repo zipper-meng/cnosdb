@@ -238,7 +238,7 @@ pub async fn run_flush_memtable_job(
         tsf.read().await.update_last_modified().await;
 
         if let Some(sender) = compact_task_sender.as_ref() {
-            let _ = sender.send(CompactTask::Vnode(req.ts_family_id)).await;
+            let _ = sender.send(CompactTask::Normal(req.ts_family_id)).await;
         }
     }
 
@@ -523,17 +523,17 @@ pub mod flush_tests {
         let test_case = flush_test_case_1(&memory_pool, 10);
 
         let ts_family_id = 1;
-        let database = Arc::new("test_db".to_string());
+        let tenant_database = Arc::new("cnosdb.test_db".to_string());
         let global_context = Arc::new(GlobalContext::new());
         let options = Options::from(&config);
         #[rustfmt::skip]
         let version = Arc::new(Version {
             ts_family_id,
-            tenant_database: database.clone(),
+            tenant_database: tenant_database.clone(),
             storage_opt: options.storage.clone(),
             last_seq: 1,
             max_level_ts: test_case.max_level_ts_before,
-            levels_info: LevelInfo::init_levels(database, 0, options.storage),
+            levels_info: LevelInfo::init_levels(tenant_database, 0, options.storage),
             tsm_reader_cache: Arc::new(ShardedCache::with_capacity(1)),
         });
         let flush_task = FlushTask::new(
