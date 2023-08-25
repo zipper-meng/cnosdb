@@ -167,7 +167,7 @@ impl CoordService {
         if config.node_basic.store_metrics {
             tokio::spawn(CoordService::metrics_service(
                 coord.clone(),
-                metrics_register.clone(),
+                metrics_register,
             ));
         }
 
