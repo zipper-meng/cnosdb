@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::Deref;
 use std::panic;
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use datafusion::arrow::record_batch::RecordBatch;
 use memory_pool::{MemoryPool, MemoryPoolRef};
@@ -26,7 +26,7 @@ use trace::{debug, error, info, warn, SpanContext, SpanExt, SpanRecorder};
 use crate::compaction::{
     self, check, run_flush_memtable_job, CompactTask, FlushReq, LevelCompactionPicker, Picker,
 };
-use crate::context::{self, GlobalContext, GlobalSequenceContext, GlobalSequenceTask};
+use crate::context::GlobalContext;
 use crate::database::Database;
 use crate::error::{self, Result};
 use crate::file_system::file_manager;
@@ -43,13 +43,11 @@ use crate::{file_utils, tenant_name_from_request, Engine, Error, TseriesFamilyId
 // TODO: A small summay channel capacity can cause a block
 pub const COMPACT_REQ_CHANNEL_CAP: usize = 1024;
 pub const SUMMARY_REQ_CHANNEL_CAP: usize = 1024;
-pub const GLOBAL_TASK_REQ_CHANNEL_CAP: usize = 1024;
 
 #[derive(Debug)]
 pub struct TsKv {
     options: Arc<Options>,
     global_ctx: Arc<GlobalContext>,
-    global_seq_ctx: Arc<GlobalSequenceContext>,
     version_set: Arc<RwLock<VersionSet>>,
     meta_manager: MetaRef,
 
@@ -59,7 +57,6 @@ pub struct TsKv {
     flush_task_sender: Sender<FlushReq>,
     compact_task_sender: Sender<CompactTask>,
     summary_task_sender: Sender<SummaryTask>,
-    global_seq_task_sender: Sender<GlobalSequenceTask>,
     close_sender: BroadcastSender<Sender<()>>,
     metrics: Arc<MetricsRegister>,
 }
@@ -81,8 +78,6 @@ impl TsKv {
             mpsc::channel::<WalTask>(shared_options.wal.wal_req_channel_cap);
         let (summary_task_sender, summary_task_receiver) =
             mpsc::channel::<SummaryTask>(SUMMARY_REQ_CHANNEL_CAP);
-        let (global_seq_task_sender, global_seq_task_receiver) =
-            mpsc::channel::<GlobalSequenceTask>(GLOBAL_TASK_REQ_CHANNEL_CAP);
         let (close_sender, _close_receiver) = broadcast::channel(1);
         let (version_set, summary) = Self::recover_summary(
             runtime.clone(),
@@ -90,18 +85,14 @@ impl TsKv {
             meta_manager.clone(),
             shared_options.clone(),
             flush_task_sender.clone(),
-            global_seq_task_sender.clone(),
             compact_task_sender.clone(),
             metrics.clone(),
         )
         .await;
-        let global_seq_ctx = version_set.read().await.get_global_sequence_context().await;
-        let global_seq_ctx = Arc::new(global_seq_ctx);
 
         let core = Self {
             options: shared_options.clone(),
             global_ctx: summary.global_context(),
-            global_seq_ctx: global_seq_ctx.clone(),
             version_set,
             meta_manager,
             runtime: runtime.clone(),
@@ -110,7 +101,6 @@ impl TsKv {
             flush_task_sender: flush_task_sender.clone(),
             compact_task_sender: compact_task_sender.clone(),
             summary_task_sender: summary_task_sender.clone(),
-            global_seq_task_sender: global_seq_task_sender.clone(),
             close_sender,
             metrics,
         };
@@ -120,7 +110,6 @@ impl TsKv {
         core.run_flush_job(
             flush_task_receiver,
             summary.global_context(),
-            global_seq_ctx.clone(),
             summary.version_set(),
             summary_task_sender.clone(),
             compact_task_sender.clone(),
@@ -130,16 +119,10 @@ impl TsKv {
             runtime,
             compact_task_receiver,
             summary.global_context(),
-            global_seq_ctx.clone(),
             summary.version_set(),
             summary_task_sender.clone(),
         );
         core.run_summary_job(summary, summary_task_receiver);
-        context::run_global_context_job(
-            core.runtime.clone(),
-            global_seq_task_receiver,
-            global_seq_ctx,
-        );
         Ok(core)
     }
 
@@ -150,7 +133,6 @@ impl TsKv {
         meta: MetaRef,
         opt: Arc<Options>,
         flush_task_sender: Sender<FlushReq>,
-        global_seq_task_sender: Sender<GlobalSequenceTask>,
         compact_task_sender: Sender<CompactTask>,
         metrics: Arc<MetricsRegister>,
     ) -> (Arc<RwLock<VersionSet>>, Summary) {
@@ -168,7 +150,6 @@ impl TsKv {
                 runtime,
                 memory_pool,
                 flush_task_sender,
-                global_seq_task_sender,
                 compact_task_sender,
                 true,
                 metrics.clone(),
@@ -176,7 +157,7 @@ impl TsKv {
             .await
             .unwrap()
         } else {
-            Summary::new(opt, runtime, memory_pool, global_seq_task_sender, metrics)
+            Summary::new(opt, runtime, memory_pool, metrics)
                 .await
                 .unwrap()
         };
@@ -186,19 +167,22 @@ impl TsKv {
     }
 
     async fn recover_wal(&self) -> WalManager {
-        let wal_manager = WalManager::open(
-            self.options.wal.clone(),
-            self.global_seq_ctx.clone(),
-            self.version_set.clone(),
-        )
-        .await
-        .unwrap();
+        let wal_manager = WalManager::open(self.options.wal.clone(), self.version_set.clone())
+            .await
+            .unwrap();
 
-        let min_log_seq = self.global_seq_ctx.min_seq();
-        let wal_readers = wal_manager.recover().await;
+        let vnode_last_seq_map = self
+            .version_set
+            .read()
+            .await
+            .get_tsfamily_seq_no_map()
+            .await;
+        let vnode_wal_readers = wal_manager.recover(&vnode_last_seq_map).await;
         let mut recover_task = vec![];
-        for (vnode_id, readers) in wal_readers {
+        for (vnode_id, readers) in vnode_wal_readers {
+            let vnode_seq = vnode_last_seq_map.get(&vnode_id).copied().unwrap_or(0);
             let task = async move {
+                let mut decoder = WalDecoder::new();
                 for mut reader in readers {
                     info!(
                         "Recover: reading wal '{}' for seq {} to {}",
@@ -209,22 +193,17 @@ impl TsKv {
                     if reader.is_empty() {
                         continue;
                     }
-                    let vnode_last_seq_map = self.global_seq_ctx.clone();
-                    let mut decoder = WalDecoder::new();
+
                     loop {
                         match reader.next_wal_entry().await {
                             Ok(Some(wal_entry_blk)) => {
                                 let seq = wal_entry_blk.seq;
-                                if seq < min_log_seq {
-                                    continue;
-                                }
                                 match wal_entry_blk.block {
                                     Block::Write(blk) => {
-                                        error!("write seq: {}", seq);
                                         let vnode_id = blk.vnode_id();
-                                        if vnode_last_seq_map.vnode_min_seq(vnode_id) >= seq {
+                                        if vnode_seq >= seq {
                                             // If `seq_no` of TsFamily is greater than or equal to `seq`,
-                                            // it means that data was writen to tsm.
+                                            // it means that data was written to tsm.
                                             continue;
                                         }
 
@@ -282,31 +261,6 @@ impl TsKv {
             }
         }
 
-        async fn on_tick_check_total_size(
-            version_set: Arc<RwLock<VersionSet>>,
-            wal_manager: &mut WalManager,
-            check_to_flush_duration: &Duration,
-            check_to_flush_instant: &mut Instant,
-        ) {
-            // TODO(zipper): This is not a good way to prevent too frequent flushing.
-            if check_to_flush_instant.elapsed().lt(check_to_flush_duration) {
-                return;
-            }
-            let mut flushed = false;
-            *check_to_flush_instant = Instant::now();
-            let global_seq_ctx = wal_manager.global_seq_ctx();
-            for vnode_wal in wal_manager.wal_set().values_mut() {
-                if vnode_wal.is_total_file_size_exceed() && !flushed {
-                    warn!("WAL total file size({}) exceed flush_trigger_total_file_size, force flushing all vnodes.", vnode_wal.total_file_size());
-                    flushed = true;
-                    version_set.read().await.send_flush_req().await;
-                }
-                if vnode_wal.is_total_file_size_exceed() {
-                    vnode_wal.check_to_delete(global_seq_ctx.min_seq()).await;
-                }
-            }
-        }
-
         async fn on_cancel(wal_manager: &mut WalManager) {
             info!("Job 'WAL' closing.");
             if let Err(e) = wal_manager.close().await {
@@ -316,15 +270,11 @@ impl TsKv {
         }
 
         info!("Job 'WAL' starting.");
-        let version_set = self.version_set.clone();
         let mut close_receiver = self.close_sender.subscribe();
         self.runtime.spawn(async move {
             info!("Job 'WAL' started.");
 
             let sync_interval = wal_manager.sync_interval();
-            let mut check_total_size_ticker = tokio::time::interval(Duration::from_secs(10));
-            let check_to_flush_duration = Duration::from_secs(60);
-            let mut check_to_flush_instant = Instant::now();
             if sync_interval == Duration::ZERO {
                 loop {
                     tokio::select! {
@@ -337,12 +287,6 @@ impl TsKv {
                                 },
                                 _ => break
                             }
-                        }
-                        _ = check_total_size_ticker.tick() => {
-                            on_tick_check_total_size(
-                                version_set.clone(), &mut wal_manager,
-                                &check_to_flush_duration, &mut check_to_flush_instant,
-                            ).await;
                         }
                         _ = close_receiver.recv() => {
                             on_cancel(&mut wal_manager).await;
@@ -367,12 +311,6 @@ impl TsKv {
                         _ = sync_ticker.tick() => {
                             on_tick_sync(&wal_manager).await;
                         }
-                        _ = check_total_size_ticker.tick() => {
-                            on_tick_check_total_size(
-                                version_set.clone(), &mut wal_manager,
-                                &check_to_flush_duration, &mut check_to_flush_instant,
-                            ).await;
-                        }
                         _ = close_receiver.recv() => {
                             on_cancel(&mut wal_manager).await;
                             break;
@@ -387,7 +325,6 @@ impl TsKv {
         &self,
         mut receiver: Receiver<FlushReq>,
         ctx: Arc<GlobalContext>,
-        seq_ctx: Arc<GlobalSequenceContext>,
         version_set: Arc<RwLock<VersionSet>>,
         summary_task_sender: Sender<SummaryTask>,
         compact_task_sender: Sender<CompactTask>,
@@ -400,7 +337,6 @@ impl TsKv {
                 runtime.spawn(run_flush_memtable_job(
                     x,
                     ctx.clone(),
-                    seq_ctx.clone(),
                     version_set.clone(),
                     summary_task_sender.clone(),
                     Some(compact_task_sender.clone()),
@@ -472,7 +408,6 @@ impl TsKv {
 
     pub(crate) async fn get_tsfamily_or_else_create(
         &self,
-        seq: u64,
         id: TseriesFamilyId,
         ve: Option<VersionEdit>,
         db: Arc<RwLock<Database>>,
@@ -485,7 +420,6 @@ impl TsKv {
                     .await
                     .add_tsfamily(
                         id,
-                        seq,
                         ve,
                         self.summary_task_sender.clone(),
                         self.flush_task_sender.clone(),
@@ -838,6 +772,10 @@ impl Engine for TsKv {
                 })?
         };
 
+        let tsf = self
+            .get_tsfamily_or_else_create(vnode_id, None, db.clone())
+            .await?;
+
         let seq = {
             let mut span_recorder = span_recorder.child("write wal");
             self.write_wal(vnode_id, tenant, db_name.to_string(), precision, points)
@@ -847,10 +785,6 @@ impl Engine for TsKv {
                     err
                 })?
         };
-
-        let tsf = self
-            .get_tsfamily_or_else_create(seq, vnode_id, None, db.clone())
-            .await?;
 
         let res = {
             let mut span_recorder = span_recorder.child("put points");
@@ -903,7 +837,7 @@ impl Engine for TsKv {
         };
 
         let tsf = self
-            .get_tsfamily_or_else_create(index, vnode_id, None, db.clone())
+            .get_tsfamily_or_else_create(vnode_id, None, db.clone())
             .await?;
 
         let res = {
@@ -1042,7 +976,6 @@ impl Engine for TsKv {
                     run_flush_memtable_job(
                         req,
                         self.global_ctx.clone(),
-                        self.global_seq_ctx.clone(),
                         self.version_set.clone(),
                         self.summary_task_sender.clone(),
                         Some(self.compact_task_sender.clone()),
@@ -1323,7 +1256,6 @@ impl Engine for TsKv {
         db_wlock
             .add_tsfamily(
                 vnode_id,
-                self.global_seq_ctx.max_seq(),
                 Some(summary),
                 self.summary_task_sender.clone(),
                 self.flush_task_sender.clone(),
@@ -1385,7 +1317,6 @@ impl Engine for TsKv {
                     if let Err(e) = run_flush_memtable_job(
                         req,
                         self.global_ctx.clone(),
-                        self.global_seq_ctx.clone(),
                         self.version_set.clone(),
                         self.summary_task_sender.clone(),
                         None,
@@ -1444,7 +1375,6 @@ impl Engine for TsKv {
                     run_flush_memtable_job(
                         req,
                         self.global_ctx.clone(),
-                        self.global_seq_ctx.clone(),
                         self.version_set.clone(),
                         self.summary_task_sender.clone(),
                         None,
@@ -1474,10 +1404,6 @@ impl Engine for TsKv {
 impl TsKv {
     pub(crate) fn global_ctx(&self) -> Arc<GlobalContext> {
         self.global_ctx.clone()
-    }
-
-    pub(crate) fn global_sql_ctx(&self) -> Arc<GlobalSequenceContext> {
-        self.global_seq_ctx.clone()
     }
 
     pub(crate) fn version_set(&self) -> Arc<RwLock<VersionSet>> {
