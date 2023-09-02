@@ -157,6 +157,10 @@ pub enum MetaError {
     #[error_code(code = 36)]
     ChangeLeader { new_leader: String },
 
+    #[snafu(display("The vnode {} not found", id))]
+    #[error_code(code = 37)]
+    VnodeNotFound { id: u32 },
+
     #[snafu(display(
         "Valid node is not enough, need: {}, but found: {}",
         need,
