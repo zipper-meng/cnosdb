@@ -46,7 +46,7 @@ mod summary;
 mod tseries_family;
 pub mod tsm;
 mod version_set;
-mod wal;
+pub mod wal;
 
 pub type ColumnFileId = u64;
 type TseriesFamilyId = u32;
@@ -79,6 +79,16 @@ pub trait Engine: Send + Sync + Debug {
         vnode_id: VnodeId,
         precision: Precision,
         write_batch: WritePointsRequest,
+    ) -> Result<WritePointsResponse>;
+
+    async fn write_memcache(
+        &self,
+        index: u64,
+        tenant: &str,
+        points: Vec<u8>,
+        vnode_id: VnodeId,
+        precision: Precision,
+        span_ctx: Option<&SpanContext>,
     ) -> Result<WritePointsResponse>;
 
     /// Remove all storage unit(caches and files) in specified database,
