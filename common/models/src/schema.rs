@@ -717,8 +717,6 @@ pub struct DatabaseOptions {
     replica: Option<u64>,
     // timestamp precision
     precision: Option<Precision>,
-
-    replica_type: Option<u32>,
 }
 
 impl DatabaseOptions {
@@ -740,7 +738,6 @@ impl DatabaseOptions {
         vnode_duration: Option<Duration>,
         replica: Option<u64>,
         precision: Option<Precision>,
-        replica_type: Option<u32>,
     ) -> Self {
         DatabaseOptions {
             ttl,
@@ -748,7 +745,6 @@ impl DatabaseOptions {
             vnode_duration,
             replica,
             precision,
-            replica_type,
         }
     }
 
