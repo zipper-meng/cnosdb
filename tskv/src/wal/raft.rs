@@ -272,7 +272,6 @@ impl RaftEntryStorageInner {
                         return Err(Error::WalTruncated);
                     }
                 };
-                println!("{pos}, {seq}");
                 self.mark_write_wal(seq, wal_id, pos);
             }
         }
