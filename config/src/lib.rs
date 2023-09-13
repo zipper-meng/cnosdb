@@ -42,6 +42,9 @@ pub struct Config {
     #[serde(default = "Config::default_reporting_disabled")]
     pub reporting_disabled: bool,
 
+    #[serde(default = "Config::default_using_raft_replication")]
+    pub using_raft_replication: bool,
+
     ///
     #[serde(default = "Config::default_host")]
     pub host: String,
@@ -98,6 +101,7 @@ impl Default for Config {
     fn default() -> Self {
         Self {
             reporting_disabled: Self::default_reporting_disabled(),
+            using_raft_replication: Self::default_using_raft_replication(),
             host: Self::default_host(),
             deployment: Default::default(),
             query: Default::default(),
@@ -117,6 +121,10 @@ impl Default for Config {
 
 impl Config {
     fn default_reporting_disabled() -> bool {
+        false
+    }
+
+    fn default_using_raft_replication() -> bool {
         false
     }
 
@@ -274,6 +282,7 @@ mod test {
     fn test_parse() {
         let config_str = r#"
 #reporting_disabled = false
+using_raft_replication=true
 host = "localhost"
 
 [deployment]
