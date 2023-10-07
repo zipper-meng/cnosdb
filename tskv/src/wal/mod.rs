@@ -35,7 +35,7 @@
 //! +------------+---------------+--------------+--------------+
 //! ```
 
-pub mod raft;
+pub mod raft_store;
 mod reader;
 pub mod writer;
 
@@ -357,7 +357,10 @@ impl VnodeWal {
         }
     }
 
-    async fn write_raft_entry(&mut self, raft_entry: &raft::RaftEntry) -> Result<(u64, usize)> {
+    async fn write_raft_entry(
+        &mut self,
+        raft_entry: &raft_store::RaftEntry,
+    ) -> Result<(u64, usize)> {
         self.current_wal.append_raft_entry(raft_entry).await
     }
 
