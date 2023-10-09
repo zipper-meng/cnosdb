@@ -752,7 +752,7 @@ pub mod tsm_reader_tests {
             ]),
         ]);
 
-        write_to_tsm(&tsm_file, &ori_data).await?;
+        write_to_tsm(&tsm_file, &ori_data, false).await?;
         let mut tombstone = TsmTombstone::with_path(&tombstone_file).await?;
         tombstone.add_range(&[1], &TimeRange::new(2, 4)).await?;
         tombstone.flush().await?;
