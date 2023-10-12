@@ -42,9 +42,10 @@ pub enum Error {
         source: protocol_parser::Error,
     },
 
-    #[snafu(display("Invalid header: {}", reason))]
+    #[snafu(display("Invalid header '{header}': {}", reason))]
     #[error_code(code = 5)]
     InvalidHeader {
+        header: String,
         reason: String,
     },
 
@@ -222,6 +223,7 @@ mod tests {
     #[test]
     fn test_invalid_header_error() {
         let resp: Response = Error::InvalidHeader {
+            header: "test_header".to_string(),
             reason: "test".to_string(),
         }
         .into();

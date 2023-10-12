@@ -219,31 +219,22 @@ impl CompactingBlockMetaGroup {
             // Try to merge with the next CompactingBlockMetaGroup.
             merged_blks.push(CompactingBlock::decoded(0, self.field_id, data_block));
         } else {
+            // Data block is so big that split into multi CompactingBlock
             let len = data_block.len();
             let mut start = 0;
             let mut end = len.min(max_block_size);
-            while start + end < len {
+            while start < len {
                 // Encode decoded data blocks into chunks.
                 let encoded_blk =
                     EncodedDataBlock::encode(&data_block, start, end).map_err(|e| {
                         Error::WriteTsm {
-                            source: tsm::WriteTsmError::Encode { source: e },
+                            source: WriteTsmError::Encode { source: e },
                         }
                     })?;
                 merged_blks.push(CompactingBlock::encoded(0, self.field_id, encoded_blk));
 
                 start = end;
                 end = len.min(start + max_block_size);
-            }
-            if start < len {
-                // Encode the remaining decoded data blocks.
-                let encoded_blk =
-                    EncodedDataBlock::encode(&data_block, start, len).map_err(|e| {
-                        Error::WriteTsm {
-                            source: tsm::WriteTsmError::Encode { source: e },
-                        }
-                    })?;
-                merged_blks.push(CompactingBlock::encoded(0, self.field_id, encoded_blk));
             }
         }
 
@@ -912,7 +903,16 @@ impl WriterWrapper {
         field_id: FieldId,
         data_block: &DataBlock,
     ) -> Result<usize> {
-        self.write_block_inner(field_id, data_block, true).await
+        let write_ret = self
+            .delta_writer_mut()
+            .await?
+            .write_block(field_id, data_block)
+            .await;
+        if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
+            self.delta_writer_full = true;
+            return Ok(write_size);
+        }
+        Self::warp_write_tsm_result(write_ret)
     }
 
     pub async fn write_tsm_data_block(
@@ -920,38 +920,15 @@ impl WriterWrapper {
         field_id: FieldId,
         data_block: &DataBlock,
     ) -> Result<usize> {
-        self.write_block_inner(field_id, data_block, false).await
-    }
-
-    async fn write_block_inner(
-        &mut self,
-        field_id: FieldId,
-        data_block: &DataBlock,
-        is_delta: bool,
-    ) -> Result<usize> {
-        let write_ret = if is_delta {
-            let write_ret = self
-                .delta_writer_mut()
-                .await?
-                .write_block(field_id, data_block)
-                .await;
-            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
-                self.delta_writer_full = true;
-                return Ok(write_size);
-            }
-            write_ret
-        } else {
-            let write_ret = self
-                .tsm_writer_mut()
-                .await?
-                .write_block(field_id, data_block)
-                .await;
-            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
-                self.tsm_writer_full = true;
-                return Ok(write_size);
-            }
-            write_ret
-        };
+        let write_ret = self
+            .tsm_writer_mut()
+            .await?
+            .write_block(field_id, data_block)
+            .await;
+        if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
+            self.tsm_writer_full = true;
+            return Ok(write_size);
+        }
         Self::warp_write_tsm_result(write_ret)
     }
 
@@ -960,8 +937,16 @@ impl WriterWrapper {
         field_id: FieldId,
         data_block: &EncodedDataBlock,
     ) -> Result<usize> {
-        self.write_encoded_block_inner(field_id, data_block, true)
-            .await
+        let write_ret = self
+            .delta_writer_mut()
+            .await?
+            .write_encoded_block(field_id, data_block)
+            .await;
+        if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
+            self.delta_writer_full = true;
+            return Ok(write_size);
+        }
+        Self::warp_write_tsm_result(write_ret)
     }
 
     pub async fn write_tsm_encoded_data_block(
@@ -969,39 +954,15 @@ impl WriterWrapper {
         field_id: FieldId,
         data_block: &EncodedDataBlock,
     ) -> Result<usize> {
-        self.write_encoded_block_inner(field_id, data_block, false)
-            .await
-    }
-
-    async fn write_encoded_block_inner(
-        &mut self,
-        field_id: FieldId,
-        data_block: &EncodedDataBlock,
-        is_delta: bool,
-    ) -> Result<usize> {
-        let write_ret = if is_delta {
-            let write_ret = self
-                .delta_writer_mut()
-                .await?
-                .write_encoded_block(field_id, data_block)
-                .await;
-            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
-                self.delta_writer_full = true;
-                return Ok(write_size);
-            }
-            write_ret
-        } else {
-            let write_ret = self
-                .tsm_writer_mut()
-                .await?
-                .write_encoded_block(field_id, data_block)
-                .await;
-            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
-                self.tsm_writer_full = true;
-                return Ok(write_size);
-            }
-            write_ret
-        };
+        let write_ret = self
+            .tsm_writer_mut()
+            .await?
+            .write_encoded_block(field_id, data_block)
+            .await;
+        if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
+            self.tsm_writer_full = true;
+            return Ok(write_size);
+        }
         Self::warp_write_tsm_result(write_ret)
     }
 
@@ -1010,7 +971,16 @@ impl WriterWrapper {
         block_meta: &BlockMeta,
         data_block: &[u8],
     ) -> Result<usize> {
-        self.write_raw_inner(block_meta, data_block, true).await
+        let write_ret = self
+            .delta_writer_mut()
+            .await?
+            .write_raw(block_meta, data_block)
+            .await;
+        if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
+            self.delta_writer_full = true;
+            return Ok(write_size);
+        }
+        Self::warp_write_tsm_result(write_ret)
     }
 
     pub async fn write_tsm_raw_data_block(
@@ -1018,38 +988,15 @@ impl WriterWrapper {
         block_meta: &BlockMeta,
         data_block: &[u8],
     ) -> Result<usize> {
-        self.write_raw_inner(block_meta, data_block, false).await
-    }
-
-    async fn write_raw_inner(
-        &mut self,
-        block_meta: &BlockMeta,
-        data_block: &[u8],
-        is_delta: bool,
-    ) -> Result<usize> {
-        let write_ret = if is_delta {
-            let write_ret = self
-                .delta_writer_mut()
-                .await?
-                .write_raw(block_meta, data_block)
-                .await;
-            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
-                self.delta_writer_full = true;
-                return Ok(write_size);
-            }
-            write_ret
-        } else {
-            let write_ret = self
-                .tsm_writer_mut()
-                .await?
-                .write_raw(block_meta, data_block)
-                .await;
-            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
-                self.tsm_writer_full = true;
-                return Ok(write_size);
-            }
-            write_ret
-        };
+        let write_ret = self
+            .tsm_writer_mut()
+            .await?
+            .write_raw(block_meta, data_block)
+            .await;
+        if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
+            self.tsm_writer_full = true;
+            return Ok(write_size);
+        }
         Self::warp_write_tsm_result(write_ret)
     }
 
@@ -1177,7 +1124,7 @@ impl WriterWrapper {
                     path.display()
                 );
                 Err(Error::WriteTsm {
-                    source: tsm::WriteTsmError::Finished { path },
+                    source: WriteTsmError::Finished { path },
                 })
             }
             Err(WriteTsmError::MaxFileSizeExceed { .. }) => {

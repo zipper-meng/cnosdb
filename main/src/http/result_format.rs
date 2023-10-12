@@ -120,11 +120,14 @@ impl TryFrom<&str> for ResultFormat {
         }
 
         if let Some(fmt) = s.strip_prefix(APPLICATION_PREFIX) {
-            return ResultFormat::from_str(fmt)
-                .map_err(|reason| HttpError::InvalidHeader { reason });
+            return ResultFormat::from_str(fmt).map_err(|reason| HttpError::InvalidHeader {
+                header: s.to_string(),
+                reason,
+            });
         }
 
         Err(HttpError::InvalidHeader {
+            header: s.to_string(),
             reason: format!("accept type not support: {}", s),
         })
     }

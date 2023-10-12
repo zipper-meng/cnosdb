@@ -236,6 +236,7 @@ impl LevelCompactionPicker {
 }
 
 /// Compaction picker for picking files in level-0 (delta files)
+/// and the output level (one of 1 to 4)
 #[derive(Debug)]
 pub struct DeltaCompactionPicker {
     strategy: String,
@@ -266,7 +267,7 @@ impl Picker for DeltaCompactionPicker {
             }
             file_picked = false;
             level_picking = 4;
-            // Form level-4 to level-1, put the overlapped files.
+            // Form level-4 to level-1, collect the overlapped level-0 files.
             for level in levels.iter().skip(1).rev() {
                 if file.time_range().min_ts < level.time_range.max_ts {
                     level_overlaped_files[level_picking].push(file.clone());
@@ -275,13 +276,15 @@ impl Picker for DeltaCompactionPicker {
                 }
                 level_picking -= 1;
             }
-            // If time_range of a file is too old than level-4, put to level-4 files.
+            // If time_range of a level-0 file is too old than level-4, put to level-4 files.
+            // TODO(zipper): remove this if because level-0 files is newer than level-1 to level-4 is impossible
             if !file_picked {
+                println!("impossible: level-0 files is newer than level-4 to level-1");
                 level_overlaped_files[4].push(file.clone());
             }
         }
         debug!(
-            "Picker: strategy: {}, level overlaped files: [ {} ]",
+            "Picker: strategy: {}, level overlapped files: [ {} ]",
             self.strategy,
             level_overlaped_files
                 .iter()

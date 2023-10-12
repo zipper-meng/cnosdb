@@ -949,7 +949,10 @@ async fn construct_read_context(
                 .stream_trigger_interval
                 .map(|ref e| {
                     e.parse::<StreamTriggerInterval>()
-                        .map_err(|reason| HttpError::InvalidHeader { reason })
+                        .map_err(|reason| HttpError::InvalidHeader {
+                            header: format!("stream_trigger_interval: {e}"),
+                            reason,
+                        })
                 })
                 .transpose()?,
         )

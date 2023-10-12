@@ -1,4 +1,4 @@
-use http_protocol::header::{APPLICATION_CSV, BASIC_PREFIX};
+use http_protocol::header::{APPLICATION_CSV, AUTHORIZATION, BASIC_PREFIX};
 use models::auth::user::UserInfo;
 use warp::http::header::{HeaderName, HeaderValue};
 
@@ -42,9 +42,11 @@ impl Header {
             .as_ref()
             .map(|e| {
                 let content = base64::decode(e).map_err(|_| HttpError::InvalidHeader {
+                    header: AUTHORIZATION.to_string(),
                     reason: format!("Can not parse private_key with base64: {}", e),
                 })?;
                 String::from_utf8(content).map_err(|err| HttpError::InvalidHeader {
+                    header: AUTHORIZATION.to_string(),
                     reason: err.to_string(),
                 })
             })
