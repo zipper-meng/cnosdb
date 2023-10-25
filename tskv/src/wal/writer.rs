@@ -199,16 +199,14 @@ impl WalWriter {
     ) -> Result<(u64, usize)> {
         let seq = self.max_sequence;
 
-        let block = UpdateSeriesKeysBlock::new(
-            tenant.to_string(),
-            database.to_string(),
+        let block_buf = UpdateSeriesKeysBlock::encode(
+            tenant,
+            database,
             vnode_id,
-            old_series_keys.to_vec(),
-            new_series_keys.to_vec(),
-            series_ids.to_vec(),
+            old_series_keys,
+            new_series_keys,
+            series_ids,
         );
-        let mut block_buf = vec![];
-        block.encode(&mut block_buf)?;
 
         let written_size = self
             .inner
@@ -244,16 +242,8 @@ impl WalWriter {
     ) -> Result<(u64, usize)> {
         let seq = self.max_sequence;
 
-        let block = DeleteBlock::new(
-            tenant.to_string(),
-            database.to_string(),
-            table.to_string(),
-            vnode_id,
-            series_ids.to_vec(),
-            time_ranges.clone(),
-        );
-        let mut block_buf = vec![];
-        block.encode(&mut block_buf)?;
+        let block_buf =
+            DeleteBlock::encode(tenant, database, table, vnode_id, series_ids, time_ranges);
 
         let written_size = self
             .inner
@@ -464,7 +454,7 @@ impl Task {
     }
 }
 
-impl TryFrom<&reader::Block> for Task {
+impl TryFrom<&reader::Block<'_>> for Task {
     type Error = crate::Error;
 
     fn try_from(b: &reader::Block) -> std::result::Result<Self, Self::Error> {
@@ -491,7 +481,7 @@ pub struct WriteTask {
     pub points: Vec<u8>,
 }
 
-impl TryFrom<&reader::WriteBlock> for WriteTask {
+impl TryFrom<&reader::WriteBlock<'_>> for WriteTask {
     type Error = crate::Error;
 
     fn try_from(b: &reader::WriteBlock) -> std::result::Result<Self, Self::Error> {
@@ -512,7 +502,7 @@ pub struct DeleteVnodeTask {
     pub vnode_id: VnodeId,
 }
 
-impl TryFrom<&reader::DeleteVnodeBlock> for DeleteVnodeTask {
+impl TryFrom<&reader::DeleteVnodeBlock<'_>> for DeleteVnodeTask {
     type Error = crate::Error;
 
     fn try_from(b: &reader::DeleteVnodeBlock) -> std::result::Result<Self, Self::Error> {
@@ -531,7 +521,7 @@ pub struct DeleteTableTask {
     pub table: String,
 }
 
-impl TryFrom<&reader::DeleteTableBlock> for DeleteTableTask {
+impl TryFrom<&reader::DeleteTableBlock<'_>> for DeleteTableTask {
     type Error = crate::Error;
 
     fn try_from(b: &reader::DeleteTableBlock) -> std::result::Result<Self, Self::Error> {

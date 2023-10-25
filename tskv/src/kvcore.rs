@@ -248,14 +248,7 @@ impl TsKv {
                                             trace::error!("Recover: failed to delete table: {e}");
                                         }
                                     }
-                                    Block::UpdateSeriesKeys(UpdateSeriesKeysBlock {
-                                        tenant,
-                                        database,
-                                        vnode_id,
-                                        old_series_keys,
-                                        new_series_keys,
-                                        series_ids,
-                                    }) => {
+                                    Block::UpdateSeriesKeys(blk) => {
                                         if let Err(err) = self
                                             .update_vnode_series_keys(
                                                 &tenant,
@@ -273,14 +266,7 @@ impl TsKv {
                                             );
                                         }
                                     }
-                                    Block::Delete(DeleteBlock {
-                                        tenant,
-                                        database,
-                                        table,
-                                        vnode_id,
-                                        series_ids,
-                                        time_ranges,
-                                    }) => {
+                                    Block::Delete(blk) => {
                                         if let Err(err) = self
                                             .delete(
                                                 &tenant,
@@ -647,7 +633,7 @@ impl TsKv {
         &self,
         vnode_id: TseriesFamilyId,
         seq: u64,
-        block: &wal::WriteBlock,
+        block: &wal::WriteBlock<'_>,
         block_decoder: &mut WalDecoder,
     ) -> Result<()> {
         let tenant = {
@@ -705,7 +691,7 @@ impl TsKv {
     /// Data is from the WAL(write-ahead-log), so won't write back to WAL.
     async fn drop_table_from_wal(
         &self,
-        block: &wal::DeleteTableBlock,
+        block: &wal::DeleteTableBlock<'_>,
         vnode_id: VnodeId,
     ) -> Result<()> {
         let tenant = block.tenant_utf8()?;
@@ -757,7 +743,7 @@ impl TsKv {
     /// then remove directory of the storage unit.
     ///
     /// Data is from the WAL(write-ahead-log), so won't write back to WAL.
-    async fn remove_tsfamily_from_wal(&self, block: &wal::DeleteVnodeBlock) -> Result<()> {
+    async fn remove_tsfamily_from_wal(&self, block: &wal::DeleteVnodeBlock<'_>) -> Result<()> {
         let vnode_id = block.vnode_id();
         let tenant = block.tenant_utf8()?;
         let database = block.database_utf8()?;

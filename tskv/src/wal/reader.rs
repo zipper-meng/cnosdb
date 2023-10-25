@@ -1,5 +1,6 @@
 use std::path::{Path, PathBuf};
 
+use datafusion::parquet::data_type::AsBytes;
 use models::codec::Encoding;
 use models::meta_data::VnodeId;
 use models::predicate::domain::TimeRanges;
@@ -50,6 +51,8 @@ pub struct WalReader {
     /// CnosDB was crushed or force-killed.
     max_sequence: u64,
     has_footer: bool,
+
+    buf: Vec<u8>,
 }
 
 impl WalReader {
@@ -70,6 +73,8 @@ impl WalReader {
             min_sequence,
             max_sequence,
             has_footer,
+
+            buf: vec![],
         })
     }
 
@@ -84,6 +89,8 @@ impl WalReader {
             min_sequence,
             max_sequence,
             has_footer,
+
+            buf: vec![],
         }
     }
 
@@ -104,14 +111,18 @@ impl WalReader {
                     return Err(Error::WalTruncated);
                 }
             };
-            return Ok(Some(WalRecordData::new(data)));
+            self.buf = data;
+            return Ok(Some(WalRecordData::new(&self.buf)));
         }
     }
 
     pub async fn read_wal_record_data(&mut self, pos: u64) -> Result<Option<WalRecordData>> {
         self.inner.reload_metadata().await?;
         match self.inner.read_record_at(pos as usize).await {
-            Ok(r) => Ok(Some(WalRecordData::new(r.data))),
+            Ok(r) => {
+                self.buf = r.data;
+                Ok(Some(WalRecordData::new(&self.buf)))
+            }
             Err(Error::Eof) => Ok(None),
             Err(e @ Error::RecordFileHashCheckFailed { .. }) => Err(e),
             Err(e) => {
@@ -153,14 +164,14 @@ impl WalReader {
     }
 }
 
-pub struct WalRecordData {
+pub struct WalRecordData<'a> {
     pub typ: WalType,
     pub seq: u64,
-    pub block: Block,
+    pub block: Block<'a>,
 }
 
-impl WalRecordData {
-    pub fn new(buf: Vec<u8>) -> WalRecordData {
+impl<'a> WalRecordData<'a> {
+    pub fn new(buf: &[u8]) -> WalRecordData {
         if buf.len() < WAL_HEADER_LEN {
             return Self {
                 typ: WalType::Unknown,
@@ -222,12 +233,12 @@ impl WalRecordData {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Block {
-    Write(WriteBlock),
-    DeleteVnode(DeleteVnodeBlock),
-    DeleteTable(DeleteTableBlock),
-    UpdateSeriesKeys(UpdateSeriesKeysBlock),
-    Delete(DeleteBlock),
+pub enum Block<'a> {
+    Write(WriteBlock<'a>),
+    DeleteVnode(DeleteVnodeBlock<'a>),
+    DeleteTable(DeleteTableBlock<'a>),
+    UpdateSeriesKeys(UpdateSeriesKeysBlock<'a>),
+    Delete(DeleteBlock<'a>),
     RaftLog(raft_store::RaftEntry),
     Unknown,
 }
@@ -240,13 +251,13 @@ pub enum Block {
 /// - tenant: tenant_size
 /// - data: ..
 #[derive(Debug, Clone, PartialEq)]
-pub struct WriteBlock {
-    buf: Vec<u8>,
+pub struct WriteBlock<'a> {
+    buf: &'a [u8],
     tenant_size: usize,
 }
 
-impl WriteBlock {
-    pub fn new(buf: Vec<u8>) -> WriteBlock {
+impl<'a> WriteBlock<'a> {
+    pub fn new(buf: &[u8]) -> Self {
         let tenatn_size_pos = WAL_HEADER_LEN + WAL_VNODE_ID_LEN + WAL_PRECISION_LEN;
         let tenant_size =
             decode_be_u64(&buf[tenatn_size_pos..tenatn_size_pos + WAL_TENANT_SIZE_LEN]) as usize;
@@ -294,13 +305,13 @@ impl WriteBlock {
 /// - tenant: tenant_size
 /// - database: ..
 #[derive(Debug, Clone, PartialEq)]
-pub struct DeleteVnodeBlock {
-    buf: Vec<u8>,
+pub struct DeleteVnodeBlock<'a> {
+    buf: &'a [u8],
     tenant_size: usize,
 }
 
-impl DeleteVnodeBlock {
-    pub fn new(buf: Vec<u8>) -> Self {
+impl<'a> DeleteVnodeBlock<'a> {
+    pub fn new(buf: &[u8]) -> Self {
         let tenant_len = decode_be_u64(
             &buf[WAL_HEADER_LEN + WAL_VNODE_ID_LEN
                 ..WAL_HEADER_LEN + WAL_VNODE_ID_LEN + WAL_TENANT_SIZE_LEN],
@@ -351,14 +362,14 @@ impl DeleteVnodeBlock {
 /// - database: database_size
 /// - table: ..
 #[derive(Debug, Clone, PartialEq)]
-pub struct DeleteTableBlock {
-    buf: Vec<u8>,
+pub struct DeleteTableBlock<'a> {
+    buf: &'a [u8],
     tenant_len: usize,
     database_len: usize,
 }
 
-impl DeleteTableBlock {
-    pub fn new(buf: Vec<u8>) -> DeleteTableBlock {
+impl<'a> DeleteTableBlock<'a> {
+    pub fn new(buf: &[u8]) -> Self {
         let tenant_len =
             decode_be_u64(&buf[WAL_HEADER_LEN..WAL_HEADER_LEN + WAL_TENANT_SIZE_LEN]) as usize;
         let database_len_pos = WAL_HEADER_LEN + WAL_TENANT_SIZE_LEN;
@@ -417,32 +428,19 @@ impl DeleteTableBlock {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
-pub struct UpdateSeriesKeysBlock {
-    pub tenant: String,
-    pub database: String,
-    pub vnode_id: VnodeId,
-    pub old_series_keys: Vec<SeriesKey>,
-    pub new_series_keys: Vec<SeriesKey>,
-    pub series_ids: Vec<SeriesId>,
+pub struct UpdateSeriesKeysBlock<'a> {
+    buf: &'a [u8],
+    // pub tenant: String,
+    // pub database: String,
+    // pub vnode_id: VnodeId,
+    // pub old_series_keys: Vec<SeriesKey>,
+    // pub new_series_keys: Vec<SeriesKey>,
+    // pub series_ids: Vec<SeriesId>,
 }
 
-impl UpdateSeriesKeysBlock {
-    pub fn new(
-        tenant: String,
-        database: String,
-        vnode_id: VnodeId,
-        old_series_keys: Vec<SeriesKey>,
-        new_series_keys: Vec<SeriesKey>,
-        series_ids: Vec<SeriesId>,
-    ) -> Self {
-        Self {
-            tenant,
-            database,
-            vnode_id,
-            old_series_keys,
-            new_series_keys,
-            series_ids,
-        }
+impl<'a> UpdateSeriesKeysBlock<'a> {
+    pub fn new(buf: &[u8]) -> Self {
+        Self { buf }
     }
 
     pub fn size_bytes(&self) -> Result<u32> {
@@ -452,13 +450,60 @@ impl UpdateSeriesKeysBlock {
         Ok(size)
     }
 
-    pub fn encode<W>(&self, writer: W) -> Result<()>
-    where
-        W: std::io::Write,
-    {
-        bincode::serialize_into(writer, self).map_err(|err| Error::CommonError {
-            reason: err.to_string(),
-        })
+    pub fn encode(
+        tenant: &str,
+        database: &str,
+        vnode_id: VnodeId,
+        old_series_keys: &[SeriesKey],
+        new_series_keys: &[SeriesKey],
+        series_ids: &[SeriesId],
+    ) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(128);
+        // Serialize tenant
+        let tenant_bytes = tenant.as_bytes();
+        buf.extend((tenant_bytes.len() as u64).to_le_bytes());
+        buf.extend(tenant_bytes);
+        // Serialzie database
+        let database_bytes = database.as_bytes();
+        buf.extend((database_bytes.len() as u64).to_le_bytes());
+        buf.extend(database_bytes);
+        // Serialze vnode_id
+        buf.extend(vnode_id.to_le_bytes());
+        // Serialize old_series_keys
+        buf.extend((old_series_keys.len() as u64).to_le_bytes());
+        for k in old_series_keys {
+            buf.extend((k.tags.len() as u64).to_le_bytes());
+            for t in k.tags.iter() {
+                buf.extend((t.key.len() as u64).to_le_bytes());
+                buf.extend(t.key.iter());
+                buf.extend((t.value.len() as u64).to_le_bytes());
+                buf.extend(t.value.iter());
+            }
+            let table_bytes = k.table.as_bytes();
+            buf.extend((table_bytes.len() as u64).to_le_bytes());
+            buf.extend(table_bytes);
+        }
+        // Serialize new_series_keys
+        buf.extend((new_series_keys.len() as u64).to_le_bytes());
+        for k in new_series_keys {
+            buf.extend((k.tags.len() as u64).to_le_bytes());
+            for t in k.tags.iter() {
+                buf.extend((t.key.len() as u64).to_le_bytes());
+                buf.extend(t.key.iter());
+                buf.extend((t.value.len() as u64).to_le_bytes());
+                buf.extend(t.value.iter());
+            }
+            let table_bytes = k.table.as_bytes();
+            buf.extend((table_bytes.len() as u64).to_le_bytes());
+            buf.extend(table_bytes);
+        }
+        // Serialize series_ids
+        buf.extend((series_ids.len() as u64).to_le_bytes());
+        for id in series_ids {
+            buf.extend(id.to_le_bytes());
+        }
+
+        buf
     }
 
     pub fn decode(buf: &[u8]) -> Result<Self> {
@@ -470,32 +515,19 @@ impl UpdateSeriesKeysBlock {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[non_exhaustive]
-pub struct DeleteBlock {
-    pub tenant: String,
-    pub database: String,
-    pub table: String,
-    pub vnode_id: VnodeId,
-    pub series_ids: Vec<SeriesId>,
-    pub time_ranges: TimeRanges,
+pub struct DeleteBlock<'a> {
+    buf: &'a [u8],
+    // pub tenant: String,
+    // pub database: String,
+    // pub table: String,
+    // pub vnode_id: VnodeId,
+    // pub series_ids: Vec<SeriesId>,
+    // pub time_ranges: TimeRanges,
 }
 
-impl DeleteBlock {
-    pub fn new(
-        tenant: String,
-        database: String,
-        table: String,
-        vnode_id: VnodeId,
-        series_ids: Vec<SeriesId>,
-        time_ranges: TimeRanges,
-    ) -> Self {
-        Self {
-            tenant,
-            database,
-            table,
-            vnode_id,
-            series_ids,
-            time_ranges,
-        }
+impl<'a> DeleteBlock<'a> {
+    pub fn new(buf: &[u8]) -> Self {
+        Self { buf }
     }
 
     pub fn size_bytes(&self) -> Result<u32> {
@@ -505,13 +537,49 @@ impl DeleteBlock {
         Ok(size)
     }
 
-    pub fn encode<W>(&self, writer: W) -> Result<()>
-    where
-        W: std::io::Write,
-    {
-        bincode::serialize_into(writer, self).map_err(|err| Error::CommonError {
-            reason: err.to_string(),
-        })
+    pub fn encode(
+        tenant: &str,
+        database: &str,
+        table: &str,
+        vnode_id: VnodeId,
+        series_ids: &[SeriesId],
+        time_ranges: &TimeRanges,
+    ) -> Vec<u8> {
+        let mut buf = Vec::with_capacity(128);
+        // Serialize tenant
+        let tenant_bytes = tenant.as_bytes();
+        buf.extend((tenant_bytes.len() as u64).to_le_bytes());
+        buf.extend(tenant_bytes);
+        // Serialize database
+        let database_bytes = database.as_bytes();
+        buf.extend((database_bytes.len() as u64).to_le_bytes());
+        buf.extend(database_bytes);
+        // Serialize table
+        let table_bytes = table.as_bytes();
+        buf.extend((table_bytes.len() as u64).to_le_bytes());
+        buf.extend(table_bytes);
+        // Serialize vnode_id
+        buf.extend(vnode_id.to_le_bytes());
+        // Serialzie series_ids
+        buf.extend((series_ids.len() as u64).to_le_bytes());
+        for id in series_ids {
+            buf.extend(id.to_le_bytes());
+        }
+        // Serialize time_ranges
+        buf.extend((time_ranges.len() as u64).to_le_bytes());
+        for tr in time_ranges.time_ranges() {
+            buf.extend(tr.min_ts.to_le_bytes());
+            buf.extend(tr.max_ts.to_le_bytes());
+        }
+        buf.extend(time_ranges.min_ts().to_le_bytes());
+        buf.extend(time_ranges.max_ts().to_le_bytes());
+        if time_ranges.is_boundless() {
+            buf.push(1_u8);
+        } else {
+            buf.push(0_u8);
+        }
+
+        buf
     }
 
     pub fn decode(buf: &[u8]) -> Result<Self> {
