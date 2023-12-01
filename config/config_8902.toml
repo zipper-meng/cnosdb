@@ -3,8 +3,8 @@ host = "localhost"
 
 [deployment]
 #mode = 'singleton'
-#cpu = 4
-#memory = 16
+cpu = 4
+memory = 2
 
 [query]
 max_server_connections = 10240
@@ -27,7 +27,7 @@ base_file_size = "16M" # 16777216
 flush_req_channel_cap = 16
 max_cached_readers = 32
 compact_trigger_file_num = 4
-compact_trigger_cold_duration = "1h"
+compact_trigger_cold_duration = "1m"
 max_compact_size = "2G" # 2147483648
 max_concurrent_compaction = 4
 strict_write = false

@@ -171,7 +171,7 @@ impl StateMachine {
     fn insert(&self, key: &str, val: &str) -> StorageIOResult<()> {
         let version = self.update_version()?;
         self.db.insert(key, val).map_err(l_r_err)?;
-        info!("METADATA WRITE: {} :{}", key, val);
+        // info!("METADATA WRITE: {} :{}", key, val);
         let log = EntryLog {
             tye: ENTRY_LOG_TYPE_SET,
             ver: version,
@@ -187,7 +187,7 @@ impl StateMachine {
     fn remove(&self, key: &str) -> StorageIOResult<()> {
         let version = self.update_version()?;
         self.db.remove(key).map_err(l_r_err)?;
-        info!("METADATA REMOVE: {}", key);
+        // info!("METADATA REMOVE: {}", key);
         let log = EntryLog {
             tye: ENTRY_LOG_TYPE_DEL,
             ver: version,
@@ -221,7 +221,7 @@ impl StateMachine {
         let ver = from_str::<u64>(&ver_str).unwrap_or(0) + 1;
         let val = &*(ver.to_string());
         self.db.insert(&key, val).map_err(l_r_err)?;
-        info!("METADATA WRITE: {} :{}", &key, val);
+        // info!("METADATA WRITE: {} :{}", &key, val);
         Ok(ver)
     }
 
@@ -236,7 +236,7 @@ impl StateMachine {
 
         let val = &*(id_num + count).to_string();
         self.db.insert(&id_key, val).map_err(sm_w_err)?;
-        info!("METADATA WRITE: {} :{}", &id_key, val);
+        // info!("METADATA WRITE: {} :{}", &id_key, val);
 
         Ok(id_num)
     }
@@ -371,7 +371,7 @@ impl StateMachine {
     }
 
     pub fn process_read_command(&self, req: &ReadCommand) -> CommandResp {
-        debug!("meta process read command {:?}", req);
+        // debug!("meta process read command {:?}", req);
         match req {
             ReadCommand::DataNodes(cluster) => {
                 response_encode(self.process_read_data_nodes(cluster))
@@ -486,13 +486,13 @@ impl StateMachine {
             .filter_map(|(id, role)| users.get(&id).map(|e| (e.name().to_string(), role)))
             .collect();
 
-        debug!("returned members of path {}: {:?}", path, members);
+        // debug!("returned members of path {}: {:?}", path, members);
 
         Ok(members)
     }
 
     pub fn process_write_command(&self, req: &WriteCommand) -> CommandResp {
-        debug!("meta process write command {:?}", req);
+        // debug!("meta process write command {:?}", req);
 
         match req {
             WriteCommand::Set { key, value } => response_encode(self.process_write_set(key, value)),

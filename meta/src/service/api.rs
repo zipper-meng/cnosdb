@@ -80,7 +80,7 @@ pub async fn watch(
     app: Data<MetaApp>,
     req: Json<(String, String, HashSet<String>, u64)>, //client id, cluster,version
 ) -> actix_web::Result<impl Responder> {
-    info!("watch all  args: {:?}", req);
+    // info!("watch all  args: {:?}", req);
     let client = req.0 .0;
     let cluster = req.0 .1;
     let tenants = req.0 .2;
@@ -90,10 +90,10 @@ pub async fn watch(
     let mut notify = {
         let sm = app.store.state_machine.read().await;
         let watch_data = sm.read_change_logs(&cluster, &tenants, follow_ver);
-        info!(
-            "{} {}.{}: change logs: {:?} ",
-            client, base_ver, follow_ver, watch_data
-        );
+        // info!(
+        //     "{} {}.{}: change logs: {:?} ",
+        //     client, base_ver, follow_ver, watch_data
+        // );
 
         if watch_data.need_return(base_ver) {
             let data = response_encode(Ok(watch_data));
@@ -110,10 +110,10 @@ pub async fn watch(
 
         let sm = app.store.state_machine.read().await;
         let watch_data = sm.read_change_logs(&cluster, &tenants, follow_ver);
-        info!(
-            "{} {}.{}: change logs: {:?} ",
-            client, base_ver, follow_ver, watch_data
-        );
+        // info!(
+        //     "{} {}.{}: change logs: {:?} ",
+        //     client, base_ver, follow_ver, watch_data
+        // );
         if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
             let data = response_encode(Ok(watch_data));
             let response: Result<CommandResp, Infallible> = Ok(data);

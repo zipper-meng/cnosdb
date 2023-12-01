@@ -54,7 +54,6 @@ if [ $1 == "add" ]; then
     sleep 1
 
     rpc 8901/add-learner       '[4, "127.0.0.1:8931"]'
-    echo "Node 4 added as leaner"
     sleep 1
     echo "Changing membership from [1] to 4 nodes cluster: [1, 2, 3, 4]"
     echo

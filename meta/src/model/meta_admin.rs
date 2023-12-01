@@ -295,7 +295,7 @@ impl AdminMeta {
 
                 request.3 = watch_data.max_ver;
             } else {
-                info!("watch response wrong {:?}", watch_rsp);
+                error!("watch response wrong {:?}", watch_rsp);
                 tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
             }
         }
@@ -307,7 +307,7 @@ impl AdminMeta {
                 self.tenants.write().clear();
                 return base_ver;
             } else {
-                info!("sync all data node failed");
+                error!("sync all data node failed");
                 tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
             }
         }
