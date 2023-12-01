@@ -5,7 +5,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use models::predicate::domain::TimeRange;
-use models::{FieldId, Timestamp};
+use models::FieldId;
 use snafu::ResultExt;
 use trace::{error, info, trace};
 use utils::BloomFilter;
@@ -22,10 +22,11 @@ use crate::tsm::{
 };
 use crate::{ColumnFileId, Error, LevelId, TseriesFamilyId};
 
-/// Temporary compacting data block meta
+/// Temporary compacting data block meta, holding the priority of reader,
+/// the reader and the meta of data block.
 #[derive(Clone)]
 pub(crate) struct CompactingBlockMeta {
-    reader_idx: usize,
+    priority: usize,
     reader: Arc<TsmReader>,
     meta: BlockMeta,
 }
@@ -64,9 +65,9 @@ impl Display for CompactingBlockMeta {
 }
 
 impl CompactingBlockMeta {
-    pub fn new(tsm_reader_idx: usize, tsm_reader: Arc<TsmReader>, block_meta: BlockMeta) -> Self {
+    pub fn new(priority: usize, tsm_reader: Arc<TsmReader>, block_meta: BlockMeta) -> Self {
         Self {
-            reader_idx: tsm_reader_idx,
+            priority,
             reader: tsm_reader,
             meta: block_meta,
         }
@@ -84,6 +85,7 @@ impl CompactingBlockMeta {
         self.meta.min_ts() <= time_range.max_ts && self.meta.max_ts() >= time_range.min_ts
     }
 
+    /// Read data block of block meta from reader.
     pub async fn get_data_block(&self) -> Result<DataBlock> {
         self.reader
             .get_data_block(&self.meta)
@@ -91,6 +93,7 @@ impl CompactingBlockMeta {
             .context(error::ReadTsmSnafu)
     }
 
+    /// Read raw data of block meta from reader.
     pub async fn get_raw_data(&self, dst: &mut Vec<u8>) -> Result<usize> {
         self.reader
             .get_raw_data(&self.meta, dst)
@@ -103,6 +106,7 @@ impl CompactingBlockMeta {
     }
 }
 
+///
 #[derive(Clone)]
 pub(crate) struct CompactingBlockMetaGroup {
     field_id: FieldId,
@@ -129,7 +133,7 @@ impl CompactingBlockMetaGroup {
         self.time_range.merge(&other.time_range);
     }
 
-    pub async fn merge(
+    pub async fn merge_previous_block(
         mut self,
         previous_block: Option<CompactingBlock>,
         max_block_size: usize,
@@ -138,7 +142,7 @@ impl CompactingBlockMetaGroup {
             return Ok(vec![]);
         }
         self.blk_metas
-            .sort_by(|a, b| a.reader_idx.cmp(&b.reader_idx).reverse());
+            .sort_by(|a, b| a.priority.cmp(&b.priority).reverse());
 
         let merged_block;
         if self.blk_metas.len() == 1 && !self.blk_metas[0].has_tombstone() {
@@ -156,7 +160,7 @@ impl CompactingBlockMetaGroup {
                     merged_blks.push(prev_compacting_block);
                 }
                 merged_blks.push(CompactingBlock::raw(
-                    self.blk_metas[0].reader_idx,
+                    self.blk_metas[0].priority,
                     meta_0.clone(),
                     buf_0,
                 ));
@@ -177,7 +181,7 @@ impl CompactingBlockMetaGroup {
             } else {
                 // Raw block is not full, but nothing to merge with, directly return.
                 return Ok(vec![CompactingBlock::raw(
-                    self.blk_metas[0].reader_idx,
+                    self.blk_metas[0].priority,
                     meta_0.clone(),
                     buf_0,
                 )]);
@@ -699,7 +703,7 @@ pub async fn run_compaction_job(
 
         fid = iter.curr_fid;
         let mut compacting_blks = blk_meta_group
-            .merge(previous_merged_block.take(), max_block_size)
+            .merge_previous_block(previous_merged_block.take(), max_block_size)
             .await?;
         if compacting_blks.len() == 1 && compacting_blks[0].len() < max_block_size {
             // The only one data block too small, try to extend the next compacting blocks.
@@ -735,22 +739,15 @@ pub async fn run_compaction_job(
 }
 
 pub(crate) struct WriterWrapper {
-    // Init values.
-    delta_compaction: bool,
     ts_family_id: TseriesFamilyId,
     out_level: LevelId,
-    out_level_max_ts: Timestamp,
-    max_level_ts: Timestamp,
     max_file_size: u64,
     tsm_dir: PathBuf,
-    delta_dir: PathBuf,
     context: Arc<GlobalContext>,
 
     // Temporary values.
     tsm_writer_full: bool,
     tsm_writer: Option<TsmWriter>,
-    delta_writer_full: bool,
-    delta_writer: Option<TsmWriter>,
 
     // Result values.
     version_edit: VersionEdit,
@@ -760,11 +757,8 @@ pub(crate) struct WriterWrapper {
 impl WriterWrapper {
     pub fn new(request: &CompactReq, context: Arc<GlobalContext>) -> Self {
         Self {
-            delta_compaction: request.in_level == 0,
             ts_family_id: request.ts_family_id,
             out_level: request.out_level,
-            out_level_max_ts: request.time_range.max_ts,
-            max_level_ts: request.version.max_level_ts(),
             max_file_size: request
                 .version
                 .storage_opt()
@@ -772,15 +766,10 @@ impl WriterWrapper {
             tsm_dir: request
                 .storage_opt
                 .tsm_dir(&request.tenant_database, request.ts_family_id),
-            delta_dir: request
-                .storage_opt
-                .delta_dir(&request.tenant_database, request.ts_family_id),
             context,
 
             tsm_writer_full: false,
             tsm_writer: None,
-            delta_writer_full: false,
-            delta_writer: None,
 
             version_edit: VersionEdit::new(request.ts_family_id),
             file_metas: HashMap::new(),
@@ -788,29 +777,7 @@ impl WriterWrapper {
     }
 
     pub async fn close(mut self) -> Result<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)> {
-        if let Some(ref mut w) = self.delta_writer {
-            Self::close_writer(
-                w,
-                &mut self.file_metas,
-                &mut self.version_edit,
-                0,
-                self.ts_family_id,
-                self.max_level_ts,
-            )
-            .await?;
-        }
-        if let Some(ref mut w) = self.tsm_writer {
-            Self::close_writer(
-                w,
-                &mut self.file_metas,
-                &mut self.version_edit,
-                self.out_level,
-                self.ts_family_id,
-                self.max_level_ts,
-            )
-            .await?;
-        }
-
+        self.close_writer().await?;
         Ok((self.version_edit, self.file_metas))
     }
 
@@ -818,339 +785,140 @@ impl WriterWrapper {
     pub async fn write(&mut self, blk: CompactingBlock) -> Result<()> {
         match blk {
             CompactingBlock::Decoded {
-                priority: _priority,
                 field_id,
                 data_block,
+                ..
             } => {
-                if self.delta_compaction {
-                    if let Some(tr) = data_block.time_range() {
-                        if tr.0 < self.out_level_max_ts && tr.1 > self.out_level_max_ts {
-                            // Split block.
-                            let (tsm_blk, delta_blk) = data_block.split(self.out_level_max_ts);
-                            if !tsm_blk.is_empty() {
-                                self.write_tsm_data_block(field_id, &tsm_blk).await?;
-                            }
-                            if !delta_blk.is_empty() {
-                                self.write_delta_data_block(field_id, &delta_blk).await?;
-                            }
-                        } else if tr.0 > self.out_level_max_ts {
-                            self.write_delta_data_block(field_id, &data_block).await?;
-                        } else {
-                            self.write_tsm_data_block(field_id, &data_block).await?;
-                        }
-                    }
-                } else {
-                    self.write_tsm_data_block(field_id, &data_block).await?;
-                }
+                self.write_tsm_data_block(field_id, &data_block).await?;
             }
             CompactingBlock::Encoded {
-                priority,
                 field_id,
                 data_block,
+                ..
             } => {
-                if self.delta_compaction {
-                    if let Some(tr) = data_block.time_range {
-                        if tr.min_ts < self.out_level_max_ts && tr.max_ts > self.out_level_max_ts {
-                            // Split block.
-                            let decoded_blk =
-                                CompactingBlock::encoded(priority, field_id, data_block)
-                                    .decode()?;
-                            let (tsm_blk, delta_blk) = decoded_blk.split(self.out_level_max_ts);
-                            if !tsm_blk.is_empty() {
-                                self.write_tsm_data_block(field_id, &tsm_blk).await?;
-                            }
-                            if !delta_blk.is_empty() {
-                                self.write_delta_data_block(field_id, &delta_blk).await?;
-                            }
-                        } else if tr.min_ts > self.out_level_max_ts {
-                            self.write_delta_encoded_data_block(field_id, &data_block)
-                                .await?;
-                        } else {
-                            self.write_tsm_encoded_data_block(field_id, &data_block)
-                                .await?;
-                        }
-                    }
-                } else {
-                    self.write_tsm_encoded_data_block(field_id, &data_block)
-                        .await?;
-                }
+                self.write_tsm_encoded_data_block(field_id, &data_block)
+                    .await?;
             }
-            CompactingBlock::Raw {
-                priority,
-                meta,
-                raw,
-            } => {
-                if self.delta_compaction {
-                    let tr = meta.time_range();
-                    if tr.min_ts < self.out_level_max_ts && tr.max_ts > self.out_level_max_ts {
-                        // Split block.
-                        let field_id = meta.field_id();
-                        let decoded_blk = CompactingBlock::raw(priority, meta, raw).decode()?;
-                        let (tsm_blk, delta_blk) = decoded_blk.split(self.out_level_max_ts);
-                        if !tsm_blk.is_empty() {
-                            self.write_tsm_data_block(field_id, &tsm_blk).await?;
-                        }
-                        if !delta_blk.is_empty() {
-                            self.write_delta_data_block(field_id, &delta_blk).await?;
-                        }
-                    } else if tr.min_ts > self.out_level_max_ts {
-                        self.write_delta_raw_data_block(&meta, &raw).await?;
-                    } else {
-                        self.write_tsm_raw_data_block(&meta, &raw).await?;
-                    }
-                } else {
-                    self.write_tsm_raw_data_block(&meta, &raw).await?;
-                }
+            CompactingBlock::Raw { meta, raw, .. } => {
+                self.write_tsm_raw_data_block(&meta, &raw).await?;
             }
         }
 
         Ok(())
     }
 
-    pub async fn write_delta_data_block(
+    async fn write_tsm_data_block(
         &mut self,
         field_id: FieldId,
         data_block: &DataBlock,
     ) -> Result<usize> {
-        self.write_block_inner(field_id, data_block, true).await
-    }
-
-    pub async fn write_tsm_data_block(
-        &mut self,
-        field_id: FieldId,
-        data_block: &DataBlock,
-    ) -> Result<usize> {
-        self.write_block_inner(field_id, data_block, false).await
-    }
-
-    async fn write_block_inner(
-        &mut self,
-        field_id: FieldId,
-        data_block: &DataBlock,
-        is_delta: bool,
-    ) -> Result<usize> {
-        let write_ret = if is_delta {
-            let write_ret = self
-                .delta_writer_mut()
-                .await?
-                .write_block(field_id, data_block)
-                .await;
-            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
-                self.delta_writer_full = true;
-                return Ok(write_size);
-            }
-            write_ret
-        } else {
-            let write_ret = self
-                .tsm_writer_mut()
-                .await?
-                .write_block(field_id, data_block)
-                .await;
-            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
-                self.tsm_writer_full = true;
-                return Ok(write_size);
-            }
-            write_ret
-        };
+        let write_ret = self
+            .tsm_writer_mut()
+            .await?
+            .write_block(field_id, data_block)
+            .await;
+        if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
+            self.tsm_writer_full = true;
+            return Ok(write_size);
+        }
         Self::warp_write_tsm_result(write_ret)
     }
 
-    pub async fn write_delta_encoded_data_block(
+    async fn write_tsm_encoded_data_block(
         &mut self,
         field_id: FieldId,
         data_block: &EncodedDataBlock,
     ) -> Result<usize> {
-        self.write_encoded_block_inner(field_id, data_block, true)
-            .await
-    }
-
-    pub async fn write_tsm_encoded_data_block(
-        &mut self,
-        field_id: FieldId,
-        data_block: &EncodedDataBlock,
-    ) -> Result<usize> {
-        self.write_encoded_block_inner(field_id, data_block, false)
-            .await
-    }
-
-    async fn write_encoded_block_inner(
-        &mut self,
-        field_id: FieldId,
-        data_block: &EncodedDataBlock,
-        is_delta: bool,
-    ) -> Result<usize> {
-        let write_ret = if is_delta {
-            let write_ret = self
-                .delta_writer_mut()
-                .await?
-                .write_encoded_block(field_id, data_block)
-                .await;
-            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
-                self.delta_writer_full = true;
-                return Ok(write_size);
-            }
-            write_ret
-        } else {
-            let write_ret = self
-                .tsm_writer_mut()
-                .await?
-                .write_encoded_block(field_id, data_block)
-                .await;
-            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
-                self.tsm_writer_full = true;
-                return Ok(write_size);
-            }
-            write_ret
-        };
+        let write_ret = self
+            .tsm_writer_mut()
+            .await?
+            .write_encoded_block(field_id, data_block)
+            .await;
+        if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
+            self.tsm_writer_full = true;
+            return Ok(write_size);
+        }
         Self::warp_write_tsm_result(write_ret)
     }
 
-    pub async fn write_delta_raw_data_block(
+    async fn write_tsm_raw_data_block(
         &mut self,
         block_meta: &BlockMeta,
         data_block: &[u8],
     ) -> Result<usize> {
-        self.write_raw_inner(block_meta, data_block, true).await
-    }
-
-    pub async fn write_tsm_raw_data_block(
-        &mut self,
-        block_meta: &BlockMeta,
-        data_block: &[u8],
-    ) -> Result<usize> {
-        self.write_raw_inner(block_meta, data_block, false).await
-    }
-
-    async fn write_raw_inner(
-        &mut self,
-        block_meta: &BlockMeta,
-        data_block: &[u8],
-        is_delta: bool,
-    ) -> Result<usize> {
-        let write_ret = if is_delta {
-            let write_ret = self
-                .delta_writer_mut()
-                .await?
-                .write_raw(block_meta, data_block)
-                .await;
-            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
-                self.delta_writer_full = true;
-                return Ok(write_size);
-            }
-            write_ret
-        } else {
-            let write_ret = self
-                .tsm_writer_mut()
-                .await?
-                .write_raw(block_meta, data_block)
-                .await;
-            if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
-                self.tsm_writer_full = true;
-                return Ok(write_size);
-            }
-            write_ret
-        };
+        let write_ret = self
+            .tsm_writer_mut()
+            .await?
+            .write_raw(block_meta, data_block)
+            .await;
+        if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
+            self.tsm_writer_full = true;
+            return Ok(write_size);
+        }
         Self::warp_write_tsm_result(write_ret)
     }
 
     async fn tsm_writer_mut(&mut self) -> Result<&mut TsmWriter> {
         if self.tsm_writer_full {
-            if let Some(ref mut w) = self.tsm_writer {
-                Self::close_writer(
-                    w,
-                    &mut self.file_metas,
-                    &mut self.version_edit,
-                    self.out_level,
-                    self.ts_family_id,
-                    self.out_level_max_ts,
-                )
-                .await?;
-            }
-            self.new_writer(false).await
+            self.close_writer().await?;
+            self.new_writer().await
         } else {
             match self.tsm_writer {
                 Some(ref mut w) => Ok(w),
-                None => self.new_writer(false).await,
+                None => self.new_writer().await,
             }
         }
     }
 
-    async fn delta_writer_mut(&mut self) -> Result<&mut TsmWriter> {
-        if self.delta_writer_full {
-            if let Some(ref mut w) = self.tsm_writer {
-                Self::close_writer(
-                    w,
-                    &mut self.file_metas,
-                    &mut self.version_edit,
-                    0,
-                    self.ts_family_id,
-                    self.out_level_max_ts,
-                )
-                .await?;
-            }
-            self.new_writer(true).await
-        } else {
-            match self.delta_writer {
-                Some(ref mut w) => Ok(w),
-                None => self.new_writer(true).await,
-            }
-        }
-    }
-
-    async fn new_writer(&mut self, is_delta: bool) -> Result<&mut TsmWriter> {
-        let writer_path = if is_delta {
-            &self.delta_dir
-        } else {
-            &self.tsm_dir
-        };
+    async fn new_writer(&mut self) -> Result<&mut TsmWriter> {
         let writer = tsm::new_tsm_writer(
-            writer_path,
+            &self.tsm_dir,
             self.context.file_id_next(),
-            is_delta,
+            false,
             self.max_file_size,
         )
         .await?;
         info!(
             "Compaction: File: {} been created (level: {}).",
             writer.sequence(),
-            if is_delta { 0 } else { self.out_level }
+            self.out_level,
         );
 
-        if is_delta {
-            self.delta_writer_full = false;
-            Ok(self.delta_writer.insert(writer))
-        } else {
-            self.tsm_writer_full = false;
-            Ok(self.tsm_writer.insert(writer))
-        }
+        self.tsm_writer_full = false;
+        Ok(self.tsm_writer.insert(writer))
     }
 
-    async fn close_writer(
-        tsm_writer: &mut TsmWriter,
-        file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
-        version_edit: &mut VersionEdit,
-        out_level: LevelId,
-        ts_family_id: TseriesFamilyId,
-        max_level_ts: Timestamp,
-    ) -> Result<()> {
-        tsm_writer
-            .write_index()
-            .await
-            .context(error::WriteTsmSnafu)?;
-        tsm_writer.finish().await.context(error::WriteTsmSnafu)?;
-        file_metas.insert(
-            tsm_writer.sequence(),
-            Arc::new(tsm_writer.bloom_filter_cloned()),
-        );
-        info!(
-            "Compaction: File: {} write finished (level: {}, {} B).",
-            tsm_writer.sequence(),
-            out_level,
-            tsm_writer.size()
-        );
+    async fn close_writer(&mut self) -> Result<()> {
+        if let Some(mut tsm_writer) = self.tsm_writer.take() {
+            tsm_writer
+                .write_index()
+                .await
+                .context(error::WriteTsmSnafu)?;
+            tsm_writer.finish().await.context(error::WriteTsmSnafu)?;
 
-        let cm = new_compact_meta(tsm_writer, ts_family_id, out_level);
-        version_edit.add_file(cm, max_level_ts);
+            info!(
+                "Compaction: File: {} write finished (level: {}, {} B).",
+                tsm_writer.sequence(),
+                self.out_level,
+                tsm_writer.size()
+            );
+
+            let file_id = tsm_writer.sequence();
+            let cm = CompactMeta {
+                file_id,
+                file_size: tsm_writer.size(),
+                tsf_id: self.ts_family_id,
+                level: self.out_level,
+                min_ts: tsm_writer.min_ts(),
+                max_ts: tsm_writer.max_ts(),
+                high_seq: 0,
+                low_seq: 0,
+                is_delta: false,
+            };
+            self.version_edit.add_file(cm, tsm_writer.max_ts());
+            let bloom_filter = tsm_writer.into_bloom_filter();
+            self.file_metas.insert(file_id, Arc::new(bloom_filter));
+        }
 
         Ok(())
     }
@@ -1186,24 +954,6 @@ impl WriterWrapper {
                 Ok(T::default())
             }
         }
-    }
-}
-
-fn new_compact_meta(
-    tsm_writer: &TsmWriter,
-    tsf_id: TseriesFamilyId,
-    level: LevelId,
-) -> CompactMeta {
-    CompactMeta {
-        file_id: tsm_writer.sequence(),
-        file_size: tsm_writer.size(),
-        tsf_id,
-        level,
-        min_ts: tsm_writer.min_ts(),
-        max_ts: tsm_writer.max_ts(),
-        high_seq: 0,
-        low_seq: 0,
-        is_delta: false,
     }
 }
 
@@ -1344,7 +1094,7 @@ pub mod test {
                 false,
                 writer.path(),
             );
-            cf.set_field_id_filter(Arc::new(writer.bloom_filter_cloned()));
+            cf.set_field_id_filter(Arc::new(writer.into_bloom_filter()));
             cfs.push(Arc::new(cf));
         }
         (file_seq + 1, cfs)
