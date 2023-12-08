@@ -236,6 +236,7 @@ impl LevelCompactionPicker {
 }
 
 /// Compaction picker for picking files in level-0 (delta files)
+/// and the output level (one of 1 to 4)
 #[derive(Debug)]
 pub struct DeltaCompactionPicker {
     strategy: String,
@@ -256,7 +257,7 @@ impl Picker for DeltaCompactionPicker {
             return None;
         }
 
-        let mut level_overlaped_files: [Vec<Arc<ColumnFile>>; 5] =
+        let mut level_overlapped_files: [Vec<Arc<ColumnFile>>; 5] =
             [vec![], Vec::new(), Vec::new(), Vec::new(), Vec::new()];
         let mut file_picked: bool;
         let mut level_picking: usize;
@@ -266,24 +267,26 @@ impl Picker for DeltaCompactionPicker {
             }
             file_picked = false;
             level_picking = 4;
-            // Form level-4 to level-1, put the overlapped files.
+            // Form level-4 to level-1, collect the overlapped level-0 files.
             for level in levels.iter().skip(1).rev() {
                 if file.time_range().min_ts < level.time_range.max_ts {
-                    level_overlaped_files[level_picking].push(file.clone());
+                    level_overlapped_files[level_picking].push(file.clone());
                     file_picked = true;
                     break;
                 }
                 level_picking -= 1;
             }
-            // If time_range of a file is too old than level-4, put to level-4 files.
+            // If time_range of a level-0 file is too old than level-4, put to level-4 files.
+            // TODO(zipper): remove this if because level-0 files is newer than level-1 to level-4 is impossible
             if !file_picked {
-                level_overlaped_files[4].push(file.clone());
+                // impossible: level-0 files is newer than level-4 to level-1
+                level_overlapped_files[4].push(file.clone());
             }
         }
         debug!(
-            "Picker: strategy: {}, level overlaped files: [ {} ]",
+            "Picker: strategy: {}, level overlapped files: [ {} ]",
             self.strategy,
-            level_overlaped_files
+            level_overlapped_files
                 .iter()
                 .enumerate()
                 .map(|(i, files)| format!("{{ Level-{}: {} }}", i, files.len()))
@@ -291,10 +294,10 @@ impl Picker for DeltaCompactionPicker {
                 .join(", ")
         );
 
-        // Find the level with maximum overlaped level-0 files.
+        // Find the level with maximum overlapped level-0 files.
         let mut out_level = 0;
         let mut max_files = 0_usize;
-        for (i, files) in level_overlaped_files.iter().enumerate() {
+        for (i, files) in level_overlapped_files.iter().enumerate() {
             if files.len() > max_files {
                 out_level = i;
                 max_files = files.len();
@@ -310,9 +313,9 @@ impl Picker for DeltaCompactionPicker {
 
         // Pick files from level-0 files overlapped with that level.
         let max_compact_size = version.storage_opt().max_compact_size;
-        let mut picking_files = Vec::with_capacity(level_overlaped_files.len());
+        let mut picking_files = Vec::with_capacity(level_overlapped_files.len());
         let mut picking_file_size = 0_u64;
-        for file in level_overlaped_files[out_level].iter() {
+        for file in level_overlapped_files[out_level].iter() {
             if file.is_compacting() || !file.mark_compacting() {
                 // If file already compacting, continue to next file.
                 continue;

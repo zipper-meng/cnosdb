@@ -227,7 +227,7 @@ impl CompactingBlockMetaGroup {
 
 impl Display for CompactingBlockMetaGroup {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{{field_id: {}, blk_metas: [", self.field_id+)?;
+        write!(f, "{{field_id: {}, blk_metas: [", self.field_id)?;
         if !self.blk_metas.is_empty() {
             write!(f, "{}", &self.blk_metas[0])?;
             for b in self.blk_metas.iter().skip(1) {
@@ -249,6 +249,7 @@ fn chunk_merged_block(
         // Try to merge with the next CompactingBlockMetaGroup.
         merged_blks.push(CompactingBlock::decoded(0, field_id, data_block));
     } else {
+        // Data block is so big that split into multi CompactingBlock
         let len = data_block.len();
         let mut start = 0;
         let mut end = len.min(max_block_size);
@@ -256,7 +257,7 @@ fn chunk_merged_block(
             // Encode decoded data blocks into chunks.
             let encoded_blk =
                 EncodedDataBlock::encode(&data_block, start, end).map_err(|e| Error::WriteTsm {
-                    source: tsm::WriteTsmError::Encode { source: e },
+                    source: WriteTsmError::Encode { source: e },
                 })?;
             merged_blks.push(CompactingBlock::encoded(0, field_id, encoded_blk));
 
@@ -945,7 +946,7 @@ impl WriterWrapper {
                     path.display()
                 );
                 Err(Error::WriteTsm {
-                    source: tsm::WriteTsmError::Finished { path },
+                    source: WriteTsmError::Finished { path },
                 })
             }
             Err(WriteTsmError::MaxFileSizeExceed { .. }) => {
