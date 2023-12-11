@@ -358,9 +358,9 @@ impl TsmWriter {
         Ok(())
     }
 
-    /// Get a cloned `BloomFilter` from currently buffered index data.
-    pub fn bloom_filter_cloned(&self) -> BloomFilter {
-        self.index_buf.bloom_filter.clone()
+    /// Consumes a finished tsm writer and take `BloomFilter` from currently buffered index data.
+    pub fn into_bloom_filter(self) -> BloomFilter {
+        self.index_buf.bloom_filter
     }
 }
 

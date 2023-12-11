@@ -426,13 +426,13 @@ impl WriterWrapper {
             .context(error::WriteTsmSnafu)
     }
 
-    pub async fn finish(&mut self) -> Result<Vec<(CompactMeta, Arc<BloomFilter>)>> {
+    pub async fn finish(self) -> Result<Vec<(CompactMeta, Arc<BloomFilter>)>> {
         let mut column_file_metas = Vec::with_capacity(2);
         let compact_meta_builder = CompactMetaBuilder::new(self.ts_family_id);
 
         // While delta_writer is level-0, tsm_writer is level-1.
-        for (level, writer) in self.writers.iter_mut().enumerate() {
-            if let Some(w) = writer.as_mut() {
+        for (level, writer) in self.writers.into_iter().enumerate() {
+            if let Some(mut w) = writer {
                 w.write_index().await.context(error::WriteTsmSnafu)?;
                 w.finish().await.context(error::WriteTsmSnafu)?;
                 info!(
@@ -441,16 +441,14 @@ impl WriterWrapper {
                     level,
                     w.size()
                 );
-                column_file_metas.push((
-                    compact_meta_builder.build(
-                        w.sequence(),
-                        w.size(),
-                        level as u32,
-                        w.min_ts(),
-                        w.max_ts(),
-                    ),
-                    Arc::new(w.bloom_filter_cloned()),
-                ));
+                let cm = compact_meta_builder.build(
+                    w.sequence(),
+                    w.size(),
+                    level as u32,
+                    w.min_ts(),
+                    w.max_ts(),
+                );
+                column_file_metas.push((cm, Arc::new(w.into_bloom_filter())));
             }
         }
 
