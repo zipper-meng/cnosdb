@@ -21,7 +21,8 @@ use crate::tsm::{
 };
 use crate::{ColumnFileId, Error, LevelId, TseriesFamilyId};
 
-/// Temporary compacting data block meta
+/// Temporary compacting data block meta, holding the priority of reader,
+/// the reader and the meta of data block.
 #[derive(Clone)]
 pub(crate) struct CompactingBlockMeta {
     reader_idx: usize,
@@ -83,6 +84,7 @@ impl CompactingBlockMeta {
         self.meta.min_ts() <= time_range.max_ts && self.meta.max_ts() >= time_range.min_ts
     }
 
+    /// Read data block of block meta from reader.
     pub async fn get_data_block(&self) -> Result<DataBlock> {
         self.reader
             .get_data_block(&self.meta)
@@ -90,6 +92,7 @@ impl CompactingBlockMeta {
             .context(error::ReadTsmSnafu)
     }
 
+    /// Read raw data of block meta from reader.
     pub async fn get_raw_data(&self, dst: &mut Vec<u8>) -> Result<usize> {
         self.reader
             .get_raw_data(&self.meta, dst)
@@ -108,6 +111,7 @@ pub(crate) struct CompactingBlockMetaGroup {
     blk_metas: Vec<CompactingBlockMeta>,
     time_range: TimeRange,
 }
+
 impl CompactingBlockMetaGroup {
     pub fn new(field_id: FieldId, blk_meta: CompactingBlockMeta) -> Self {
         let time_range = blk_meta.time_range();
@@ -141,7 +145,7 @@ impl CompactingBlockMetaGroup {
         let merged_block;
         if self.blk_metas.len() == 1 && !self.blk_metas[0].has_tombstone() {
             // Only one compacting block and has no tombstone, write as raw block.
-            trace!("only one compacting block, write as raw block");
+            trace!("only one compacting block without tombstone, handled as raw block");
             let meta_0 = &self.blk_metas[0].meta;
             let mut buf_0 = Vec::with_capacity(meta_0.size() as usize);
             let data_len_0 = self.blk_metas[0].get_raw_data(&mut buf_0).await?;
@@ -174,7 +178,6 @@ impl CompactingBlockMetaGroup {
                 merged_block = data_block;
             } else {
                 // Raw block is not full, but nothing to merge with, directly return.
-
                 return Ok(vec![CompactingBlock::raw(
                     self.blk_metas[0].reader_idx,
                     meta_0.clone(),
@@ -220,6 +223,19 @@ impl CompactingBlockMetaGroup {
     }
 }
 
+impl Display for CompactingBlockMetaGroup {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{field_id: {}, blk_metas: [", self.field_id)?;
+        if !self.blk_metas.is_empty() {
+            write!(f, "{}", &self.blk_metas[0])?;
+            for b in self.blk_metas.iter().skip(1) {
+                write!(f, ", {}", b)?;
+            }
+        }
+        write!(f, "]}}")
+    }
+}
+
 fn chunk_merged_block(
     field_id: FieldId,
     data_block: DataBlock,
@@ -231,6 +247,7 @@ fn chunk_merged_block(
         // Try to merge with the next CompactingBlockMetaGroup.
         merged_blks.push(CompactingBlock::decoded(0, field_id, data_block));
     } else {
+        // Data block is so big that split into multi CompactingBlock
         let len = data_block.len();
         let mut start = 0;
         let mut end = len.min(max_block_size);
@@ -411,14 +428,12 @@ pub(crate) struct CompactIterator {
     compacting_files: BinaryHeap<Pin<Box<CompactingFile>>>,
     /// Maximum values in generated CompactingBlock
     max_data_block_size: usize,
-    // /// The time range of data to be merged of level-0 data blocks.
-    // /// The level-0 data that out of the thime range will write back to level-0.
-    // level_time_range: TimeRange,
     /// Decode a data block even though it doesn't need to merge with others,
     /// return CompactingBlock::DataBlock rather than CompactingBlock::Raw .
     decode_non_overlap_blocks: bool,
 
     /// Temporarily stored index of `TsmReader` in self.tsm_readers,
+    /// and if `TsmReader` is a delta file,
     /// and `BlockMetaIterator` of current field_id.
     tmp_tsm_blk_meta_iters: Vec<(usize, BlockMetaIterator)>,
     /// When a TSM file at index i is ended, finished_idxes[i] is set to true.
@@ -465,6 +480,7 @@ impl CompactIterator {
             compacting_files,
             max_data_block_size,
             decode_non_overlap_blocks,
+            tmp_tsm_blk_meta_iters: Vec::with_capacity(compacting_files_cnt),
             finished_readers: vec![false; compacting_files_cnt],
             ..Default::default()
         }
@@ -472,6 +488,7 @@ impl CompactIterator {
 
     /// Update tmp_tsm_blks and tmp_tsm_blk_tsm_reader_idx for field id in next iteration.
     fn next_field_id(&mut self) {
+        trace!("===============================");
         self.curr_fid = None;
 
         if let Some(f) = self.compacting_files.peek() {
@@ -489,14 +506,17 @@ impl CompactIterator {
             self.finished_reader_cnt += 1;
         }
         self.tmp_tsm_blk_meta_iters.clear();
+        let mut loop_field_id;
+        let mut loop_file_i;
         while let Some(mut f) = self.compacting_files.pop() {
-            let loop_field_id = f.field_id;
-            let loop_file_i = f.i;
+            loop_field_id = f.field_id;
+            loop_file_i = f.i;
             if self.curr_fid == loop_field_id {
                 if let Some(idx_meta) = f.peek() {
                     self.tmp_tsm_blk_meta_iters
                         .push((loop_file_i, idx_meta.block_iterator()));
-                    trace!("merging idx_meta: field_id: {}, field_type: {:?}, block_count: {}, time_range: {:?}",
+                    trace!("merging idx_meta({}): field_id: {}, field_type: {:?}, block_count: {}, time_range: {:?}",
+                        self.tmp_tsm_blk_meta_iters.len(),
                         idx_meta.field_id(),
                         idx_meta.field_type(),
                         idx_meta.block_count(),
@@ -518,7 +538,7 @@ impl CompactIterator {
     }
 
     /// Collect merging `DataBlock`s.
-    async fn fetch_merging_block_meta_groups(&mut self) -> bool {
+    fn fetch_merging_block_meta_groups(&mut self) -> bool {
         if self.tmp_tsm_blk_meta_iters.is_empty() {
             return false;
         }
@@ -583,14 +603,7 @@ impl CompactIterator {
             "selected merging meta groups: {}",
             blk_meta_groups
                 .iter()
-                .map(|g| format!(
-                    "[{}]",
-                    g.blk_metas
-                        .iter()
-                        .map(|b| format!("{}", b))
-                        .collect::<Vec<String>>()
-                        .join(", ")
-                ))
+                .map(|g| g.to_string())
                 .collect::<Vec<String>>()
                 .join(", ")
         );
@@ -621,7 +634,7 @@ impl CompactIterator {
         }
 
         // Get all of block_metas of this field id, and merge these blocks
-        self.fetch_merging_block_meta_groups().await;
+        self.fetch_merging_block_meta_groups();
 
         if let Some(g) = self.merging_blk_meta_groups.pop_front() {
             return Some(g);
@@ -677,7 +690,9 @@ pub async fn run_compaction_job(
 
     let max_block_size = TseriesFamily::MAX_DATA_BLOCK_SIZE as usize;
     let mut iter = CompactIterator::new(tsm_readers, max_block_size, false);
-    let tsm_dir = request.storage_opt.tsm_dir(&request.database, tsf_id);
+    let tsm_dir = request
+        .storage_opt
+        .tsm_dir(&request.tenant_database, tsf_id);
     let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
     info!(
         "Compaction: File: {} been created (level: {}).",
@@ -897,11 +912,11 @@ pub mod test {
 
     use cache::ShardedAsyncCache;
     use minivec::MiniVec;
+    use models::codec::Encoding;
     use models::predicate::domain::TimeRange;
     use models::{FieldId, PhysicalDType as ValueType, Timestamp};
 
-    use crate::compaction::compact::chunk_merged_block;
-    use crate::compaction::{run_compaction_job, CompactReq, CompactingBlock};
+    use super::{chunk_merged_block, run_compaction_job, CompactReq, CompactingBlock};
     use crate::context::GlobalContext;
     use crate::file_system::file_manager;
     use crate::kv_option::Options;
@@ -909,7 +924,7 @@ pub mod test {
     use crate::tseries_family::{ColumnFile, LevelInfo, Version};
     use crate::tsm::codec::DataBlockEncoding;
     use crate::tsm::{self, DataBlock, EncodedDataBlock, TsmReader, TsmTombstone};
-    use crate::{file_utils, ColumnFileId};
+    use crate::{file_utils, ColumnFileId, LevelId};
 
     #[test]
     fn test_chunk_merged_block() {
@@ -997,7 +1012,7 @@ pub mod test {
         }
     }
 
-    pub(crate) async fn write_data_blocks_to_column_file(
+    pub async fn write_data_blocks_to_column_file(
         dir: impl AsRef<Path>,
         data: Vec<HashMap<FieldId, Vec<DataBlock>>>,
     ) -> (u64, Vec<Arc<ColumnFile>>) {
@@ -1024,13 +1039,13 @@ pub mod test {
                 false,
                 writer.path(),
             );
-            cf.set_field_id_filter(Arc::new(writer.bloom_filter_cloned()));
+            cf.set_field_id_filter(Arc::new(writer.into_bloom_filter()));
             cfs.push(Arc::new(cf));
         }
         (file_seq + 1, cfs)
     }
 
-    async fn read_data_blocks_from_column_file(
+    pub async fn read_data_blocks_from_column_file(
         path: impl AsRef<Path>,
     ) -> HashMap<FieldId, Vec<DataBlock>> {
         let tsm_reader = TsmReader::open(path).await.unwrap();
@@ -1045,22 +1060,36 @@ pub mod test {
         data
     }
 
-    fn get_result_file_path(dir: impl AsRef<Path>, version_edit: VersionEdit) -> PathBuf {
+    fn get_result_file_path(
+        dir: impl AsRef<Path>,
+        version_edit: VersionEdit,
+        level: LevelId,
+    ) -> PathBuf {
         if version_edit.has_file_id && !version_edit.add_files.is_empty() {
-            let file_id = version_edit.add_files.first().unwrap().file_id;
-            return file_utils::make_tsm_file(dir, file_id);
+            if let Some(f) = version_edit
+                .add_files
+                .into_iter()
+                .find(|f| f.level == level)
+            {
+                if level == 0 {
+                    return file_utils::make_delta_file(dir, f.file_id);
+                } else {
+                    return file_utils::make_tsm_file(dir, f.file_id);
+                }
+            }
+            panic!("VersionEdit::add_files doesn't contain any file matches level-{level}.");
         }
-
-        panic!("VersionEdit doesn't contain any add_files.");
+        panic!("VersionEdit::add_files is empty, no file to read.");
     }
 
     /// Compare DataBlocks in path with the expected_Data using assert_eq.
-    async fn check_column_file(
+    pub async fn check_column_file(
         dir: impl AsRef<Path>,
         version_edit: VersionEdit,
         expected_data: HashMap<FieldId, Vec<DataBlock>>,
+        expected_data_level: LevelId,
     ) {
-        let path = get_result_file_path(dir, version_edit);
+        let path = get_result_file_path(dir, version_edit, expected_data_level);
         let data = read_data_blocks_from_column_file(path).await;
         let mut data_field_ids = data.keys().copied().collect::<Vec<_>>();
         data_field_ids.sort_unstable();
@@ -1082,40 +1111,43 @@ pub mod test {
         }
     }
 
-    pub(crate) fn create_options(base_dir: String) -> Arc<Options> {
+    pub fn create_options(base_dir: String) -> Arc<Options> {
         let mut config = config::get_config_for_test();
-        config.storage.path = base_dir;
-        let opt = Options::from(&config);
-        Arc::new(opt)
+        config.storage.path = base_dir.clone();
+        config.log.path = base_dir;
+        Arc::new(Options::from(&config))
     }
 
-    fn prepare_compact_req_and_kernel(
-        database: Arc<String>,
+    pub fn prepare_compaction(
+        tenant_database: Arc<String>,
         opt: Arc<Options>,
-        next_file_id: u64,
+        next_file_id: ColumnFileId,
         files: Vec<Arc<ColumnFile>>,
+        max_level_ts: Timestamp,
     ) -> (CompactReq, Arc<GlobalContext>) {
         let version = Arc::new(Version::new(
             1,
-            database.clone(),
+            tenant_database.clone(),
             opt.storage.clone(),
             1,
-            LevelInfo::init_levels(database.clone(), 0, opt.storage.clone()),
-            1000,
+            LevelInfo::init_levels(tenant_database.clone(), 0, opt.storage.clone()),
+            max_level_ts,
             Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
         ));
         let compact_req = CompactReq {
             ts_family_id: 1,
-            database,
+            tenant_database,
             storage_opt: opt.storage.clone(),
             files,
             version,
+            in_level: 1,
             out_level: 2,
+            time_range: TimeRange::all(),
         };
-        let kernel = Arc::new(GlobalContext::new());
-        kernel.set_file_id(next_file_id);
+        let context = Arc::new(GlobalContext::new());
+        context.set_file_id(next_file_id);
 
-        (compact_req, kernel)
+        (compact_req, context)
     }
 
     fn format_data_blocks(data_blocks: &[DataBlock]) -> String {
@@ -1129,6 +1161,7 @@ pub mod test {
         )
     }
 
+    /// Test compaction with ordered data.
     #[tokio::test]
     async fn test_compaction_fast() {
         #[rustfmt::skip]
@@ -1156,104 +1189,118 @@ pub mod test {
             (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
         ]);
 
-        let dir = "/tmp/test/compaction";
-        let database = Arc::new("dba".to_string());
+        let dir = "/tmp/test/compaction/0";
+        let _ = std::fs::remove_dir_all(dir);
+        let tenant_database = Arc::new("cnosdb.dba".to_string());
         let opt = create_options(dir.to_string());
-        let dir = opt.storage.tsm_dir(&database, 1);
+        let dir = opt.storage.tsm_dir(&tenant_database, 1);
+        let max_level_ts = 9;
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data).await;
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, files);
+            prepare_compaction(tenant_database, opt, next_file_id, files, max_level_ts);
+        let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();
-        check_column_file(dir, version_edit, expected_data).await;
+        check_column_file(dir, version_edit, expected_data, out_level).await;
     }
+
+    const INT_BLOCK_ENCODING: DataBlockEncoding =
+        DataBlockEncoding::new(Encoding::Delta, Encoding::Delta);
 
     #[tokio::test]
     async fn test_compaction_1() {
+        trace::init_default_global_tracing("/tmp/test/log", "test", "trace");
         #[rustfmt::skip]
         let data = vec![
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }]),
-                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }]),
-                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }]),
+                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: INT_BLOCK_ENCODING }]),
+                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: INT_BLOCK_ENCODING }]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }]),
-                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }]),
-                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }]),
+                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: INT_BLOCK_ENCODING }]),
+                (2, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: INT_BLOCK_ENCODING }]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
-                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
-                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
+                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: INT_BLOCK_ENCODING }]),
+                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: INT_BLOCK_ENCODING }]),
             ]),
         ];
         #[rustfmt::skip]
         let expected_data = HashMap::from([
-            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
-            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
-            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
+            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: INT_BLOCK_ENCODING }]),
+            (2, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: INT_BLOCK_ENCODING }]),
+            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: INT_BLOCK_ENCODING }]),
         ]);
 
         let dir = "/tmp/test/compaction/1";
-        let database = Arc::new("dba".to_string());
+        let _ = std::fs::remove_dir_all(dir);
+        let tenant_database = Arc::new("cnosdb.dba".to_string());
         let opt = create_options(dir.to_string());
-        let dir = opt.storage.tsm_dir(&database, 1);
+        let dir = opt.storage.tsm_dir(&tenant_database, 1);
+        let max_level_ts = 9;
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data).await;
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, files);
+            prepare_compaction(tenant_database, opt, next_file_id, files, max_level_ts);
+        let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();
-        check_column_file(dir, version_edit, expected_data).await;
+        check_column_file(dir, version_edit, expected_data, out_level).await;
     }
 
+    /// Test compact with duplicate timestamp.
     #[tokio::test]
     async fn test_compaction_2() {
         #[rustfmt::skip]
         let data = vec![
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5], enc: DataBlockEncoding::default() }]),
-                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5], enc: DataBlockEncoding::default() }]),
-                (4, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }]),
+                (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4], val: vec![1, 2, 3, 5], enc: INT_BLOCK_ENCODING }]),
+                (4, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: INT_BLOCK_ENCODING }]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }]),
-                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: DataBlockEncoding::default() }]),
-                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6, 7], val: vec![4, 5, 6, 8], enc: DataBlockEncoding::default() }]),
+                (1, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: INT_BLOCK_ENCODING }]),
+                (2, vec![DataBlock::I64 { ts: vec![4, 5, 6], val: vec![4, 5, 6], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![4, 5, 6, 7], val: vec![4, 5, 6, 8], enc: INT_BLOCK_ENCODING }]),
             ]),
             HashMap::from([
-                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
-                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
-                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: DataBlockEncoding::default() }]),
+                (1, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: INT_BLOCK_ENCODING }]),
+                (2, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: INT_BLOCK_ENCODING }]),
+                (3, vec![DataBlock::I64 { ts: vec![7, 8, 9], val: vec![7, 8, 9], enc: INT_BLOCK_ENCODING }]),
             ]),
         ];
         #[rustfmt::skip]
         let expected_data = HashMap::from([
-            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
-            (2, vec![DataBlock::I64 { ts: vec![4, 5, 6, 7, 8, 9], val: vec![4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
-            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: DataBlockEncoding::default() }]),
-            (4, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: DataBlockEncoding::default() }]),
+            (1, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: INT_BLOCK_ENCODING }]),
+            (2, vec![DataBlock::I64 { ts: vec![4, 5, 6, 7, 8, 9], val: vec![4, 5, 6, 7, 8, 9], enc: INT_BLOCK_ENCODING }]),
+            (3, vec![DataBlock::I64 { ts: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], val: vec![1, 2, 3, 4, 5, 6, 7, 8, 9], enc: INT_BLOCK_ENCODING }]),
+            (4, vec![DataBlock::I64 { ts: vec![1, 2, 3], val: vec![1, 2, 3], enc: INT_BLOCK_ENCODING }]),
         ]);
 
         let dir = "/tmp/test/compaction/2";
-        let database = Arc::new("dba".to_string());
+        let _ = std::fs::remove_dir_all(dir);
+        let tenant_database = Arc::new("cnosdb.dba".to_string());
         let opt = create_options(dir.to_string());
-        let dir = opt.storage.tsm_dir(&database, 1);
+        let dir = opt.storage.tsm_dir(&tenant_database, 1);
+        let max_level_ts = 9;
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data).await;
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, files);
+            prepare_compaction(tenant_database, opt, next_file_id, files, max_level_ts);
+        let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();
-        check_column_file(dir, version_edit, expected_data).await;
+        check_column_file(dir, version_edit, expected_data, out_level).await;
     }
 
     /// Returns a generated `DataBlock` with default value and specified size, `DataBlock::ts`
@@ -1266,7 +1313,10 @@ pub mod test {
     /// - Float: 1.0
     /// - Boolean: true
     /// - Unknown: will create a panic
-    fn generate_data_block(value_type: ValueType, data_descriptors: Vec<(i64, i64)>) -> DataBlock {
+    pub fn generate_data_block(
+        value_type: ValueType,
+        data_descriptors: Vec<(i64, i64)>,
+    ) -> DataBlock {
         match value_type {
             ValueType::Unsigned => {
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(1000);
@@ -1280,7 +1330,7 @@ pub mod test {
                 DataBlock::U64 {
                     ts: ts_vec,
                     val: val_vec,
-                    enc: DataBlockEncoding::default(),
+                    enc: DataBlockEncoding::new(Encoding::Delta, Encoding::Delta),
                 }
             }
             ValueType::Integer => {
@@ -1295,7 +1345,7 @@ pub mod test {
                 DataBlock::I64 {
                     ts: ts_vec,
                     val: val_vec,
-                    enc: DataBlockEncoding::default(),
+                    enc: DataBlockEncoding::new(Encoding::Delta, Encoding::Delta),
                 }
             }
             ValueType::String => {
@@ -1311,7 +1361,7 @@ pub mod test {
                 DataBlock::Str {
                     ts: ts_vec,
                     val: val_vec,
-                    enc: DataBlockEncoding::default(),
+                    enc: DataBlockEncoding::new(Encoding::Delta, Encoding::Snappy),
                 }
             }
             ValueType::Float => {
@@ -1326,7 +1376,7 @@ pub mod test {
                 DataBlock::F64 {
                     ts: ts_vec,
                     val: val_vec,
-                    enc: DataBlockEncoding::default(),
+                    enc: DataBlockEncoding::new(Encoding::Delta, Encoding::Gorilla),
                 }
             }
             ValueType::Boolean => {
@@ -1341,7 +1391,7 @@ pub mod test {
                 DataBlock::Bool {
                     ts: ts_vec,
                     val: val_vec,
-                    enc: DataBlockEncoding::default(),
+                    enc: DataBlockEncoding::new(Encoding::Delta, Encoding::BitPack),
                 }
             }
             ValueType::Unknown => {
@@ -1350,10 +1400,56 @@ pub mod test {
         }
     }
 
+    pub type TsmSchema = (
+        ColumnFileId,
+        Vec<(ValueType, FieldId, Timestamp, Timestamp)>,
+        Vec<(FieldId, Timestamp, Timestamp)>,
+    );
+
+    pub async fn write_data_block_desc(
+        dir: impl AsRef<Path>,
+        data_desc: &[TsmSchema],
+    ) -> Vec<Arc<ColumnFile>> {
+        let mut column_files = Vec::new();
+        for (tsm_sequence, tsm_desc, tombstone_desc) in data_desc.iter() {
+            let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0)
+                .await
+                .unwrap();
+            for &(val_type, fid, min_ts, max_ts) in tsm_desc.iter() {
+                tsm_writer
+                    .write_block(fid, &generate_data_block(val_type, vec![(min_ts, max_ts)]))
+                    .await
+                    .unwrap();
+            }
+            tsm_writer.write_index().await.unwrap();
+            tsm_writer.finish().await.unwrap();
+            let tsm_tombstone = TsmTombstone::open(&dir, *tsm_sequence).await.unwrap();
+            for (fid, min_ts, max_ts) in tombstone_desc.iter() {
+                tsm_tombstone
+                    .add_range(&[*fid][..], &TimeRange::new(*min_ts, *max_ts), None)
+                    .await
+                    .unwrap();
+            }
+
+            tsm_tombstone.flush().await.unwrap();
+            column_files.push(Arc::new(ColumnFile::new(
+                *tsm_sequence,
+                2,
+                TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
+                tsm_writer.size(),
+                false,
+                tsm_writer.path(),
+            )));
+        }
+
+        column_files
+    }
+
+    /// Test compaction without tombstones.
     #[tokio::test]
     async fn test_compaction_3() {
         #[rustfmt::skip]
-        let data_desc = [
+        let data_desc: [TsmSchema; 3] = [
             // [( tsm_sequence, vec![ (ValueType, FieldId, Timestamp_Begin, Timestamp_end) ] )]
             (1_u64, vec![
                 // 1, 1~2500
@@ -1366,7 +1462,7 @@ pub mod test {
                 // 3, 1~1500
                 (ValueType::Boolean, 3, 1, 1000),
                 (ValueType::Boolean, 3, 1001, 1500),
-            ]),
+            ], vec![]),
             (2, vec![
                 // 1, 2001~4500
                 (ValueType::Unsigned, 1, 2001, 3000),
@@ -1381,7 +1477,7 @@ pub mod test {
                 // 4, 1~1500
                 (ValueType::Float, 4, 1, 1000),
                 (ValueType::Float, 4, 1001, 1500),
-            ]),
+            ], vec![]),
             (3, vec![
                 // 1, 4001~6500
                 (ValueType::Unsigned, 1, 4001, 5000),
@@ -1396,7 +1492,7 @@ pub mod test {
                 // 4. 1001~2500
                 (ValueType::Float, 4, 1001, 2000),
                 (ValueType::Float, 4, 2001, 2500),
-            ]),
+            ], vec![]),
         ];
         #[rustfmt::skip]
         let expected_data: HashMap<FieldId, Vec<DataBlock>> = HashMap::from(
@@ -1436,102 +1532,46 @@ pub mod test {
         );
 
         let dir = "/tmp/test/compaction/3";
-        let database = Arc::new("dba".to_string());
+        let _ = std::fs::remove_dir_all(dir);
+        let tenant_database = Arc::new("cnosdb.dba".to_string());
         let opt = create_options(dir.to_string());
-        let dir = opt.storage.tsm_dir(&database, 1);
+        let dir = opt.storage.tsm_dir(&tenant_database, 1);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
+        let max_level_ts = 6500;
 
-        let mut column_files = Vec::new();
-        for (tsm_sequence, args) in data_desc.iter() {
-            let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0)
-                .await
-                .unwrap();
-            for arg in args.iter() {
-                tsm_writer
-                    .write_block(arg.1, &generate_data_block(arg.0, vec![(arg.2, arg.3)]))
-                    .await
-                    .unwrap();
-            }
-            tsm_writer.write_index().await.unwrap();
-            tsm_writer.finish().await.unwrap();
-            column_files.push(Arc::new(ColumnFile::new(
-                *tsm_sequence,
-                2,
-                TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
-                tsm_writer.size(),
-                false,
-                tsm_writer.path(),
-            )));
-        }
-
+        let column_files = write_data_block_desc(&dir, &data_desc).await;
         let next_file_id = 4_u64;
 
-        let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
-
+        let (compact_req, kernel) = prepare_compaction(
+            tenant_database,
+            opt,
+            next_file_id,
+            column_files,
+            max_level_ts,
+        );
+        let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();
 
-        check_column_file(dir, version_edit, expected_data).await;
+        check_column_file(dir, version_edit, expected_data, out_level).await;
     }
 
-    #[allow(clippy::type_complexity)]
-    async fn write_data_block_desc(
-        dir: impl AsRef<Path>,
-        data_desc: &[(
-            ColumnFileId,
-            Vec<(ValueType, FieldId, Timestamp, Timestamp)>,
-            Vec<(FieldId, Timestamp, Timestamp)>,
-        )],
-    ) -> Vec<Arc<ColumnFile>> {
-        let mut column_files = Vec::new();
-        for (tsm_sequence, tsm_desc, tombstone_desc) in data_desc.iter() {
-            let mut tsm_writer = tsm::new_tsm_writer(&dir, *tsm_sequence, false, 0)
-                .await
-                .unwrap();
-            for &(val_type, fid, min_ts, max_ts) in tsm_desc.iter() {
-                tsm_writer
-                    .write_block(fid, &generate_data_block(val_type, vec![(min_ts, max_ts)]))
-                    .await
-                    .unwrap();
-            }
-            tsm_writer.write_index().await.unwrap();
-            tsm_writer.finish().await.unwrap();
-            let tsm_tombstone = TsmTombstone::open(&dir, *tsm_sequence).await.unwrap();
-            for (fid, min_ts, max_ts) in tombstone_desc.iter() {
-                tsm_tombstone
-                    .add_range(&[*fid][..], &TimeRange::new(*min_ts, *max_ts), None)
-                    .await
-                    .unwrap();
-            }
-
-            tsm_tombstone.flush().await.unwrap();
-            column_files.push(Arc::new(ColumnFile::new(
-                *tsm_sequence,
-                2,
-                TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
-                tsm_writer.size(),
-                false,
-                tsm_writer.path(),
-            )));
-        }
-
-        column_files
-    }
-
+    /// Test compaction with tombstones
     #[tokio::test]
     async fn test_compaction_4() {
         #[rustfmt::skip]
-        let data_desc = [
-            // [( tsm_sequence, vec![(ValueType, FieldId, Timestamp_Begin, Timestamp_end)], vec![Option<(FieldId, MinTimestamp, MaxTimestamp)>] )]
-            (1_u64, vec![
+        let data_desc: [TsmSchema; 3] = [
+            // [( tsm_data:  tsm_sequence, vec![(ValueType, FieldId, Timestamp_Begin, Timestamp_end)],
+            //    tombstone: vec![(FieldId, MinTimestamp, MaxTimestamp)]
+            // )]
+            (1, vec![
                 // 1, 1~2500
-                (ValueType::Unsigned, 1_u64, 1_i64, 1000_i64), (ValueType::Unsigned, 1, 1001, 2000), (ValueType::Unsigned, 1, 2001, 2500),
-            ], vec![(1_u64, 1_i64, 2_i64), (1, 2001, 2100)]),
+                (ValueType::Unsigned, 1, 1, 1000), (ValueType::Unsigned, 1, 1001, 2000), (ValueType::Unsigned, 1, 2001, 2500),
+            ], vec![(1, 1, 2), (1, 2001, 2100)]),
             (2, vec![
                 // 1, 2001~4500
                 // 2101~3100, 3101~4100, 4101~4499
@@ -1560,40 +1600,50 @@ pub mod test {
         );
 
         let dir = "/tmp/test/compaction/4";
-        let database = Arc::new("dba".to_string());
+        let _ = std::fs::remove_dir_all(dir);
+        let tenant_database = Arc::new("cnosdb.dba".to_string());
         let opt = create_options(dir.to_string());
-        let dir = opt.storage.tsm_dir(&database, 1);
+        let dir = opt.storage.tsm_dir(&tenant_database, 1);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
+        let max_level_ts = 6500;
 
         let column_files = write_data_block_desc(&dir, &data_desc).await;
         let next_file_id = 4_u64;
-        let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
-
+        let (compact_req, kernel) = prepare_compaction(
+            tenant_database,
+            opt,
+            next_file_id,
+            column_files,
+            max_level_ts,
+        );
+        let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();
 
-        check_column_file(dir, version_edit, expected_data).await;
+        check_column_file(dir, version_edit, expected_data, out_level).await;
     }
 
+    /// Test compaction with multi-field and tombstones.
     #[tokio::test]
     async fn test_compaction_5() {
         #[rustfmt::skip]
-        let data_desc = [
-            // [( tsm_sequence, vec![(ValueType, FieldId, Timestamp_Begin, Timestamp_end)], vec![Option<(FieldId, MinTimestamp, MaxTimestamp)>] )]
-            (1_u64, vec![
+        let data_desc: [TsmSchema; 3] = [
+            // [( tsm_data:  tsm_sequence, vec![(ValueType, FieldId, Timestamp_Begin, Timestamp_end)],
+            //    tombstone: vec![(FieldId, MinTimestamp, MaxTimestamp)]
+            // )]
+            (1, vec![
                 // 1, 1~2500
-                (ValueType::Unsigned, 1_u64, 1_i64, 1000_i64), (ValueType::Unsigned, 1, 1001, 2000),  (ValueType::Unsigned, 1, 2001, 2500),
+                (ValueType::Unsigned, 1, 1, 1000), (ValueType::Unsigned, 1, 1001, 2000),  (ValueType::Unsigned, 1, 2001, 2500),
                 // 2, 1~1500
                 (ValueType::Integer, 2, 1, 1000), (ValueType::Integer, 2, 1001, 1500),
                 // 3, 1~1500
                 (ValueType::Boolean, 3, 1, 1000), (ValueType::Boolean, 3, 1001, 1500),
             ], vec![
-                (1_u64, 1_i64, 2_i64), (1, 2001, 2100),
+                (1, 1, 2), (1, 2001, 2100),
                 (2, 1001, 1002),
                 (3, 1499, 1500),
             ]),
@@ -1663,23 +1713,30 @@ pub mod test {
         );
 
         let dir = "/tmp/test/compaction/5";
-        let database = Arc::new("dba".to_string());
+        let _ = std::fs::remove_dir_all(dir);
+        let tenant_database = Arc::new("cnosdb.dba".to_string());
         let opt = create_options(dir.to_string());
-        let dir = opt.storage.tsm_dir(&database, 1);
+        let dir = opt.storage.tsm_dir(&tenant_database, 1);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
+        let max_level_ts = 6500;
 
         let column_files = write_data_block_desc(&dir, &data_desc).await;
         let next_file_id = 4_u64;
-        let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
-
+        let (compact_req, kernel) = prepare_compaction(
+            tenant_database,
+            opt,
+            next_file_id,
+            column_files,
+            max_level_ts,
+        );
+        let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
             .unwrap();
 
-        check_column_file(dir, version_edit, expected_data).await;
+        check_column_file(dir, version_edit, expected_data, out_level).await;
     }
 }

@@ -217,23 +217,23 @@ impl DataBlock {
         }
         let end = self.len();
         match self {
-            DataBlock::U64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-            DataBlock::I64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-            DataBlock::Str { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-            DataBlock::F64 { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
-            DataBlock::Bool { ts, .. } => Some((ts[0].to_owned(), ts[end - 1].to_owned())),
+            DataBlock::U64 { ts, .. } => Some((ts[0], ts[end - 1])),
+            DataBlock::I64 { ts, .. } => Some((ts[0], ts[end - 1])),
+            DataBlock::Str { ts, .. } => Some((ts[0], ts[end - 1])),
+            DataBlock::F64 { ts, .. } => Some((ts[0], ts[end - 1])),
+            DataBlock::Bool { ts, .. } => Some((ts[0], ts[end - 1])),
         }
     }
 
     /// Returns (`timestamp[start]`, `timestamp[end]`) from this `DataBlock` at the specified
     /// indexes.
-    pub fn time_range_by_range(&self, start: usize, end: usize) -> (i64, i64) {
+    pub fn time_range_by_range(&self, start: usize, end: usize) -> (Timestamp, Timestamp) {
         match self {
-            DataBlock::U64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
-            DataBlock::I64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
-            DataBlock::Str { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
-            DataBlock::F64 { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
-            DataBlock::Bool { ts, .. } => (ts[start].to_owned(), ts[end - 1].to_owned()),
+            DataBlock::U64 { ts, .. } => (ts[start], ts[end - 1]),
+            DataBlock::I64 { ts, .. } => (ts[start], ts[end - 1]),
+            DataBlock::Str { ts, .. } => (ts[start], ts[end - 1]),
+            DataBlock::F64 { ts, .. } => (ts[start], ts[end - 1]),
+            DataBlock::Bool { ts, .. } => (ts[start], ts[end - 1]),
         }
     }
 
@@ -432,6 +432,133 @@ impl DataBlock {
         }
 
         blk
+    }
+
+    pub fn split_at(self, i: usize) -> (DataBlock, DataBlock) {
+        match &self {
+            DataBlock::U64 { ts, val, .. } => {
+                if i >= ts.len() {
+                    (self, DataBlock::new(0, PhysicalDType::Unsigned))
+                } else {
+                    (
+                        DataBlock::U64 {
+                            ts: ts[..i].to_vec(),
+                            val: val[..i].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                        DataBlock::U64 {
+                            ts: ts[i..].to_vec(),
+                            val: val[i..].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                    )
+                }
+            }
+            DataBlock::I64 { ts, val, .. } => {
+                if i >= ts.len() {
+                    (self, DataBlock::new(0, PhysicalDType::Integer))
+                } else {
+                    (
+                        DataBlock::I64 {
+                            ts: ts[..i].to_vec(),
+                            val: val[..i].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                        DataBlock::I64 {
+                            ts: ts[i..].to_vec(),
+                            val: val[i..].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                    )
+                }
+            }
+            DataBlock::Str { ts, val, .. } => {
+                if i >= ts.len() {
+                    (self, DataBlock::new(0, PhysicalDType::String))
+                } else {
+                    (
+                        DataBlock::Str {
+                            ts: ts[..i].to_vec(),
+                            val: val[..i].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                        DataBlock::Str {
+                            ts: ts[i..].to_vec(),
+                            val: val[i..].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                    )
+                }
+            }
+            DataBlock::F64 { ts, val, .. } => {
+                if i >= ts.len() {
+                    (self, DataBlock::new(0, PhysicalDType::Float))
+                } else {
+                    (
+                        DataBlock::F64 {
+                            ts: ts[..i].to_vec(),
+                            val: val[..i].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                        DataBlock::F64 {
+                            ts: ts[i..].to_vec(),
+                            val: val[i..].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                    )
+                }
+            }
+            DataBlock::Bool { ts, val, .. } => {
+                if i >= ts.len() {
+                    (self, DataBlock::new(0, PhysicalDType::Boolean))
+                } else {
+                    (
+                        DataBlock::Bool {
+                            ts: ts[..i].to_vec(),
+                            val: val[..i].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                        DataBlock::Bool {
+                            ts: ts[i..].to_vec(),
+                            val: val[i..].to_vec(),
+                            enc: DataBlockEncoding::default(),
+                        },
+                    )
+                }
+            }
+        }
+    }
+
+    /// Split a data block by a timestamp, returns two data blocks.
+    ///
+    /// - `[1, 2, 4, 5]` split by 3: `[1, 2]` and `[4, 5]`
+    /// - `[1, 2, 3, 4]` split by 3: `[1, 2]` and `[3, 4]`
+    /// - `[1, 2, 3, 4]` split by 1: `[]` and `[1, 2, 3, 4]`
+    /// - `[1, 2, 3, 4]` split by 4: `[1, 2, 3]` and `[4]`
+    /// - `[1, 2, 3, 4]` split by 5: `[1, 2, 3, 4]` and `[]`
+    pub fn split(self, timestamp: Timestamp) -> (DataBlock, DataBlock) {
+        match &self {
+            DataBlock::U64 { ts, .. } => {
+                let i = ts.binary_search(&timestamp).unwrap_or_else(|i| i);
+                self.split_at(i)
+            }
+            DataBlock::I64 { ts, .. } => {
+                let i = ts.binary_search(&timestamp).unwrap_or_else(|i| i);
+                self.split_at(i)
+            }
+            DataBlock::Str { ts, .. } => {
+                let i = ts.binary_search(&timestamp).unwrap_or_else(|i| i);
+                self.split_at(i)
+            }
+            DataBlock::F64 { ts, .. } => {
+                let i = ts.binary_search(&timestamp).unwrap_or_else(|i| i);
+                self.split_at(i)
+            }
+            DataBlock::Bool { ts, .. } => {
+                let i = ts.binary_search(&timestamp).unwrap_or_else(|i| i);
+                self.split_at(i)
+            }
+        }
     }
 
     /// Merges one or many `DataBlock`s into some `DataBlock` with fixed length,
@@ -692,6 +819,43 @@ impl DataBlock {
             }
             _ => {}
         }
+    }
+
+    /// Returns a subset of `DataBlock` with timestamps included in the specified time range.
+    pub fn intersection(self, time_range: &TimeRange) -> Option<DataBlock> {
+        self.index_range(time_range).map(|(min, max)| {
+            if min == 0 && max >= self.len() {
+                self
+            } else {
+                match self {
+                    DataBlock::U64 { ts, val, enc } => DataBlock::U64 {
+                        ts: ts[min..max].to_vec(),
+                        val: val[min..max].to_vec(),
+                        enc,
+                    },
+                    DataBlock::I64 { ts, val, enc } => DataBlock::I64 {
+                        ts: ts[min..max].to_vec(),
+                        val: val[min..max].to_vec(),
+                        enc,
+                    },
+                    DataBlock::Str { ts, val, enc } => DataBlock::Str {
+                        ts: ts[min..max].to_vec(),
+                        val: val[min..max].to_vec(),
+                        enc,
+                    },
+                    DataBlock::F64 { ts, val, enc } => DataBlock::F64 {
+                        ts: ts[min..max].to_vec(),
+                        val: val[min..max].to_vec(),
+                        enc,
+                    },
+                    DataBlock::Bool { ts, val, enc } => DataBlock::Bool {
+                        ts: ts[min..max].to_vec(),
+                        val: val[min..max].to_vec(),
+                        enc,
+                    },
+                }
+            }
+        })
     }
 
     /// Encodes timestamps and values of this `DataBlock` to bytes.
@@ -1099,7 +1263,7 @@ pub mod test {
     use super::DataBlockReader;
     use crate::memcache::DataType;
     use crate::tsm::codec::DataBlockEncoding;
-    use crate::tsm::DataBlock;
+    use crate::tsm::{DataBlock, EncodedDataBlock};
 
     pub(crate) fn check_data_block(block: &DataBlock, pattern: &[DataType]) {
         assert_eq!(block.len(), pattern.len());
@@ -1127,8 +1291,61 @@ pub mod test {
     }
 
     #[test]
+    #[rustfmt::skip]
+    fn test_split_block() {
+        {
+            // - `[]` split by 3: `[]` and `[]`
+            let blk = DataBlock::U64 { ts: vec![], val: vec![], enc: DataBlockEncoding::default() };
+            let (a, b) = blk.split(3);
+            assert_eq!(a, DataBlock::U64 { ts: vec![], val: vec![], enc: DataBlockEncoding::default() });
+            assert_eq!(b, DataBlock::U64 { ts: vec![], val: vec![], enc: DataBlockEncoding::default() });
+        }
+        {
+            // - `[1, 2, 4, 5]` split by 3: `[1, 2]` and `[4, 5]`
+            let blk = DataBlock::U64 { ts: vec![1, 2, 4, 5], val: vec![10, 20, 40, 50], enc: DataBlockEncoding::default() };
+            let (a, b) = blk.split(3);
+            assert_eq!(a, DataBlock::U64 { ts: vec![1, 2], val: vec![10, 20], enc: DataBlockEncoding::default() });
+            assert_eq!(b, DataBlock::U64 { ts: vec![4, 5], val: vec![40, 50], enc: DataBlockEncoding::default() });
+        }
+        {
+            // - `[1, 2, 3, 4]` split by 3: `[1, 2]` and `[3, 4]`
+            let blk = DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![10, 20, 30, 40], enc: DataBlockEncoding::default() };
+            let (a, b) = blk.split(3);
+            assert_eq!(a, DataBlock::U64 { ts: vec![1, 2], val: vec![10, 20], enc: DataBlockEncoding::default() });
+            assert_eq!(b, DataBlock::U64 { ts: vec![3, 4], val: vec![30, 40], enc: DataBlockEncoding::default() });
+        }
+        {
+            // - `[1, 2, 3, 4]` split by 0: `[]` and `[1, 2, 3, 4]`
+            let blk = DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![10, 20, 30, 40], enc: DataBlockEncoding::default() };
+            let (a, b) = blk.split(0);
+            assert_eq!(a, DataBlock::U64 { ts: vec![], val: vec![], enc: DataBlockEncoding::default() });
+            assert_eq!(b, DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![10, 20, 30, 40], enc: DataBlockEncoding::default() });
+        }
+        {
+            // - `[1, 2, 3, 4]` split by 1: `[]` and `[1, 2, 3, 4]`
+            let blk = DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![10, 20, 30, 40], enc: DataBlockEncoding::default() };
+            let (a, b) = blk.split(1);
+            assert_eq!(a, DataBlock::U64 { ts: vec![], val: vec![], enc: DataBlockEncoding::default() });
+            assert_eq!(b, DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![10, 20, 30, 40], enc: DataBlockEncoding::default() });
+        }
+        {
+            // - `[1, 2, 3, 4]` split by 4: `[1, 2, 3]` and `[4]`
+            let blk = DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![10, 20, 30, 40], enc: DataBlockEncoding::default() };
+            let (a, b) = blk.split(4);
+            assert_eq!(a, DataBlock::U64 { ts: vec![1, 2, 3], val: vec![10, 20, 30], enc: DataBlockEncoding::default() });
+            assert_eq!(b, DataBlock::U64 { ts: vec![4], val: vec![40], enc: DataBlockEncoding::default() });
+        }
+        {
+            // - `[1, 2, 3, 4]` split by 5: `[1, 2, 3, 4]` and `[]`
+            let blk = DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![10, 20, 30, 40], enc: DataBlockEncoding::default() };
+            let (a, b) = blk.split(5);
+            assert_eq!(a, DataBlock::U64 { ts: vec![1, 2, 3, 4], val: vec![10, 20, 30, 40], enc: DataBlockEncoding::default() });
+            assert_eq!(b, DataBlock::U64 { ts: vec![], val: vec![], enc: DataBlockEncoding::default() });
+        }
+    }
+
+    #[test]
     fn test_data_block_exclude_1() {
-        #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
@@ -1144,7 +1361,6 @@ pub mod test {
             }
         );
 
-        #[rustfmt::skip]
         let mut blk = DataBlock::U64 {
             ts: vec![0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
             val: vec![10, 11, 12, 13, 14, 15, 16, 17, 18, 19],
@@ -1168,23 +1384,13 @@ pub mod test {
             enc: DataBlockEncoding::default(),
         };
         blk.exclude(&TimeRange::from((2, 3)));
-        assert_eq!(
-            blk,
-            DataBlock::Str {
-                ts: vec![0, 1, 4, 5, 6, 7, 8, 9],
-                val: vec![
-                    mini_vec![10],
-                    mini_vec![11],
-                    mini_vec![14],
-                    mini_vec![15],
-                    mini_vec![16],
-                    mini_vec![17],
-                    mini_vec![18],
-                    mini_vec![19],
-                ],
-                enc: DataBlockEncoding::default(),
-            }
-        );
+        #[rustfmt::skip]
+        assert_eq!(blk, DataBlock::Str {
+            ts: vec![0, 1, 4, 5, 6, 7, 8, 9],
+            val: vec![mini_vec![10], mini_vec![11], mini_vec![14],
+                      mini_vec![15], mini_vec![16], mini_vec![17], mini_vec![18], mini_vec![19]],
+            enc: DataBlockEncoding::default(),
+        });
 
         #[rustfmt::skip]
         let mut blk = DataBlock::Str {
@@ -1194,14 +1400,12 @@ pub mod test {
             enc: DataBlockEncoding::default(),
         };
         blk.exclude(&TimeRange::from((2, 8)));
-        assert_eq!(
-            blk,
-            DataBlock::Str {
-                ts: vec![0, 1, 9],
-                val: vec![mini_vec![10], mini_vec![11], mini_vec![19]],
-                enc: DataBlockEncoding::default(),
-            }
-        )
+        #[rustfmt::skip]
+        assert_eq!(blk, DataBlock::Str {
+            ts: vec![0, 1, 9],
+            val: vec![mini_vec![10], mini_vec![11], mini_vec![19]],
+            enc: DataBlockEncoding::default(),
+        });
     }
 
     #[test]
@@ -1395,6 +1599,35 @@ pub mod test {
             assert_eq!(blk_reader.next(), Some(DataType::U64(1001, 3003)));
             assert_eq!(blk_reader.next(), Some(DataType::U64(1002, 3006)));
             assert_eq!(blk_reader.next(), None);
+        }
+    }
+
+    #[test]
+    fn test_encoded_data_block() {
+        let blk = DataBlock::U64 {
+            ts: vec![1, 3, 5, 7, 9],
+            val: vec![10, 30, 50, 70, 90],
+            enc: DataBlockEncoding::default(),
+        };
+
+        {
+            let blk_enc = EncodedDataBlock::encode(&blk, 0, blk.len()).unwrap();
+            let blk_dec = blk_enc.decode().unwrap();
+            assert_eq!(blk, blk_dec);
+        }
+        {
+            let blk = blk.clone();
+            let blk_enc = EncodedDataBlock::encode(&blk, 0, 1).unwrap();
+            let blk_dec = blk_enc.decode().unwrap();
+            let (blk_exp, _) = blk.split_at(1);
+            assert_eq!(blk_exp, blk_dec);
+        }
+        {
+            let blk_enc = EncodedDataBlock::encode(&blk, 1, 2).unwrap();
+            let blk_dec = blk_enc.decode().unwrap();
+            let (_, blk_exp) = blk.split_at(1);
+            let (blk_exp, _) = blk_exp.split_at(1);
+            assert_eq!(blk_exp, blk_dec);
         }
     }
 }
