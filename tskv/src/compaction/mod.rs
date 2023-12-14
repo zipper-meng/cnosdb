@@ -1,6 +1,6 @@
 pub mod check;
 mod compact;
-mod delta;
+mod delta_compact;
 mod flush;
 mod iterator;
 pub mod job;
@@ -134,7 +134,7 @@ pub async fn run_compaction_job(
     kernel: Arc<GlobalContext>,
 ) -> crate::Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
     if request.in_level == 0 {
-        delta::run_compaction_job(request, kernel).await
+        delta_compact::run_compaction_job(request, kernel).await
     } else {
         compact::run_compaction_job(request, kernel).await
     }
