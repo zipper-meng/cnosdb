@@ -829,28 +829,28 @@ impl DataBlock {
             } else {
                 match self {
                     DataBlock::U64 { ts, val, enc } => DataBlock::U64 {
-                        ts: ts[min..max].to_vec(),
-                        val: val[min..max].to_vec(),
+                        ts: ts[min..=max].to_vec(),
+                        val: val[min..=max].to_vec(),
                         enc,
                     },
                     DataBlock::I64 { ts, val, enc } => DataBlock::I64 {
-                        ts: ts[min..max].to_vec(),
-                        val: val[min..max].to_vec(),
+                        ts: ts[min..=max].to_vec(),
+                        val: val[min..=max].to_vec(),
                         enc,
                     },
                     DataBlock::Str { ts, val, enc } => DataBlock::Str {
-                        ts: ts[min..max].to_vec(),
-                        val: val[min..max].to_vec(),
+                        ts: ts[min..=max].to_vec(),
+                        val: val[min..=max].to_vec(),
                         enc,
                     },
                     DataBlock::F64 { ts, val, enc } => DataBlock::F64 {
-                        ts: ts[min..max].to_vec(),
-                        val: val[min..max].to_vec(),
+                        ts: ts[min..=max].to_vec(),
+                        val: val[min..=max].to_vec(),
                         enc,
                     },
                     DataBlock::Bool { ts, val, enc } => DataBlock::Bool {
-                        ts: ts[min..max].to_vec(),
-                        val: val[min..max].to_vec(),
+                        ts: ts[min..=max].to_vec(),
+                        val: val[min..=max].to_vec(),
                         enc,
                     },
                 }

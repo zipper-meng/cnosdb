@@ -506,12 +506,10 @@ impl CompactIterator {
             self.finished_reader_cnt += 1;
         }
         self.tmp_tsm_blk_meta_iters.clear();
-        let mut loop_field_id;
         let mut loop_file_i;
         while let Some(mut f) = self.compacting_files.pop() {
-            loop_field_id = f.field_id;
             loop_file_i = f.i;
-            if self.curr_fid == loop_field_id {
+            if self.curr_fid == f.field_id {
                 if let Some(idx_meta) = f.peek() {
                     self.tmp_tsm_blk_meta_iters
                         .push((loop_file_i, idx_meta.block_iterator()));
@@ -525,12 +523,13 @@ impl CompactIterator {
                     f.next();
                     self.compacting_files.push(f);
                 } else {
-                    // This tsm-file has been finished
-                    trace!("file {} is finished.", loop_file_i);
+                    // This tsm-file has been finished, do not push it back.
+                    trace!("file {loop_file_i} is finished.");
                     self.finished_readers[loop_file_i] = true;
                     self.finished_reader_cnt += 1;
                 }
             } else {
+                // This tsm-file do not need to compact at this time, push it back.
                 self.compacting_files.push(f);
                 break;
             }
@@ -656,24 +655,7 @@ pub async fn run_compaction_job(
     request: CompactReq,
     kernel: Arc<GlobalContext>,
 ) -> Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
-    info!(
-        "Compaction: Running compaction job on ts_family: {} and files: [ {} ]",
-        request.ts_family_id,
-        request
-            .files
-            .iter()
-            .map(|f| {
-                format!(
-                    "{{ Level-{}, file_id: {}, time_range: {}-{} }}",
-                    f.level(),
-                    f.file_id(),
-                    f.time_range().min_ts,
-                    f.time_range().max_ts
-                )
-            })
-            .collect::<Vec<String>>()
-            .join(", ")
-    );
+    info!("Compaction: Running compaction job on {request}");
 
     if request.files.is_empty() {
         // Nothing to compact
@@ -1092,9 +1074,9 @@ pub mod test {
         let path = get_result_file_path(dir, version_edit, expected_data_level);
         let data = read_data_blocks_from_column_file(path).await;
         let mut data_field_ids = data.keys().copied().collect::<Vec<_>>();
-        data_field_ids.sort_unstable();
+        data_field_ids.sort();
         let mut expected_data_field_ids = expected_data.keys().copied().collect::<Vec<_>>();
-        expected_data_field_ids.sort_unstable();
+        expected_data_field_ids.sort();
         assert_eq!(data_field_ids, expected_data_field_ids);
 
         for (k, v) in expected_data.iter() {
@@ -1102,7 +1084,7 @@ pub mod test {
             if v.len() != data_blks.len() {
                 let v_str = format_data_blocks(v.as_slice());
                 let data_blks_str = format_data_blocks(data_blks.as_slice());
-                panic!("fid={k}, v.len != data_blks.len: v={v_str}, data_blks={data_blks_str}")
+                panic!("fid={k}, v.len != data_blks.len:\n          v={v_str}\n  data_blks={data_blks_str}")
             }
             assert_eq!(v.len(), data_blks.len());
             for (v_idx, v_blk) in v.iter().enumerate() {
@@ -1349,7 +1331,7 @@ pub mod test {
                 }
             }
             ValueType::String => {
-                let word = MiniVec::from(&b"1"[..]);
+                let word = MiniVec::from(&b"hello_world"[..]);
                 let mut ts_vec: Vec<Timestamp> = Vec::with_capacity(10000);
                 let mut val_vec: Vec<MiniVec<u8>> = Vec::with_capacity(10000);
                 for (min_ts, max_ts) in data_descriptors {
@@ -1401,9 +1383,9 @@ pub mod test {
     }
 
     pub type TsmSchema = (
-        ColumnFileId,
-        Vec<(ValueType, FieldId, Timestamp, Timestamp)>,
-        Vec<(FieldId, Timestamp, Timestamp)>,
+        ColumnFileId,                                    // tsm file id
+        Vec<(ValueType, FieldId, Timestamp, Timestamp)>, // Data block definitions
+        Vec<(FieldId, Timestamp, Timestamp)>,            // Tombstone definitions
     );
 
     pub async fn write_data_block_desc(

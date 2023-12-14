@@ -51,6 +51,37 @@ pub struct CompactReq {
     time_range: TimeRange,
 }
 
+impl std::fmt::Display for CompactReq {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "tenant_database: {}, ts_family: {}, files: [",
+            self.tenant_database, self.ts_family_id
+        )?;
+        if !self.files.is_empty() {
+            write!(
+                f,
+                "{{ Level-{}, file_id: {}, time_range: {}-{} }}",
+                self.files[0].level(),
+                self.files[0].file_id(),
+                self.files[0].time_range().min_ts,
+                self.files[0].time_range().max_ts
+            )?;
+            for file in self.files.iter().skip(1) {
+                write!(
+                    f,
+                    ", {{ Level-{}, file_id: {}, time_range: {}-{} }}",
+                    file.level(),
+                    file.file_id(),
+                    file.time_range().min_ts,
+                    file.time_range().max_ts
+                )?;
+            }
+        }
+        write!(f, "]")
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct FlushReq {
     pub ts_family_id: TseriesFamilyId,

@@ -1328,7 +1328,7 @@ pub mod test_tseries_family {
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
-            let levels = [
+        let levels = [
             LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
             LevelInfo {
                 files: vec![
@@ -1370,7 +1370,6 @@ pub mod test_tseries_family {
         );
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
-        #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
                 file_id: 4,
@@ -1430,7 +1429,7 @@ pub mod test_tseries_family {
         let ts_family_id = 1;
         let tsm_dir = opt.storage.tsm_dir(&database, ts_family_id);
         #[rustfmt::skip]
-            let levels = [
+        let levels = [
             LevelInfo::init(database.clone(), 0, 1, opt.storage.clone()),
             LevelInfo {
                 files: vec![
@@ -1463,11 +1462,10 @@ pub mod test_tseries_family {
         ];
         let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
         #[rustfmt::skip]
-            let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3150, tsm_reader_cache);
+        let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3150, tsm_reader_cache);
 
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
-        #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
                 file_id: 5,
@@ -1482,7 +1480,6 @@ pub mod test_tseries_family {
             },
             3150,
         );
-        #[rustfmt::skip]
         ve.add_file(
             CompactMeta {
                 file_id: 6,
