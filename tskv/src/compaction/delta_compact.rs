@@ -24,6 +24,7 @@ pub async fn run_compaction_job(
     request: CompactReq,
     kernel: Arc<GlobalContext>,
 ) -> Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
+    let out_time_range = TimeRange::new(0, request.max_ts);
     trace::info!("Compaction: Running delta compaction job on {request}");
 
     if request.files.is_empty() {
@@ -35,10 +36,12 @@ pub async fn run_compaction_job(
     let mut tsm_readers = Vec::new();
     for col_file in request.files.iter() {
         let tsm_reader = request.version.get_tsm_reader(col_file.file_path()).await?;
+        tsm_reader
+            .add_tombstone_and_compact_to_tmp(&out_time_range)
+            .await?;
         tsm_readers.push(tsm_reader);
     }
 
-    let out_time_range = TimeRange::new(0, request.max_ts);
     let max_block_size = TseriesFamily::MAX_DATA_BLOCK_SIZE as usize;
     let mut state = CompactState::new(tsm_readers, out_time_range, max_block_size);
     let mut writer_wrapper = WriterWrapper::new(&request, kernel.clone());

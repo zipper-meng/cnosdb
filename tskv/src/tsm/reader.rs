@@ -545,16 +545,21 @@ impl TsmReader {
         self.tombstone.flush().await
     }
 
-    pub async fn add_tombstone_and_compact(
-        &self,
-        field_ids: &[FieldId],
-        time_range: &TimeRange,
-    ) -> Result<()> {
+    pub async fn add_tombstone_and_compact_to_tmp(&self, time_range: &TimeRange) -> Result<()> {
+        let field_ids = self
+            .index_reader
+            .index_ref
+            .field_id_offs()
+            .iter()
+            .map(|(field_id, _)| *field_id)
+            .collect::<Vec<_>>();
         self.tombstone
-            .add_range(field_ids, time_range, Some(self.bloom_filter()))
-            .await?;
-        self.tombstone.compact();
-        Ok(())
+            .add_range_and_compact_to_tmp(&field_ids, time_range, Some(self.bloom_filter()))
+            .await
+    }
+
+    pub async fn replace_with_compact_tmp(&self) -> Result<()> {
+        self.tombstone.replace_with_compact_tmp().await
     }
 
     pub(crate) fn file_id(&self) -> u64 {
@@ -563,10 +568,6 @@ impl TsmReader {
 
     pub(crate) fn bloom_filter(&self) -> Arc<BloomFilter> {
         self.index_reader.index_ref.bloom_filter()
-    }
-
-    pub fn field_id_offs(&self) -> &[(FieldId, usize)] {
-        self.index_reader.index_ref.field_id_offs()
     }
 }
 

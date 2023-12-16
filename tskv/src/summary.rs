@@ -600,19 +600,10 @@ impl Summary {
 
                 let mut jh_vec = Vec::with_capacity(partly_deleted_files.len());
                 for f in partly_deleted_files.iter() {
-                    let time_range = TimeRange::new(0, f.time_range().max_ts);
                     match new_version.get_tsm_reader(f.file_path()).await {
                         Ok(tsm_reader) => {
                             jh_vec.push(tokio::spawn(async move {
-                                let field_ids = tsm_reader
-                                    .field_id_offs()
-                                    .iter()
-                                    .map(|(field_id, _)| *field_id)
-                                    .collect::<Vec<_>>();
-                                tsm_reader
-                                    .add_tombstone_and_compact(&field_ids, &time_range)
-                                    .await
-                                    .unwrap();
+                                tsm_reader.replace_with_compact_tmp().await
                             }));
                         }
                         Err(e) => {
@@ -626,11 +617,14 @@ impl Summary {
                 }
                 for jh in jh_vec {
                     match jh.await {
-                        Ok(_) => {
+                        Ok(Ok(_)) => {
                             println!("Ok");
                         }
+                        Ok(Err(e)) => {
+                            println!("Tskv Err: {e}");
+                        }
                         Err(e) => {
-                            println!("Err");
+                            println!("Join err: {e}");
                         }
                     }
                 }

@@ -189,18 +189,12 @@ impl TsmTombstone {
         Ok(())
     }
 
-    pub async fn add_range_and_compact(
+    pub async fn add_range_and_compact_to_tmp(
         &self,
         field_ids: &[FieldId],
         time_range: &TimeRange,
         bloom_filter: Option<Arc<BloomFilter>>,
     ) -> Result<()> {
-        // Lock writer first then tombstones.
-        let mut writer_lock = self.writer.lock().await;
-        if let Some(w) = writer_lock.as_mut() {
-            w.close().await?;
-        }
-
         let mut tombstones = self.tombstones.lock().clone();
         for field_id in field_ids.iter() {
             if let Some(filter) = bloom_filter.as_ref() {
@@ -228,21 +222,29 @@ impl TsmTombstone {
 
         let mut writer = record_file::Writer::open(&tmp_path, RecordDataType::Tombstone).await?;
         Self::save_all(&mut writer, &tombstones).await?;
-        writer.close().await?;
-        drop(writer);
-        file_utils::rename(tmp_path, &self.path).await?;
+        writer.close().await
+    }
 
+    pub async fn replace_with_compact_tmp(&self) -> Result<()> {
+        let mut writer_lock = self.writer.lock().await;
+        if let Some(w) = writer_lock.as_mut() {
+            w.close().await?;
+        }
         // Writer needs to reopen sometime.
         *writer_lock = None;
 
-        Ok(())
-    }
-
-    pub fn compact(&self) {
-        let mut tombstones = self.tombstones.lock();
-        for time_ranges in tombstones.values_mut() {
-            TimeRange::compact(time_ranges);
-        }
+        let tmp_path = match self.path.file_name().map(|os_str| {
+            let mut s = os_str.to_os_string();
+            s.push(".compact.tmp");
+            s
+        }) {
+            Some(name) => self.path.join(name),
+            None => {
+                error!("invalid tsm tombstone file path: {}", self.path.display());
+                panic!("invalid tsm tombstone file path: {}", self.path.display());
+            }
+        };
+        file_utils::rename(tmp_path, &self.path).await
     }
 
     pub async fn flush(&self) -> Result<()> {
