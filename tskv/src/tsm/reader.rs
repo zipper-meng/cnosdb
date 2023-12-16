@@ -2,6 +2,7 @@ use std::fmt::Debug;
 use std::path::Path;
 use std::sync::Arc;
 
+use chrono::format::Item;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::{FieldId, PhysicalDType as ValueType};
 use snafu::{ResultExt, Snafu};
@@ -544,12 +545,28 @@ impl TsmReader {
         self.tombstone.flush().await
     }
 
+    pub async fn add_tombstone_and_compact(
+        &self,
+        field_ids: &[FieldId],
+        time_range: &TimeRange,
+    ) -> Result<()> {
+        self.tombstone
+            .add_range(field_ids, time_range, Some(self.bloom_filter()))
+            .await?;
+        self.tombstone.compact();
+        Ok(())
+    }
+
     pub(crate) fn file_id(&self) -> u64 {
         self.tsm_file_id
     }
 
     pub(crate) fn bloom_filter(&self) -> Arc<BloomFilter> {
         self.index_reader.index_ref.bloom_filter()
+    }
+
+    pub fn field_id_offs(&self) -> &[(FieldId, usize)] {
+        self.index_reader.index_ref.field_id_offs()
     }
 }
 

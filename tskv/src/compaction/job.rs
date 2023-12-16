@@ -235,6 +235,7 @@ impl CompactJobInner {
                         if let Some(req) = compact_req {
                             let tenant_database = req.tenant_database.clone();
                             let compact_ts_family = req.ts_family_id;
+                            let in_level = req.in_level;
                             let out_level = req.out_level;
 
                             // Method acquire_owned() will return AcquireError if the semaphore has been closed.
@@ -286,6 +287,7 @@ impl CompactJobInner {
                                         metrics::sample_tskv_compaction_duration(
                                             tenant_database.as_str(),
                                             compact_ts_family.to_string().as_str(),
+                                            in_level.to_string().as_str(),
                                             out_level.to_string().as_str(),
                                             start.elapsed().as_secs_f64(),
                                         )

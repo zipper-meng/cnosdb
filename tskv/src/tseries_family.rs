@@ -447,9 +447,13 @@ impl Version {
         version_edits: Vec<VersionEdit>,
         file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
         last_seq: Option<u64>,
+        partly_deleted_column_files: &mut Vec<Arc<ColumnFile>>,
     ) -> Version {
+        partly_deleted_column_files.clear();
         let mut added_files: Vec<Vec<CompactMeta>> = vec![vec![]; 5];
         let mut deleted_files: Vec<HashSet<ColumnFileId>> = vec![HashSet::new(); 5];
+        let mut partly_deleted_files: Vec<HashMap<ColumnFileId, Timestamp>> =
+            vec![HashMap::new(); 5];
         for ve in version_edits.into_iter() {
             if !ve.add_files.is_empty() {
                 ve.add_files.into_iter().for_each(|f| {
@@ -459,6 +463,11 @@ impl Version {
             if !ve.del_files.is_empty() {
                 ve.del_files.into_iter().for_each(|f| {
                     deleted_files[f.level as usize].insert(f.file_id);
+                });
+            }
+            if !ve.partly_del_files.is_empty() {
+                ve.partly_del_files.into_iter().for_each(|f| {
+                    partly_deleted_files[f.level as usize].insert(f.file_id, f.max_ts);
                 });
             }
         }
@@ -473,6 +482,31 @@ impl Version {
             for file in level.files.iter() {
                 if deleted_files[file.level as usize].contains(&file.file_id) {
                     file.mark_deleted();
+                    continue;
+                }
+                if let Some(max_ts) = partly_deleted_files[file.level as usize].get(&file.file_id) {
+                    if file.time_range.max_ts <= *max_ts {
+                        // If the deleted time range includes the whole file, mark it as deleted.
+                        file.mark_deleted();
+                    } else {
+                        let column_file = Arc::new(ColumnFile {
+                            file_id: file.file_id(),
+                            level: file.level,
+                            is_delta: file.is_delta(),
+                            time_range: file
+                                .time_range()
+                                .intersect(&(0, *max_ts).into())
+                                .unwrap_or(TimeRange::none()),
+                            size: file.size(),
+                            field_id_filter: file.field_id_filter.clone(),
+                            deleted: AtomicBool::new(false),
+                            compacting: AtomicBool::new(false),
+                            path: file.file_path().clone(),
+                            tsm_reader_cache: file.tsm_reader_cache.clone(),
+                        });
+                        partly_deleted_column_files.push(column_file.clone());
+                        new_levels[file.level as usize].push_column_file(column_file);
+                    }
                     continue;
                 }
                 new_levels[level.level as usize].push_column_file(file.clone());
@@ -1388,8 +1422,12 @@ pub mod test_tseries_family {
         let mut ve = VersionEdit::new(1);
         ve.del_file(1, 3, false);
         version_edits.push(ve);
-        let new_version =
-            version.copy_apply_version_edits(version_edits, &mut HashMap::new(), Some(3));
+        let new_version = version.copy_apply_version_edits(
+            version_edits,
+            &mut HashMap::new(),
+            Some(3),
+            &mut vec![],
+        );
 
         assert_eq!(new_version.last_seq, 3);
         assert_eq!(new_version.max_level_ts, 3150);
@@ -1501,8 +1539,12 @@ pub mod test_tseries_family {
         ve.del_file(2, 1, false);
         ve.del_file(2, 2, false);
         version_edits.push(ve);
-        let new_version =
-            version.copy_apply_version_edits(version_edits, &mut HashMap::new(), Some(3));
+        let new_version = version.copy_apply_version_edits(
+            version_edits,
+            &mut HashMap::new(),
+            Some(3),
+            &mut vec![],
+        );
 
         assert_eq!(new_version.last_seq, 3);
         assert_eq!(new_version.max_level_ts, 3150);
@@ -1648,6 +1690,7 @@ pub mod test_tseries_family {
                 version_edits,
                 &mut HashMap::new(),
                 Some(min_seq),
+                &mut vec![],
             );
             ts_family.new_version(new_version, None);
         }

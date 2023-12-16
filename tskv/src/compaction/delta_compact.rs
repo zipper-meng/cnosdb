@@ -38,12 +38,12 @@ pub async fn run_compaction_job(
         tsm_readers.push(tsm_reader);
     }
 
-    let out_time_range = TimeRange::new(0, request.time_range.max_ts);
+    let out_time_range = TimeRange::new(0, request.max_ts);
     let max_block_size = TseriesFamily::MAX_DATA_BLOCK_SIZE as usize;
     let mut state = CompactState::new(tsm_readers, out_time_range, max_block_size);
     let mut writer_wrapper = WriterWrapper::new(&request, kernel.clone());
 
-    let mut previous_merged_block: Option<CompactingBlock> = None;
+    let mut previous_merged_block = Option::<CompactingBlock>::None;
     let mut merging_blk_meta_groups = Vec::with_capacity(32);
     let mut merged_blks = Vec::with_capacity(32);
 
@@ -99,7 +99,14 @@ pub async fn run_compaction_job(
 
     let (mut version_edit, file_metas) = writer_wrapper.close().await?;
     for file in request.files {
-        version_edit.del_file(file.level(), file.file_id(), file.is_delta());
+        // Only delete part of the tsm file.
+        version_edit.del_file_part(
+            file.level(),
+            file.file_id(),
+            file.is_delta(),
+            out_time_range.min_ts,
+            out_time_range.max_ts,
+        );
     }
 
     trace::info!(
@@ -775,13 +782,12 @@ fn overlaps_tuples(r1: (i64, i64), r2: (i64, i64)) -> bool {
     r1.0 <= r2.1 && r1.1 >= r2.0
 }
 
-pub(crate) struct WriterWrapper {
+struct WriterWrapper {
     // Init values.
     ts_family_id: TseriesFamilyId,
     out_level: LevelId,
     max_file_size: u64,
     tsm_dir: PathBuf,
-    delta_dir: PathBuf,
     context: Arc<GlobalContext>,
 
     // Temporary values.
@@ -805,9 +811,6 @@ impl WriterWrapper {
             tsm_dir: request
                 .storage_opt
                 .tsm_dir(&request.tenant_database, request.ts_family_id),
-            delta_dir: request
-                .storage_opt
-                .delta_dir(&request.tenant_database, request.ts_family_id),
             context,
 
             tsm_writer_full: false,
@@ -819,100 +822,81 @@ impl WriterWrapper {
     }
 
     pub async fn close(mut self) -> Result<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)> {
-        self.close_writer().await?;
+        self.close_writer_and_append_compact_meta().await?;
         Ok((self.version_edit, self.file_metas))
     }
 
     /// Write CompactingBlock to TsmWriter, fill file_metas and version_edit.
-    pub async fn write(&mut self, blk: CompactingBlock) -> Result<()> {
-        match blk {
+    pub async fn write(&mut self, blk: CompactingBlock) -> Result<usize> {
+        let write_result: WriteTsmResult<usize> = match blk {
             CompactingBlock::Decoded {
                 field_id,
                 data_block,
                 ..
             } => {
-                self.write_tsm_data_block(field_id, &data_block).await?;
+                self.tsm_writer_mut()
+                    .await?
+                    .write_block(field_id, &data_block)
+                    .await
             }
             CompactingBlock::Encoded {
                 field_id,
                 data_block,
                 ..
             } => {
-                self.write_tsm_encoded_data_block(field_id, &data_block)
-                    .await?;
+                self.tsm_writer_mut()
+                    .await?
+                    .write_encoded_block(field_id, &data_block)
+                    .await
             }
             CompactingBlock::Raw { meta, raw, .. } => {
-                self.write_tsm_raw_data_block(&meta, &raw).await?;
+                self.tsm_writer_mut().await?.write_raw(&meta, &raw).await
+            }
+        };
+        match write_result {
+            Ok(size) => Ok(size),
+            Err(WriteTsmError::WriteIO { source }) => {
+                // TODO try re-run compaction on other time.
+                trace::error!("Failed compaction: IO error when write tsm: {:?}", source);
+                Err(Error::IO { source })
+            }
+            Err(WriteTsmError::Encode { source }) => {
+                // TODO try re-run compaction on other time.
+                trace::error!(
+                    "Failed compaction: encoding error when write tsm: {:?}",
+                    source
+                );
+                Err(Error::Encode { source })
+            }
+            Err(WriteTsmError::Finished { path }) => {
+                trace::error!(
+                    "Failed compaction: Trying write already finished tsm file: '{}'",
+                    path.display()
+                );
+                Err(Error::WriteTsm {
+                    source: WriteTsmError::Finished { path },
+                })
+            }
+            Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) => {
+                self.tsm_writer_full = true;
+                Ok(write_size)
             }
         }
-
-        Ok(())
-    }
-
-    async fn write_tsm_data_block(
-        &mut self,
-        field_id: FieldId,
-        data_block: &DataBlock,
-    ) -> Result<usize> {
-        let write_ret = self
-            .tsm_writer_mut()
-            .await?
-            .write_block(field_id, data_block)
-            .await;
-        if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
-            self.tsm_writer_full = true;
-            return Ok(write_size);
-        }
-        warp_write_tsm_result(write_ret)
-    }
-
-    async fn write_tsm_encoded_data_block(
-        &mut self,
-        field_id: FieldId,
-        data_block: &EncodedDataBlock,
-    ) -> Result<usize> {
-        let write_ret = self
-            .tsm_writer_mut()
-            .await?
-            .write_encoded_block(field_id, data_block)
-            .await;
-        if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
-            self.tsm_writer_full = true;
-            return Ok(write_size);
-        }
-        warp_write_tsm_result(write_ret)
-    }
-
-    async fn write_tsm_raw_data_block(
-        &mut self,
-        block_meta: &BlockMeta,
-        data_block: &[u8],
-    ) -> Result<usize> {
-        let write_ret = self
-            .tsm_writer_mut()
-            .await?
-            .write_raw(block_meta, data_block)
-            .await;
-        if let Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) = write_ret {
-            self.tsm_writer_full = true;
-            return Ok(write_size);
-        }
-        warp_write_tsm_result(write_ret)
     }
 
     async fn tsm_writer_mut(&mut self) -> Result<&mut TsmWriter> {
         if self.tsm_writer_full {
-            self.close_writer().await?;
-            self.new_writer().await
+            self.close_writer_and_append_compact_meta().await?;
+            self.new_writer_mut().await
         } else {
             match self.tsm_writer {
                 Some(ref mut w) => Ok(w),
-                None => self.new_writer().await,
+                None => self.new_writer_mut().await,
             }
         }
     }
 
-    async fn new_writer(&mut self) -> Result<&mut TsmWriter> {
+    async fn new_writer_mut(&mut self) -> Result<&mut TsmWriter> {
         let writer = tsm::new_tsm_writer(
             &self.tsm_dir,
             self.context.file_id_next(),
@@ -930,7 +914,7 @@ impl WriterWrapper {
         Ok(self.tsm_writer.insert(writer))
     }
 
-    async fn close_writer(&mut self) -> Result<()> {
+    async fn close_writer_and_append_compact_meta(&mut self) -> Result<()> {
         if let Some(mut tsm_writer) = self.tsm_writer.take() {
             tsm_writer
                 .write_index()
@@ -966,43 +950,10 @@ impl WriterWrapper {
     }
 }
 
-fn warp_write_tsm_result<T: Default>(write_result: WriteTsmResult<T>) -> Result<T> {
-    match write_result {
-        Ok(size) => Ok(size),
-        Err(WriteTsmError::WriteIO { source }) => {
-            // TODO try re-run compaction on other time.
-            trace::error!("Failed compaction: IO error when write tsm: {:?}", source);
-            Err(Error::IO { source })
-        }
-        Err(WriteTsmError::Encode { source }) => {
-            // TODO try re-run compaction on other time.
-            trace::error!(
-                "Failed compaction: encoding error when write tsm: {:?}",
-                source
-            );
-            Err(Error::Encode { source })
-        }
-        Err(WriteTsmError::Finished { path }) => {
-            trace::error!(
-                "Failed compaction: Trying write already finished tsm file: '{}'",
-                path.display()
-            );
-            Err(Error::WriteTsm {
-                source: WriteTsmError::Finished { path },
-            })
-        }
-        Err(WriteTsmError::MaxFileSizeExceed { .. }) => {
-            // This error should be already handled before, ignore.
-            trace::error!("WriteTsmError::MaxFileSizeExceed should be handled before.");
-            Ok(T::default())
-        }
-    }
-}
-
 #[cfg(test)]
 mod test {
     use cache::ShardedAsyncCache;
-    use models::{FieldId, PhysicalDType as ValueType};
+    use models::{FieldId, PhysicalDType as ValueType, Timestamp};
 
     use super::*;
     use crate::compaction::test::{
@@ -1112,7 +1063,7 @@ mod test {
         opt: Arc<Options>,
         next_file_id: ColumnFileId,
         files: Vec<Arc<ColumnFile>>,
-        target_level_time_range: TimeRange,
+        out_level_max_ts: Timestamp,
     ) -> (CompactReq, Arc<GlobalContext>) {
         let version = Arc::new(Version::new(
             1,
@@ -1120,7 +1071,7 @@ mod test {
             opt.storage.clone(),
             1,
             LevelInfo::init_levels(tenant_database.clone(), 0, opt.storage.clone()),
-            target_level_time_range.max_ts,
+            out_level_max_ts,
             Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
         ));
         let compact_req = CompactReq {
@@ -1131,7 +1082,7 @@ mod test {
             version,
             in_level: 1,
             out_level: 2,
-            time_range: target_level_time_range,
+            max_ts: out_level_max_ts,
         };
         let context = Arc::new(GlobalContext::new());
         context.set_file_id(next_file_id);
@@ -1142,7 +1093,7 @@ mod test {
     async fn test_delta_compaction(
         dir: &str,
         source_data_desc: &[TsmSchema],
-        time_range: TimeRange,
+        max_ts: Timestamp,
         expected_data_desc: HashMap<FieldId, Vec<DataBlock>>,
         expected_data_level: LevelId,
     ) {
@@ -1172,10 +1123,9 @@ mod test {
             .unwrap_or(1)
             + 1;
         let (mut compact_req, kernel) =
-            prepare_delta_compaction(tenant_database, opt, next_file_id, column_files, time_range);
+            prepare_delta_compaction(tenant_database, opt, next_file_id, column_files, max_ts);
         compact_req.in_level = 0;
         compact_req.out_level = expected_data_level;
-        compact_req.time_range = time_range;
 
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
@@ -1228,7 +1178,7 @@ mod test {
                 (ValueType::Float, 4, 1001, 2000), (ValueType::Float, 4, 2001, 2500),
             ], vec![]),
         ];
-        let target_level_time_range = TimeRange::new(0, 3000);
+        let max_ts = 3000;
         let expected_data_target_level: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
             (
                 // 1, 1~6500
@@ -1271,7 +1221,7 @@ mod test {
         test_delta_compaction(
             "/tmp/test/delta_compaction/1",
             &data_desc,
-            target_level_time_range,
+            max_ts,
             expected_data_target_level,
             2,
         )
@@ -1322,7 +1272,7 @@ mod test {
                 (ValueType::Float, 4, 1004, 2003), (ValueType::Float, 4, 2004, 2503),
             ], vec![]),
         ];
-        let target_level_time_range = TimeRange::new(0, 5000);
+        let max_ts = 5000;
         let expected_data_target_level: HashMap<FieldId, Vec<DataBlock>> = HashMap::from([
             (
                 // 1
@@ -1394,7 +1344,7 @@ mod test {
         test_delta_compaction(
             "/tmp/test/delta_compaction/2",
             &data_desc,
-            target_level_time_range,
+            max_ts,
             expected_data_target_level,
             2,
         )

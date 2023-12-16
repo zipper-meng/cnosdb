@@ -120,6 +120,29 @@ impl TsmTombstone {
         Ok(())
     }
 
+    async fn save_all(
+        writer: &mut record_file::Writer,
+        tombstones: &HashMap<FieldId, Vec<TimeRange>>,
+    ) -> Result<()> {
+        let mut write_buf = [0_u8; ENTRY_LEN];
+        for (field_id, time_ranges) in tombstones.iter() {
+            for time_range in time_ranges.iter() {
+                write_buf[0..8].copy_from_slice(field_id.to_be_bytes().as_slice());
+                write_buf[8..16].copy_from_slice(time_range.min_ts.to_be_bytes().as_slice());
+                write_buf[16..24].copy_from_slice(time_range.max_ts.to_be_bytes().as_slice());
+                writer
+                    .write_record(
+                        RecordDataVersion::V1 as u8,
+                        RecordDataType::Tombstone as u8,
+                        &[&write_buf],
+                    )
+                    .await?;
+            }
+        }
+
+        Ok(())
+    }
+
     pub fn is_empty(&self) -> bool {
         self.tombstones.lock().is_empty()
     }
@@ -164,6 +187,62 @@ impl TsmTombstone {
                 .push(*time_range);
         }
         Ok(())
+    }
+
+    pub async fn add_range_and_compact(
+        &self,
+        field_ids: &[FieldId],
+        time_range: &TimeRange,
+        bloom_filter: Option<Arc<BloomFilter>>,
+    ) -> Result<()> {
+        // Lock writer first then tombstones.
+        let mut writer_lock = self.writer.lock().await;
+        if let Some(w) = writer_lock.as_mut() {
+            w.close().await?;
+        }
+
+        let mut tombstones = self.tombstones.lock().clone();
+        for field_id in field_ids.iter() {
+            if let Some(filter) = bloom_filter.as_ref() {
+                if !filter.contains(&field_id.to_be_bytes()) {
+                    continue;
+                }
+            }
+            tombstones.entry(*field_id).or_default().push(*time_range);
+        }
+        for time_ranges in tombstones.values_mut() {
+            TimeRange::compact(time_ranges);
+        }
+
+        let tmp_path = match self.path.file_name().map(|os_str| {
+            let mut s = os_str.to_os_string();
+            s.push(".compact.tmp");
+            s
+        }) {
+            Some(name) => self.path.join(name),
+            None => {
+                error!("invalid tsm tombstone file path: {}", self.path.display());
+                panic!("invalid tsm tombstone file path: {}", self.path.display());
+            }
+        };
+
+        let mut writer = record_file::Writer::open(&tmp_path, RecordDataType::Tombstone).await?;
+        Self::save_all(&mut writer, &tombstones).await?;
+        writer.close().await?;
+        drop(writer);
+        file_utils::rename(tmp_path, &self.path).await?;
+
+        // Writer needs to reopen sometime.
+        *writer_lock = None;
+
+        Ok(())
+    }
+
+    pub fn compact(&self) {
+        let mut tombstones = self.tombstones.lock();
+        for time_ranges in tombstones.values_mut() {
+            TimeRange::compact(time_ranges);
+        }
     }
 
     pub async fn flush(&self) -> Result<()> {
@@ -256,7 +335,7 @@ mod test {
 
     #[tokio::test]
     async fn test_write_read_1() {
-        let dir = PathBuf::from("/tmp/test/tombstone/1".to_string());
+        let dir = PathBuf::from("/tmp/test/tombstone/io_1".to_string());
         let _ = std::fs::remove_dir_all(&dir);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -281,7 +360,7 @@ mod test {
 
     #[tokio::test]
     async fn test_write_read_2() {
-        let dir = PathBuf::from("/tmp/test/tombstone/2".to_string());
+        let dir = PathBuf::from("/tmp/test/tombstone/io_2".to_string());
         let _ = std::fs::remove_dir_all(&dir);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -322,7 +401,7 @@ mod test {
 
     #[tokio::test]
     async fn test_write_read_3() {
-        let dir = PathBuf::from("/tmp/test/tombstone/3".to_string());
+        let dir = PathBuf::from("/tmp/test/tombstone/io_3".to_string());
         let _ = std::fs::remove_dir_all(&dir);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -365,5 +444,63 @@ mod test {
                 min_ts: 101
             }
         ));
+    }
+
+    #[tokio::test]
+    async fn test_compact() {
+        let dir = PathBuf::from("/tmp/test/tombstone/compact".to_string());
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let time_ranges = vec![
+            TimeRange::new(0, 50),
+            TimeRange::new(49, 60),
+            TimeRange::new(60, 70),
+            TimeRange::new(80, 90),
+            TimeRange::new(75, 100),
+        ];
+        let field_ids_vec = vec![vec![1, 2, 3], vec![2, 3, 4], vec![3, 4, 5]];
+
+        let tombstone = TsmTombstone::open(&dir, 1).await.unwrap();
+        for field_ids in field_ids_vec.iter() {
+            for time_range in time_ranges.iter() {
+                tombstone
+                    .add_range(field_ids, time_range, None)
+                    .await
+                    .unwrap();
+            }
+        }
+        tombstone.flush().await.unwrap();
+        {
+            let tombstones = tombstone.tombstones.lock().clone();
+            assert_eq!(tombstones.len(), 5);
+            let mut time_ranges_exp_2 = time_ranges.clone();
+            time_ranges_exp_2.extend_from_slice(&time_ranges);
+            let mut time_ranges_exp_3 = time_ranges_exp_2.clone();
+            time_ranges_exp_3.extend_from_slice(&time_ranges);
+            for field_id in 1..=5 {
+                assert!(tombstones.contains_key(&field_id));
+                let time_ranges_tomb = tombstones.get(&field_id).unwrap();
+                if field_id == 1 || field_id == 5 {
+                    assert_eq!(time_ranges_tomb, &time_ranges);
+                } else if field_id == 3 {
+                    assert_eq!(time_ranges_tomb, &time_ranges_exp_3);
+                } else {
+                    assert_eq!(time_ranges_tomb, &time_ranges_exp_2);
+                }
+            }
+        }
+
+        tombstone.compact();
+        {
+            let tombstones = tombstone.tombstones.lock().clone();
+            assert_eq!(tombstones.len(), 5);
+            let time_ranges_exp = vec![TimeRange::new(0, 70), TimeRange::new(75, 100)];
+            for field_id in 1..=5 {
+                assert!(tombstones.contains_key(&field_id));
+                let time_ranges_tomb = tombstones.get(&field_id).unwrap();
+                assert_eq!(time_ranges_tomb, &time_ranges_exp);
+            }
+        }
     }
 }

@@ -1124,7 +1124,7 @@ pub mod test {
             version,
             in_level: 1,
             out_level: 2,
-            time_range: TimeRange::all(),
+            max_ts: Timestamp::MAX,
         };
         let context = Arc::new(GlobalContext::new());
         context.set_file_id(next_file_id);

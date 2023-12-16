@@ -11,7 +11,7 @@ use std::sync::Arc;
 
 use chrono::Utc;
 pub use flush::run_flush_memtable_job;
-use models::predicate::domain::TimeRange;
+use models::Timestamp;
 use parking_lot::RwLock;
 pub use picker::{pick_delta_compaction, pick_level_compaction};
 use utils::BloomFilter;
@@ -48,15 +48,17 @@ pub struct CompactReq {
     version: Arc<Version>,
     in_level: LevelId,
     out_level: LevelId,
-    time_range: TimeRange,
+    /// The maximum timestamp of the data from the in_level to be compacted
+    /// into the out_level, only used in delta compaction.
+    max_ts: Timestamp,
 }
 
 impl std::fmt::Display for CompactReq {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "tenant_database: {}, ts_family: {}, files: [",
-            self.tenant_database, self.ts_family_id
+            "tenant_database: {}, ts_family: {}, max_ts: {}, files: [",
+            self.tenant_database, self.ts_family_id, self.max_ts,
         )?;
         if !self.files.is_empty() {
             write!(

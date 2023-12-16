@@ -100,7 +100,7 @@ impl LevelCompactionPicker {
             version: version.clone(),
             in_level,
             out_level,
-            time_range: level_infos[out_level as usize].time_range,
+            max_ts: level_infos[out_level as usize].time_range.max_ts,
         })
     }
 
@@ -338,7 +338,7 @@ impl DeltaCompactionPicker {
             version: version.clone(),
             in_level: 0,
             out_level: out_level as u32,
-            time_range: levels[out_level].time_range,
+            max_ts: levels[out_level].time_range.max_ts,
         })
     }
 }

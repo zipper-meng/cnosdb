@@ -8,6 +8,7 @@ use cache::ShardedAsyncCache;
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
+use models::predicate::domain::TimeRange;
 use models::Timestamp;
 use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
@@ -164,6 +165,9 @@ pub struct VersionEdit {
     pub max_level_ts: Timestamp,
     pub add_files: Vec<CompactMeta>,
     pub del_files: Vec<CompactMeta>,
+    /// Partly deleted files, only used in compaction.
+    /// min_ts and max_ts are the partly deleted time_range.
+    pub partly_del_files: Vec<CompactMeta>,
 
     pub del_tsf: bool,
     pub add_tsf: bool,
@@ -181,6 +185,7 @@ impl Default for VersionEdit {
             max_level_ts: i64::MIN,
             add_files: vec![],
             del_files: vec![],
+            partly_del_files: vec![],
             del_tsf: false,
             add_tsf: false,
             tsf_id: 0,
@@ -277,6 +282,24 @@ impl VersionEdit {
             file_id,
             level,
             is_delta,
+            ..Default::default()
+        });
+    }
+
+    pub fn del_file_part(
+        &mut self,
+        level: LevelId,
+        file_id: u64,
+        is_delta: bool,
+        min_ts: Timestamp,
+        max_ts: Timestamp,
+    ) {
+        self.partly_del_files.push(CompactMeta {
+            file_id,
+            level,
+            is_delta,
+            min_ts,
+            max_ts,
             ..Default::default()
         });
     }
@@ -564,16 +587,56 @@ impl Summary {
 
         // For each TsereiesFamily - VersionEdits，generate a new Version and then apply it.
         let version_set = self.version_set.read().await;
+        let mut partly_deleted_files = Vec::new();
         for (tsf_id, edits) in tsf_version_edits {
             let min_seq = tsf_min_seq.get(&tsf_id);
             if let Some(tsf) = version_set.get_tsfamily_by_tf_id(tsf_id).await {
-                trace::info!("Applying new version for ts_family {}.", tsf_id);
                 let new_version = tsf.read().await.version().copy_apply_version_edits(
                     edits,
                     &mut file_metas,
                     min_seq.copied(),
+                    &mut partly_deleted_files,
                 );
+
+                let mut jh_vec = Vec::with_capacity(partly_deleted_files.len());
+                for f in partly_deleted_files.iter() {
+                    let time_range = TimeRange::new(0, f.time_range().max_ts);
+                    match new_version.get_tsm_reader(f.file_path()).await {
+                        Ok(tsm_reader) => {
+                            jh_vec.push(tokio::spawn(async move {
+                                let field_ids = tsm_reader
+                                    .field_id_offs()
+                                    .iter()
+                                    .map(|(field_id, _)| *field_id)
+                                    .collect::<Vec<_>>();
+                                tsm_reader
+                                    .add_tombstone_and_compact(&field_ids, &time_range)
+                                    .await
+                                    .unwrap();
+                            }));
+                        }
+                        Err(e) => {
+                            trace::error!(
+                                "Failed to get tsm_reader for file {}: {:?}",
+                                f.file_path().display(),
+                                e
+                            );
+                        }
+                    }
+                }
+                for jh in jh_vec {
+                    match jh.await {
+                        Ok(_) => {
+                            println!("Ok");
+                        }
+                        Err(e) => {
+                            println!("Err");
+                        }
+                    }
+                }
+
                 let flushed_mem_cahces = mem_caches.get(&tsf_id);
+                trace::info!("Applying new version for ts_family {}.", tsf_id);
                 tsf.write()
                     .await
                     .new_version(new_version, flushed_mem_cahces);
@@ -1256,6 +1319,7 @@ mod test {
                 edits.clone(),
                 &mut HashMap::new(),
                 None,
+                &mut vec![],
             );
             let tsm_reader_cache = Arc::downgrade(version.tsm_reader_cache());
 
