@@ -2,7 +2,6 @@ use std::fmt::Debug;
 use std::path::Path;
 use std::sync::Arc;
 
-use chrono::format::Item;
 use models::predicate::domain::{TimeRange, TimeRanges};
 use models::{FieldId, PhysicalDType as ValueType};
 use snafu::{ResultExt, Snafu};

@@ -8,7 +8,6 @@ use cache::ShardedAsyncCache;
 use memory_pool::MemoryPoolRef;
 use meta::model::MetaRef;
 use metrics::metric_register::MetricsRegister;
-use models::predicate::domain::TimeRange;
 use models::Timestamp;
 use parking_lot::RwLock as SyncRwLock;
 use serde::{Deserialize, Serialize};
@@ -165,8 +164,10 @@ pub struct VersionEdit {
     pub max_level_ts: Timestamp,
     pub add_files: Vec<CompactMeta>,
     pub del_files: Vec<CompactMeta>,
-    /// Partly deleted files, only used in compaction.
-    /// min_ts and max_ts are the partly deleted time_range.
+    /// Partly deleted files, only for delta-compaction.
+    /// Field min_ts and max_ts are the partly deleted time_range.
+    /// This field won't serialize and write into summary file.
+    #[serde(skip)]
     pub partly_del_files: Vec<CompactMeta>,
 
     pub del_tsf: bool,
@@ -587,44 +588,57 @@ impl Summary {
 
         // For each TsereiesFamily - VersionEdits，generate a new Version and then apply it.
         let version_set = self.version_set.read().await;
-        let mut partly_deleted_files = Vec::new();
+        let mut partly_deleted_file_pathes = Vec::new();
         for (tsf_id, edits) in tsf_version_edits {
             let min_seq = tsf_min_seq.get(&tsf_id);
             if let Some(tsf) = version_set.get_tsfamily_by_tf_id(tsf_id).await {
+                let tenant_database = &tsf.read().await.tenant_database().clone();
+                partly_deleted_file_pathes.clear();
+                for version_edit in edits.iter() {
+                    for compact_meta in version_edit.partly_del_files.iter() {
+                        partly_deleted_file_pathes.push(compact_meta.file_path(
+                            &self.opt.storage,
+                            tenant_database.as_str(),
+                            tsf_id,
+                        ));
+                    }
+                }
+
                 let new_version = tsf.read().await.version().copy_apply_version_edits(
                     edits,
                     &mut file_metas,
                     min_seq.copied(),
-                    &mut partly_deleted_files,
                 );
 
-                let mut jh_vec = Vec::with_capacity(partly_deleted_files.len());
-                for f in partly_deleted_files.iter() {
-                    match new_version.get_tsm_reader(f.file_path()).await {
+                let mut replace_tombstone_compact_tmp_tasks =
+                    Vec::with_capacity(partly_deleted_file_pathes.len());
+                for tsm_path in partly_deleted_file_pathes.iter() {
+                    match new_version.get_tsm_reader(tsm_path).await {
                         Ok(tsm_reader) => {
-                            jh_vec.push(tokio::spawn(async move {
+                            replace_tombstone_compact_tmp_tasks.push(tokio::spawn(async move {
                                 tsm_reader.replace_with_compact_tmp().await
                             }));
                         }
                         Err(e) => {
                             trace::error!(
-                                "Failed to get tsm_reader for file {}: {:?}",
-                                f.file_path().display(),
-                                e
-                            );
+                                "Failed to get tsm_reader for file '{}' when trying to replace tombstones generated in delta-compaction: {e}",
+                                tsm_path.display(),
+                            )
                         }
                     }
                 }
-                for jh in jh_vec {
+                for jh in replace_tombstone_compact_tmp_tasks {
                     match jh.await {
                         Ok(Ok(_)) => {
-                            println!("Ok");
+                            trace::info!("Succefssfully replaced with compact tmp");
                         }
                         Ok(Err(e)) => {
-                            println!("Tskv Err: {e}");
+                            // This delta-compaction should be failed.
+                            trace::error!("Tskv Err: {e}");
                         }
                         Err(e) => {
-                            println!("Join err: {e}");
+                            // This delta-compaction may be failed.
+                            trace::error!("Join err: {e}");
                         }
                     }
                 }
@@ -741,6 +755,17 @@ pub async fn print_summary_statistics(path: impl AsRef<Path>) {
                             buffer.truncate(buffer.len() - 2);
                         }
                         println!("  Delete file:[ {} ]", buffer);
+                    }
+                    if !ve.partly_del_files.is_empty() {
+                        let mut buffer = String::new();
+                        ve.del_files.iter().for_each(|f| {
+                            buffer
+                                .push_str(format!("{} (level: {}), ", f.file_id, f.level).as_str())
+                        });
+                        if !buffer.is_empty() {
+                            buffer.truncate(buffer.len() - 2);
+                        }
+                        println!("  Partly Delete file:[ {} ]", buffer);
                     }
                 }
             }
@@ -1313,7 +1338,6 @@ mod test {
                 edits.clone(),
                 &mut HashMap::new(),
                 None,
-                &mut vec![],
             );
             let tsm_reader_cache = Arc::downgrade(version.tsm_reader_cache());
 

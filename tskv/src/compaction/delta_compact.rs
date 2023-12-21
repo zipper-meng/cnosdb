@@ -25,7 +25,7 @@ pub async fn run_compaction_job(
     kernel: Arc<GlobalContext>,
 ) -> Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
     let out_time_range = TimeRange::new(0, request.max_ts);
-    trace::info!("Compaction: Running delta compaction job on {request}");
+    trace::info!("Compaction(delta): Running compaction job on {request}");
 
     if request.files.is_empty() {
         // Nothing to compact
@@ -102,18 +102,42 @@ pub async fn run_compaction_job(
 
     let (mut version_edit, file_metas) = writer_wrapper.close().await?;
     for file in request.files {
-        // Only delete part of the tsm file.
-        version_edit.del_file_part(
-            file.level(),
-            file.file_id(),
-            file.is_delta(),
-            out_time_range.min_ts,
-            out_time_range.max_ts,
-        );
+        if file.time_range().max_ts <= out_time_range.max_ts {
+            // All files merged into target level.
+            version_edit.del_file(file.level(), file.file_id(), file.is_delta());
+        } else {
+            // Only part of the tsm file merged into target level.
+            version_edit.del_file_part(
+                file.level(),
+                file.file_id(),
+                file.is_delta(),
+                out_time_range.min_ts,
+                out_time_range.max_ts,
+            );
+            if let Some(time_range) = file.time_range().intersect(&out_time_range) {
+                // Re-add file but with the intersected time range if file has something.
+                version_edit.add_file(
+                    CompactMeta {
+                        file_id: file.file_id(),
+                        file_size: file.size(),
+                        tsf_id: request.ts_family_id,
+                        level: file.level(),
+                        min_ts: time_range.min_ts,
+                        max_ts: time_range.max_ts,
+                        high_seq: 0,
+                        low_seq: 0,
+                        is_delta: file.is_delta(),
+                    },
+                    out_time_range.max_ts,
+                )
+            } else {
+                // Seems file has nothing merged into target level, it is impossible.
+            }
+        }
     }
 
     trace::info!(
-        "Compaction: Compact finished, version edits: {:?}",
+        "Compaction(delta): Compact finished, version edits: {:?}",
         version_edit
     );
     Ok(Some((version_edit, file_metas)))
@@ -908,7 +932,7 @@ impl WriterWrapper {
         )
         .await?;
         trace::info!(
-            "Compaction: File: {} been created (level: {}).",
+            "Compaction(delta): File: {} been created (level: {}).",
             writer.sequence(),
             self.out_level,
         );
@@ -926,7 +950,7 @@ impl WriterWrapper {
             tsm_writer.finish().await.context(error::WriteTsmSnafu)?;
 
             trace::info!(
-                "Compaction: File: {} write finished (level: {}, {} B).",
+                "Compaction(delta): File: {} write finished (level: {}, {} B).",
                 tsm_writer.sequence(),
                 self.out_level,
                 tsm_writer.size()
