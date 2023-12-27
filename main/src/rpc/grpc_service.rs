@@ -16,10 +16,10 @@ use trace_http::ctx::SpanContextExtractor;
 use trace_http::tower_layer::TraceLayer;
 use tskv::EngineRef;
 
+use crate::server;
 use crate::rpc::tskv::TskvServiceImpl;
 use crate::server::ServiceHandle;
 use crate::spi::service::Service;
-use crate::{info, server};
 
 pub struct GrpcService {
     addr: SocketAddr,
@@ -112,9 +112,9 @@ impl Service for GrpcService {
             .add_service(raft_grpc_service);
         let server = grpc_router.serve_with_shutdown(self.addr, async {
             rx.await.ok();
-            info!("grpc server graceful shutdown!");
+            trace::info!("grpc server graceful shutdown!");
         });
-        info!("grpc server start addr: {}", self.addr);
+        trace::info!("grpc server start addr: {}", self.addr);
         let grpc_handle = tokio::spawn(server);
         self.handle = Some(ServiceHandle::new(
             "grpc service".to_string(),

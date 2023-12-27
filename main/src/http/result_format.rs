@@ -155,6 +155,7 @@ pub fn get_result_format_from_header(header: &Header) -> Result<ResultFormat, Re
 
 #[cfg(test)]
 mod tests {
+    #![allow(dead_code)]
     use std::sync::Arc;
 
     use datafusion::arrow::array::Int32Array;

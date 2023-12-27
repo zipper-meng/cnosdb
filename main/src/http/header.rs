@@ -14,6 +14,7 @@ pub struct Header {
 }
 
 impl Header {
+    #[cfg(test)]
     pub fn with(
         accept: Option<String>,
         accept_encoding: Option<String>,

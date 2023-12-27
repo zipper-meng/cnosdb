@@ -11,17 +11,17 @@ use tonic::transport::{Identity, Server, ServerTlsConfig};
 use trace_http::ctx::SpanContextExtractor;
 use trace_http::tower_layer::TraceLayer;
 
+use crate::server;
 use crate::server::ServiceHandle;
 use crate::spi::service::Service;
 use crate::vector::vector_server::VectorService;
-use crate::{info, server};
 
 pub struct VectorGrpcService {
     addr: SocketAddr,
     coord: CoordinatorRef,
     dbms: DBMSRef,
     tls_config: Option<TLSConfig>,
-    metrics_register: Arc<MetricsRegister>,
+    _metrics_register: Arc<MetricsRegister>,
     span_context_extractor: Arc<SpanContextExtractor>,
     handle: Option<ServiceHandle<Result<(), tonic::transport::Error>>>,
 }
@@ -40,7 +40,7 @@ impl VectorGrpcService {
             coord,
             dbms,
             tls_config,
-            metrics_register,
+            _metrics_register: metrics_register,
             span_context_extractor,
             handle: None,
         }
@@ -78,9 +78,9 @@ impl Service for VectorGrpcService {
         let grpc_router = grpc_builder.add_service(vector_service);
         let server = grpc_router.serve_with_shutdown(self.addr, async {
             rx.await.ok();
-            info!("grpc_vector server graceful shutdown!");
+            trace::info!("grpc_vector server graceful shutdown!");
         });
-        info!("grpc_vector server start addr: {}", self.addr);
+        trace::info!("grpc_vector server start addr: {}", self.addr);
         let grpc_handle = tokio::spawn(server);
         self.handle = Some(ServiceHandle::new(
             "grpc_vector service".to_string(),
