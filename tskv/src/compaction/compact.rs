@@ -2288,12 +2288,12 @@ pub mod test {
             tsm_writer.finish().await.unwrap();
             let mut tsm_tombstone = TsmTombstone::open(&dir, tsm_sequence).await.unwrap();
             tsm_tombstone
-                .add_range(&[(1, 1)], &TimeRange::new(0, 500))
+                .add_range(&[1], &[1], &TimeRange::new(0, 500))
                 .await
                 .unwrap();
 
             tsm_tombstone
-                .add_range(&[(1, 3)], &TimeRange::new(2001, 2700))
+                .add_range(&[1], &[3], &TimeRange::new(2001, 2700))
                 .await
                 .unwrap();
 

@@ -314,6 +314,86 @@ pub struct Chunk {
     column_groups: BTreeMap<ColumnGroupID, Arc<ColumnGroup>>,
 }
 
+#[test]
+fn test_serialize_chunk() {
+    let chunk = Chunk {
+        time_range: TimeRange {
+            min_ts: 1,
+            max_ts: 3,
+        },
+        table_name: "cpu".to_string(),
+        series_id: 5,
+        series_key: SeriesKey {
+            tags: vec![models::Tag::new_with_column_id(
+                1,
+                "tag_1".as_bytes().to_vec(),
+            )],
+            table: "cpu".to_string(),
+        },
+        next_column_group_id: 7,
+        column_groups: BTreeMap::<ColumnGroupID, Arc<ColumnGroup>>::from([(
+            9,
+            Arc::new(ColumnGroup {
+                column_group_id: 11,
+                pages_offset: 13,
+                size: 15,
+                time_range: (17, 19).into(),
+                pages: vec![
+                    PageWriteSpec {
+                        offset: 21,
+                        size: 23,
+                        meta: PageMeta {
+                            num_values: 25,
+                            column: TableColumn {
+                                id: 27,
+                                name: "col_1".to_string(),
+                                column_type: ColumnType::Field(ValueType::Geometry(
+                                    models::gis::data_type::Geometry::new_with_srid(
+                                        models::gis::data_type::GeometryType::Polygon,
+                                        37,
+                                    ),
+                                )),
+                                encoding: models::codec::Encoding::Snappy,
+                            },
+                            statistics: PageStatistics::Bytes(ValueStatistics::<Vec<u8>>::new(
+                                Some(b"alpha".to_vec()),
+                                Some(b"beta".to_vec()),
+                                Some(29),
+                                31,
+                            )),
+                        },
+                    },
+                    PageWriteSpec {
+                        offset: 33,
+                        size: 35,
+                        meta: PageMeta {
+                            num_values: 37,
+                            column: TableColumn {
+                                id: 39,
+                                name: "col_2".to_string(),
+                                column_type: ColumnType::Time(arrow_schema::TimeUnit::Microsecond),
+                                encoding: models::codec::Encoding::DeltaTs,
+                            },
+                            statistics: PageStatistics::I64(ValueStatistics::<i64>::new(
+                                Some(29),
+                                Some(31),
+                                Some(33),
+                                35,
+                            )),
+                        },
+                    },
+                ],
+            }),
+        )]),
+    };
+    let data = chunk.serialize().unwrap();
+    println!("len: {:x}", data.len());
+    for x in data.iter() {
+        print!("{:02x}, ", x);
+    }
+    println!();
+}
+
 impl Chunk {
     pub fn new(table_name: String, series_id: SeriesId, series_key: SeriesKey) -> Self {
         Self {
@@ -467,6 +547,26 @@ pub struct ChunkGroup {
     pub(crate) chunks: Vec<ChunkWriteSpec>,
 }
 
+#[test]
+fn test_serialize_chunk_group() {
+    let chunk_group = ChunkGroup {
+        chunks: vec![ChunkWriteSpec {
+            series_id: 1,
+            chunk_offset: 3,
+            chunk_size: 5,
+            statics: ChunkStatics {
+                time_range: (7, 9).into(),
+            },
+        }],
+    };
+    let data = chunk_group.serialize().unwrap();
+    println!("len: {:x}", data.len());
+    for x in data.iter() {
+        print!("{:02x}, ", x);
+    }
+    println!();
+}
+
 impl ChunkGroup {
     pub fn new() -> Self {
         Self { chunks: Vec::new() }
@@ -555,6 +655,41 @@ pub struct ChunkGroupMeta {
     tables: BTreeMap<String, ChunkGroupWriteSpec>,
 }
 
+#[test]
+fn test_serialize_chunk_group_meta() {
+    let chunk_group_meta = ChunkGroupMeta {
+        tables: BTreeMap::from([(
+            "tbl_1".to_string(),
+            ChunkGroupWriteSpec {
+                table_schema: Arc::new(TskvTableSchema {
+                    tenant: "ten_1".to_string(),
+                    db: "db_1".to_string(),
+                    name: "tbl_1".to_string(),
+                    schema_version: 1,
+                    next_column_id: 3,
+                    columns: vec![TableColumn {
+                        id: 5,
+                        name: "col_1".to_string(),
+                        column_type: ColumnType::Field(ValueType::Integer),
+                        encoding: models::codec::Encoding::DeltaTs,
+                    }],
+                    columns_index: std::collections::HashMap::from([("col_1".to_string(), 7)]),
+                }),
+                chunk_group_offset: 9,
+                chunk_group_size: 11,
+                time_range: (13, 15).into(),
+                count: 17,
+            },
+        )]),
+    };
+    let data = chunk_group_meta.serialize().unwrap();
+    println!("len: {:x}", data.len());
+    for x in data.iter() {
+        print!("{:02x}, ", x);
+    }
+    println!();
+}
+
 impl Default for ChunkGroupMeta {
     fn default() -> Self {
         Self::new()
@@ -606,6 +741,29 @@ pub struct Footer {
     pub(crate) time_range: TimeRange,
     pub(crate) table: TableMeta,
     pub(crate) series: SeriesMeta,
+}
+
+#[test]
+fn test_serialize_footer() {
+    let footer = Footer {
+        version: 1,
+        time_range: (3, 5).into(),
+        table: TableMeta {
+            chunk_group_offset: 7,
+            chunk_group_size: 9,
+        },
+        series: SeriesMeta {
+            bloom_filter: BloomFilter::new(1),
+            chunk_offset: 11,
+            chunk_size: 13,
+        },
+    };
+    let data = footer.serialize().unwrap();
+    println!("len: {:x}", data.len());
+    for x in data.iter() {
+        print!("{:02x}, ", x);
+    }
+    println!();
 }
 
 impl Footer {

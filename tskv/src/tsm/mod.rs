@@ -10,7 +10,7 @@ pub mod writer;
 use std::collections::BTreeMap;
 
 use models::{SeriesId, SeriesKey};
-pub use tombstone::{Tombstone, TsmTombstone, TOMBSTONE_FILE_SUFFIX};
+pub use tombstone::{TombstoneEntry, TsmTombstone, TOMBSTONE_FILE_SUFFIX};
 
 use crate::tsm::writer::DataBlock;
 

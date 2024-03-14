@@ -147,8 +147,39 @@ impl TimeRange {
         };
         (left, right)
     }
+
     pub fn is_none(&self) -> bool {
         self.min_ts > self.max_ts
+    }
+
+    pub fn compact(time_ranges: &mut Vec<TimeRange>) {
+        if time_ranges.is_empty() {
+            return;
+        }
+
+        // Re-order time ranges with sorted ascending min_ts.
+        time_ranges.sort_by(|a, b| a.min_ts.cmp(&b.min_ts));
+
+        // Add time ranges to new_time_ranges by optimized check algorithm.
+        let mut new_time_ranges: Vec<TimeRange> = Vec::with_capacity(1);
+        new_time_ranges.push(time_ranges[0]);
+        let mut i = 0;
+        for tr in time_ranges.iter().skip(1) {
+            if tr.min_ts
+                > new_time_ranges[i]
+                    .max_ts
+                    .checked_add(1)
+                    .unwrap_or(Timestamp::MAX)
+            {
+                new_time_ranges.push(*tr);
+                i += 1;
+            } else {
+                new_time_ranges[i].max_ts = new_time_ranges[i].max_ts.max(tr.max_ts);
+            }
+        }
+
+        // Replace time_ranges with new_time_ranges.
+        std::mem::swap(time_ranges, &mut new_time_ranges);
     }
 }
 
@@ -191,62 +222,88 @@ impl Display for TimeRange {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TimeRanges {
     // Sorted time ranges.
-    inner: Vec<TimeRange>,
+    inner: BTreeMap<i64, i64>,
     min_ts: Timestamp,
     max_ts: Timestamp,
-    is_boundless: bool,
 }
 
 impl TimeRanges {
     pub fn new(time_ranges: Vec<TimeRange>) -> Self {
-        let TimeRange { min_ts, max_ts } = Self::time_range_of_time_ranges(&time_ranges);
-        if min_ts == Timestamp::MIN && max_ts == Timestamp::MAX {
-            Self::all()
-        } else {
-            Self {
-                inner: time_ranges,
-                min_ts,
-                max_ts,
-                is_boundless: false,
-            }
-        }
+        let mut res = Self::empty();
+        res.extend_from_slice(&time_ranges);
+        res
     }
 
     pub fn with_inclusive_bounds(min_ts: i64, max_ts: i64) -> Self {
         Self {
-            inner: vec![TimeRange::new(min_ts, max_ts)],
+            inner: BTreeMap::from([(min_ts, max_ts)]),
             min_ts,
             max_ts,
-            is_boundless: min_ts == Timestamp::MIN && max_ts == Timestamp::MAX,
         }
     }
 
     pub fn all() -> Self {
         Self {
-            inner: vec![TimeRange::all()],
+            inner: BTreeMap::from([(Timestamp::MIN, Timestamp::MAX)]),
             min_ts: Timestamp::MIN,
             max_ts: Timestamp::MAX,
-            is_boundless: true,
         }
     }
 
     pub fn empty() -> Self {
         Self {
-            inner: vec![],
+            inner: BTreeMap::new(),
             min_ts: Timestamp::MAX,
             max_ts: Timestamp::MIN,
-            is_boundless: false,
         }
     }
 
-    fn time_range_of_time_ranges(time_ranges: &[TimeRange]) -> TimeRange {
-        let mut min_ts = Timestamp::MAX;
-        let mut max_ts = Timestamp::MIN;
-        for tr in time_ranges {
-            min_ts = min_ts.min(tr.min_ts);
-            max_ts = max_ts.max(tr.max_ts);
+    fn add_time_range(&mut self, time_range: TimeRange) {
+        self.min_ts = min(self.min_ts, time_range.min_ts);
+        self.max_ts = max(self.max_ts, time_range.max_ts);
+        let timestamps = self
+            .inner
+            .range(..=time_range.max_ts.checked_add(1).unwrap_or(Timestamp::MAX))
+            .rev()
+            .take_while(|(_, &max)| {
+                max >= time_range.min_ts.checked_sub(1).unwrap_or(Timestamp::MIN)
+            })
+            .map(|(&min, _)| min)
+            .collect::<Vec<_>>();
+        let mut new_range = (time_range.min_ts, time_range.max_ts);
+        if !timestamps.is_empty() {
+            new_range.0 = new_range.0.min(*timestamps.last().unwrap());
+            new_range.1 = new_range.1.max(self.inner[&timestamps[0]]);
+
+            timestamps.iter().for_each(|ts| {
+                self.inner.remove(ts);
+            });
         }
-        TimeRange { min_ts, max_ts }
+        self.inner.insert(new_range.0, new_range.1);
+    }
+
+    /// Push time range to time ranges.
+    pub fn push(&mut self, time_range: TimeRange) {
+        if self.is_boundless() {
+            return;
+        }
+        self.add_time_range(time_range)
+    }
+
+    /// Push time range to time ranges.
+    pub fn extend_from_slice(&mut self, time_ranges: &[TimeRange]) {
+        if self.is_boundless() {
+            return;
+        }
+        for time_range in time_ranges {
+            self.add_time_range(*time_range);
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.inner.clear();
+        self.min_ts = Timestamp::MAX;
+        self.max_ts = Timestamp::MIN;
     }
 
     #[inline(always)]
@@ -259,8 +316,14 @@ impl TimeRanges {
         self.inner.is_empty()
     }
 
-    pub fn time_ranges(&self) -> &[TimeRange] {
-        &self.inner
+    pub fn time_ranges(&self) -> impl Iterator<Item = TimeRange> + '_ {
+        self.inner
+            .iter()
+            .map(|(min, max)| TimeRange::new(*min, *max))
+    }
+
+    pub fn max_time_range(&self) -> TimeRange {
+        TimeRange::new(self.min_ts, self.max_ts)
     }
 
     pub fn min_ts(&self) -> Timestamp {
@@ -272,128 +335,80 @@ impl TimeRanges {
     }
 
     pub fn is_boundless(&self) -> bool {
-        self.is_boundless
+        self.min_ts == Timestamp::MIN && self.max_ts == Timestamp::MAX
     }
 
     pub fn overlaps(&self, time_range: &TimeRange) -> bool {
         self.max_time_range().overlaps(time_range)
-            && self.inner.iter().any(|tr| tr.overlaps(time_range))
+            && self.time_ranges().any(|tr| tr.overlaps(time_range))
     }
 
     pub fn includes(&self, time_range: &TimeRange) -> bool {
-        if self.inner.is_empty()
-            || time_range.max_ts < self.min_ts
-            || time_range.min_ts > self.max_ts
-        {
-            return false;
-        }
-        match self
-            .inner
-            .binary_search_by_key(&time_range.min_ts, |tr| tr.min_ts)
-        {
-            Ok(i) => {
-                for tr in self.inner[i..].iter() {
-                    if time_range.max_ts <= tr.max_ts {
-                        return true;
-                    }
-                    if time_range.max_ts > tr.max_ts {
-                        return false;
-                    }
-                }
-                false
-            }
-            Err(i) => {
-                if i == 0 {
-                    false
-                } else {
-                    for tr in self.inner[..i].iter().rev() {
-                        if tr.max_ts >= time_range.max_ts {
-                            return true;
-                        }
-                    }
-                    false
-                }
-            }
-        }
+        matches!(
+            self.inner.range(..=time_range.max_ts).next_back(),
+            Some((&min, &max)) if time_range.max_ts <= max && time_range.min_ts >= min
+        )
     }
 
     pub fn contains(&self, timestamp: Timestamp) -> bool {
-        if self.inner.is_empty() || timestamp < self.min_ts || timestamp > self.max_ts {
-            return false;
-        }
-        match self.inner.binary_search_by_key(&timestamp, |tr| tr.min_ts) {
-            Ok(_) => true,
-            Err(i) => {
-                if i == 0 {
-                    false
-                } else if i == self.inner.len() {
-                    let tr = unsafe { self.inner.get_unchecked(i - 1) };
-                    tr.max_ts >= timestamp
-                } else {
-                    for tr in self.inner[..i].iter().rev() {
-                        if tr.max_ts >= timestamp {
-                            return true;
-                        }
-                    }
-                    false
-                }
-            }
-        }
+        self.includes(&TimeRange::new(timestamp, timestamp))
     }
 
     pub fn intersect(&self, time_range: &TimeRange) -> Option<Self> {
         if self.overlaps(time_range) {
             let mut new_time_ranges = vec![];
-            for tr in self.inner.iter() {
+            for tr in self.time_ranges() {
                 if let Some(intersect_tr) = tr.intersect(time_range) {
                     new_time_ranges.push(intersect_tr);
                 }
             }
-            if new_time_ranges.is_empty() {
-                return None;
-            } else {
-                return Some(Self::new(new_time_ranges));
-            }
+            return Some(Self::new(new_time_ranges));
         }
 
         None
     }
 
-    pub fn max_time_range(&self) -> TimeRange {
-        TimeRange::new(self.min_ts, self.max_ts)
-    }
+    pub fn includes_time_ranges(&self, other: &TimeRanges) -> bool {
+        if self.is_empty() || other.is_empty() {
+            return false;
+        }
+        if self.is_boundless() {
+            return true;
+        }
+        if other.is_boundless() {
+            return false;
+        }
+        if self.min_ts > other.min_ts || self.max_ts < other.max_ts {
+            return false;
+        }
 
-    pub fn exclude(&self, time_range: &TimeRange) -> TimeRanges {
-        let trs = self
-            .inner
-            .iter()
-            .flat_map(|tr| {
-                let tr_tuple = tr.exclude(time_range);
-                [tr_tuple.0, tr_tuple.1]
-            })
-            .collect::<Vec<Option<TimeRange>>>()
-            .into_iter()
-            .flatten()
-            .collect::<Vec<TimeRange>>();
-        TimeRanges::new(trs)
-    }
-
-    pub fn exclude_time_ranges(&self, other: &[&TimeRange]) -> TimeRanges {
-        let mut res = self.clone();
-        other.iter().for_each(|o| res = res.exclude(o));
-        res
-    }
-}
-
-impl AsRef<[TimeRange]> for TimeRanges {
-    fn as_ref(&self) -> &[TimeRange] {
-        &self.inner
+        for (st1, st2) in self.inner.iter() {
+            if *st1 <= other.min_ts && *st2 >= other.max_ts {
+                continue;
+            }
+            for (ot1, ot2) in other.inner.iter() {
+                if *st1 > *ot1 || *st2 < *ot2 {
+                    return false;
+                }
+            }
+        }
+        true
     }
 }
 
 impl From<(Timestamp, Timestamp)> for TimeRanges {
     fn from(time_range: (Timestamp, Timestamp)) -> Self {
         Self::with_inclusive_bounds(time_range.0, time_range.1)
+    }
+}
+
+impl Display for TimeRanges {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{ ")?;
+        for tr in &self.inner {
+            write!(f, "{:?}", tr)?;
+        }
+        write!(f, " }}")
     }
 }
 
@@ -1877,6 +1892,7 @@ mod tests {
         assert!(tr.overlaps(&TimeRange::new(4, 7)));
         assert!(tr.overlaps(&TimeRange::new(1, 5)));
         assert!(tr.overlaps(&TimeRange::new(2, 4)));
+        assert!(tr.overlaps(&TimeRange::new(5, 6)));
         assert!(!tr.overlaps(&TimeRange::new(-3, -1)));
         assert!(!tr.overlaps(&TimeRange::new(-1, 0)));
         assert!(!tr.overlaps(&TimeRange::new(6, 7)));
@@ -1958,22 +1974,27 @@ mod tests {
     #[test]
     fn test_time_ranges() {
         let trs_all = TimeRanges::all();
-        assert_eq!(trs_all.time_ranges(), &[TimeRange::all()]);
+        assert_eq!(
+            trs_all.time_ranges().collect::<Vec<_>>(),
+            &[TimeRange::all()]
+        );
         assert_eq!(trs_all.min_ts(), i64::MIN);
         assert_eq!(trs_all.max_ts(), i64::MAX);
         assert!(trs_all.is_boundless());
 
-        let trs = TimeRanges::new(vec![
+        let trs_source = vec![
             TimeRange::new(2, 3),
             TimeRange::new(22, 33),
             TimeRange::new(222, 333),
-        ]);
-        assert_eq!(trs.time_ranges(), &trs.inner);
+        ];
+        let trs = TimeRanges::new(trs_source.clone());
+        assert_eq!(trs.time_ranges().collect::<Vec<_>>(), trs_source);
         assert_eq!(trs.min_ts(), 2);
         assert_eq!(trs.max_ts(), 333);
         assert!(!trs.is_boundless());
 
         assert!(trs_all.overlaps(&TimeRange::new(2, 3)));
+        assert!(trs_all.overlaps(&TimeRange::new(i64::MIN, i64::MAX)));
         assert!(trs.overlaps(&TimeRange::new(1, 2)));
         assert!(trs.overlaps(&TimeRange::new(2, 2)));
         assert!(trs.overlaps(&TimeRange::new(2, 3)));
@@ -1989,8 +2010,18 @@ mod tests {
         assert!(!trs.overlaps(&TimeRange::new(4, 5)));
 
         assert!(trs_all.includes(&TimeRange::new(2, 3)));
+        assert!(trs_all.includes(&TimeRange::new(i64::MIN, i64::MAX)));
         assert!(trs.includes(&TimeRange::new(2, 3)));
         assert!(trs.includes(&TimeRange::new(22, 33)));
+        assert!(trs.includes(&TimeRange::new(23, 32)));
+        assert!(!trs.includes(&TimeRange::new(21, 33)));
+        assert!(!trs.includes(&TimeRange::new(22, 34)));
+        assert!(!trs.includes(&TimeRange::new(21, 34)));
+        assert!(trs.includes(&TimeRange::new(222, 333)));
+        assert!(trs.includes(&TimeRange::new(223, 332)));
+        assert!(!trs.includes(&TimeRange::new(221, 333)));
+        assert!(!trs.includes(&TimeRange::new(222, 334)));
+        assert!(!trs.includes(&TimeRange::new(221, 334)));
         assert!(!trs.includes(&TimeRange::new(20, 30)));
         assert!(!trs.includes(&TimeRange::new(1, 2)));
         assert!(!trs.includes(&TimeRange::new(3, 4)));
@@ -1998,16 +2029,24 @@ mod tests {
         assert!(!trs.includes(&TimeRange::new(30, 40)));
 
         assert!(trs_all.contains(2));
+        assert!(trs_all.contains(i64::MIN));
+        assert!(trs_all.contains(i64::MAX));
         assert!(trs.contains(2));
         assert!(trs.contains(3));
         assert!(trs.contains(30));
         assert!(!trs.contains(0));
         assert!(!trs.contains(4));
         assert!(!trs.contains(10));
+        assert!(!trs.contains(100));
+        assert!(!trs.contains(1000));
 
         assert_eq!(
             trs_all.intersect(&TimeRange::new(1, 5)),
             Some(TimeRanges::new(vec![TimeRange::new(1, 5)]))
+        );
+        assert_eq!(
+            trs_all.intersect(&TimeRange::new(i64::MIN, i64::MAX)),
+            Some(TimeRanges::new(vec![TimeRange::new(i64::MIN, i64::MAX)]))
         );
         assert_eq!(trs.intersect(&TimeRange::new(0, 1)), None);
         assert_eq!(trs.intersect(&TimeRange::new(4, 5)), None);
@@ -2034,6 +2073,281 @@ mod tests {
                 TimeRange::new(22, 33)
             ]))
         );
+        assert_eq!(
+            trs.intersect(&TimeRange::new(i64::MIN, i64::MAX)).as_ref(),
+            Some(&trs)
+        );
+
+        let mut trs = trs;
+        trs.push(TimeRange::new(0, 1000));
+        assert_eq!(trs.inner.len(), 1);
+        assert_eq!(
+            trs.time_ranges().collect::<Vec<_>>()[0],
+            TimeRange::new(0, 1000)
+        );
+        assert_eq!(trs.min_ts(), 0);
+        assert_eq!(trs.max_ts(), 1000);
+        assert!(!trs.is_boundless());
+
+        let mut trs_all = trs_all;
+        trs_all.push(TimeRange::new(0, 1000));
+        assert_eq!(trs_all.inner.len(), 1);
+        assert_eq!(
+            trs_all.time_ranges().collect::<Vec<_>>()[0],
+            TimeRange::new(i64::MIN, i64::MAX)
+        );
+        assert_eq!(trs_all.min_ts(), i64::MIN);
+        assert_eq!(trs_all.max_ts(), i64::MAX);
+        assert!(trs_all.is_boundless());
+    }
+
+    #[test]
+    fn test_time_ranges_push() {
+        {
+            let mut trs = TimeRanges::new(vec![TimeRange::new(2, 3)]);
+            assert!(trs.includes(&(2, 3).into()));
+            trs.push(TimeRange::new(4, 5));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(trs.includes(&(3, 4).into()));
+            assert!(trs.includes(&(4, 5).into()));
+            assert!(trs.includes(&(2, 5).into()));
+            assert!(!trs.includes(&(1, 2).into()));
+            assert!(!trs.includes(&(5, 6).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(2, 5)]
+            );
+
+            trs.push(TimeRange::new(2, 3));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(trs.includes(&(3, 4).into()));
+            assert!(trs.includes(&(4, 5).into()));
+            assert!(trs.includes(&(2, 5).into()));
+            assert!(!trs.includes(&(1, 2).into()));
+            assert!(!trs.includes(&(5, 6).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(2, 5)]
+            );
+
+            trs.push(TimeRange::new(4, 5));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(trs.includes(&(3, 4).into()));
+            assert!(trs.includes(&(4, 5).into()));
+            assert!(trs.includes(&(2, 5).into()));
+            assert!(!trs.includes(&(1, 2).into()));
+            assert!(!trs.includes(&(5, 6).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(2, 5)]
+            );
+
+            trs.push(TimeRange::new(5, 6));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(trs.includes(&(3, 4).into()));
+            assert!(trs.includes(&(4, 5).into()));
+            assert!(trs.includes(&(2, 5).into()));
+            assert!(!trs.includes(&(1, 2).into()));
+            assert!(trs.includes(&(4, 5).into()));
+            assert!(trs.includes(&(4, 6).into()));
+            assert!(trs.includes(&(5, 6).into()));
+            assert!(!trs.includes(&(7, 8).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(2, 6)]
+            );
+        }
+        {
+            let mut trs = TimeRanges::new(vec![TimeRange::new(2, 3)]);
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(!trs.includes(&(1, 2).into()));
+            assert!(!trs.includes(&(1, 3).into()));
+            trs.push(TimeRange::new(1, 2));
+            assert!(trs.includes(&(1, 2).into()));
+            assert!(trs.includes(&(1, 3).into()));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(!trs.includes(&(3, 4).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(1, 3)]
+            );
+        }
+        {
+            let mut trs = TimeRanges::new(vec![TimeRange::new(2, 3)]);
+
+            trs.push(TimeRange::new(5, 6));
+            assert!(!trs.includes(&(1, 2).into()));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(!trs.includes(&(3, 4).into()));
+            assert!(!trs.includes(&(4, 5).into()));
+            assert!(!trs.includes(&(4, 6).into()));
+            assert!(trs.includes(&(5, 6).into()));
+            assert!(!trs.includes(&(2, 5).into()));
+            assert!(!trs.includes(&(2, 6).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(2, 3), TimeRange::new(5, 6)]
+            );
+
+            trs.push(TimeRange::new(4, 5));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(trs.includes(&(3, 4).into()));
+            assert!(trs.includes(&(4, 5).into()));
+            assert!(trs.includes(&(2, 5).into()));
+            assert!(!trs.includes(&(1, 2).into()));
+            assert!(trs.includes(&(4, 5).into()));
+            assert!(trs.includes(&(4, 6).into()));
+            assert!(trs.includes(&(5, 6).into()));
+            assert!(!trs.includes(&(7, 8).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(2, 6)]
+            );
+        }
+        {
+            let mut trs = TimeRanges::new(vec![TimeRange::new(2, 3)]);
+            trs.push(TimeRange::new(5, 6));
+            trs.push(TimeRange::new(1, 6));
+            assert!(!trs.includes(&(0, 1).into()));
+            assert!(trs.includes(&(1, 3).into()));
+            assert!(trs.includes(&(1, 6).into()));
+            assert!(!trs.includes(&(1, 7).into()));
+            assert!(trs.includes(&(5, 6).into()));
+            assert!(!trs.includes(&(7, 8).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(1, 6)]
+            );
+        }
+        {
+            let mut trs = TimeRanges::new(vec![TimeRange::new(2, 3)]);
+
+            trs.push(TimeRange::new(2, 3));
+            assert!(!trs.includes(&(1, 2).into()));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(!trs.includes(&(3, 4).into()));
+            assert!(!trs.includes(&(4, 5).into()));
+            assert!(!trs.includes(&(2, 4).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(2, 3)]
+            );
+
+            trs.push(TimeRange::new(1, 3));
+            assert!(!trs.includes(&(0, 1).into()));
+            assert!(!trs.includes(&(0, 2).into()));
+            assert!(trs.includes(&(1, 2).into()));
+            assert!(trs.includes(&(1, 3).into()));
+            assert!(!trs.includes(&(1, 4).into()));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(!trs.includes(&(2, 4).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(1, 3)]
+            );
+        }
+        {
+            let mut trs = TimeRanges::new(vec![TimeRange::new(2, 3)]);
+
+            trs.push(TimeRange::new(1, 4));
+            assert!(!trs.includes(&(0, 1).into()));
+            assert!(!trs.includes(&(0, 2).into()));
+            assert!(trs.includes(&(1, 2).into()));
+            assert!(trs.includes(&(1, 3).into()));
+            assert!(trs.includes(&(1, 4).into()));
+            assert!(!trs.includes(&(1, 5).into()));
+            assert!(trs.includes(&(2, 3).into()));
+            assert!(trs.includes(&(2, 4).into()));
+            assert!(!trs.includes(&(2, 5).into()));
+            assert_eq!(
+                trs.time_ranges().collect::<Vec<_>>(),
+                vec![TimeRange::new(1, 4)]
+            );
+        }
+    }
+
+    #[test]
+    fn test_time_range_sort() {
+        let mut time_range_vec: Vec<TimeRange> = vec![
+            (1, 1).into(),
+            (1, 2).into(),
+            (1, 0).into(),
+            (3, 4).into(),
+            (2, 3).into(),
+            (2, 1).into(),
+        ];
+        time_range_vec.sort();
+        assert_eq!(
+            time_range_vec,
+            vec![
+                (1, 0).into(),
+                (1, 1).into(),
+                (1, 2).into(),
+                (2, 1).into(),
+                (2, 3).into(),
+                (3, 4).into(),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_time_range_compact() {
+        {
+            let mut time_range_vec: Vec<TimeRange> = vec![];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(time_range_vec, vec![]);
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> = vec![(1, 2).into()];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(time_range_vec, vec![(1, 2).into()]);
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> =
+                vec![(Timestamp::MIN, 999).into(), (1_000, Timestamp::MAX).into()];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(
+                time_range_vec,
+                vec![(Timestamp::MIN, Timestamp::MAX).into()]
+            );
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> =
+                vec![(Timestamp::MIN, Timestamp::MAX).into(), (999, 1_000).into()];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(
+                time_range_vec,
+                vec![(Timestamp::MIN, Timestamp::MAX).into()]
+            );
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> =
+                vec![(Timestamp::MIN, 998).into(), (1_000, Timestamp::MAX).into()];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(
+                time_range_vec,
+                vec![(Timestamp::MIN, 998).into(), (1_000, Timestamp::MAX).into()]
+            );
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> =
+                vec![(1, 2).into(), (3, 4).into(), (9, 10).into()];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(time_range_vec, vec![(1, 4).into(), (9, 10).into()]);
+        }
+        {
+            let mut time_range_vec: Vec<TimeRange> = vec![
+                (5, 5).into(),
+                (1, 10).into(),
+                (0, 5).into(),
+                (3, 6).into(),
+                (5, 9).into(),
+                (20, 30).into(),
+                (21, 29).into(),
+            ];
+            TimeRange::compact(&mut time_range_vec);
+            assert_eq!(time_range_vec, vec![(0, 10).into(), (20, 30).into()]);
+        }
     }
 
     #[test]
@@ -2055,23 +2369,6 @@ mod tests {
         let exclude = tr.exclude(&TimeRange::new(3, 4));
         assert_eq!(exclude.0.unwrap(), TimeRange::new(1, 2));
         assert_eq!(exclude.1.unwrap(), TimeRange::new(5, 5));
-    }
-
-    #[test]
-    fn test_time_ranges_exclude() {
-        let trs = vec![
-            TimeRange::new(1, 2),
-            TimeRange::new(4, 5),
-            TimeRange::new(7, 9),
-        ];
-        let trs = TimeRanges::new(trs);
-        let exclude_ranges = trs.exclude(&TimeRange::new(3, 8));
-        let expected = TimeRanges::new(vec![(1, 2).into(), (9, 9).into()]);
-        assert_eq!(expected, exclude_ranges);
-
-        let exclude_ranges =
-            trs.exclude_time_ranges(&[&TimeRange::new(3, 4), &TimeRange::new(5, 8)]);
-        assert_eq!(expected, exclude_ranges);
     }
 
     #[test]

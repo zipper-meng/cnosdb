@@ -333,6 +333,18 @@ pub enum Error {
     Deserialize {
         source: Box<dyn std::error::Error + Send + Sync>,
     },
+
+    #[snafu(display("Invalid data: {message}"))]
+    InvalidData {
+        message: String,
+    },
+
+    #[snafu(display("Invalid tombstone record in '{}' at {pos}: {message}", path.display()))]
+    InvalidTombstoneRecord {
+        path: PathBuf,
+        pos: u64,
+        message: String,
+    },
 }
 
 impl From<PointsError> for Error {

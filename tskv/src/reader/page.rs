@@ -107,26 +107,27 @@ async fn page_to_arrow_array_with_tomb(
     time_range: TimeRange,
 ) -> Result<ArrayRef> {
     let tombstone = reader.tombstone();
-    let null_bitset = if tombstone.overlaps(series_id, page.meta.column.id, &time_range) {
-        let time_page = reader.read_page(&time_page_meta).await?;
-        let column = time_page.to_column()?;
-        let time_ranges =
-            tombstone.get_overlapped_time_ranges(series_id, page.meta.column.id, &time_range);
-        let mut null_bitset = page.null_bitset().to_bitset();
-        for time_range in time_ranges {
-            let start_index = column
-                .binary_search_for_i64_col(time_range.min_ts)
-                .unwrap_or_else(|x| x);
-            let end_index = column
-                .binary_search_for_i64_col(time_range.max_ts)
-                .map(|x| x + 1)
-                .unwrap_or_else(|x| x);
-            null_bitset.clear_bits(start_index, end_index);
-        }
-        NullBitset::Own(null_bitset)
-    } else {
-        NullBitset::Ref(page.null_bitset())
-    };
+    let null_bitset =
+        if tombstone.overlaps_column_time_range(series_id, page.meta.column.id, &time_range) {
+            let time_page = reader.read_page(&time_page_meta).await?;
+            let column = time_page.to_column()?;
+            let time_ranges =
+                tombstone.get_overlapped_time_ranges(series_id, page.meta.column.id, &time_range);
+            let mut null_bitset = page.null_bitset().to_bitset();
+            for time_range in time_ranges {
+                let start_index = column
+                    .binary_search_for_i64_col(time_range.min_ts)
+                    .unwrap_or_else(|x| x);
+                let end_index = column
+                    .binary_search_for_i64_col(time_range.max_ts)
+                    .map(|x| x + 1)
+                    .unwrap_or_else(|x| x);
+                null_bitset.clear_bits(start_index, end_index);
+            }
+            NullBitset::Own(null_bitset)
+        } else {
+            NullBitset::Ref(page.null_bitset())
+        };
 
     let meta = page.meta();
     let data_buffer = page.data_buffer();

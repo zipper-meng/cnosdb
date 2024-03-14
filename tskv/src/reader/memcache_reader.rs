@@ -184,7 +184,7 @@ impl BatchReader for MemCacheReader {
             f,
             "MemCacheReader: series_id:{}, time_ranges:{:?}, batch_size:{}, columns_count:{}",
             self.series_data.read().series_id,
-            self.time_ranges.time_ranges(),
+            self.time_ranges,
             self.batch_size,
             self.columns.len()
         )

@@ -1,5 +1,6 @@
 pub mod check;
 mod compact;
+mod delta_compact;
 mod flush;
 mod iterator;
 pub mod job;

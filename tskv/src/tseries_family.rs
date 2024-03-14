@@ -127,15 +127,15 @@ impl ColumnFile {
 
     pub async fn add_tombstone(
         &self,
-        series_id: SeriesId,
-        column_id: ColumnId,
+        series_ids: &[SeriesId],
+        column_ids: &[ColumnId],
         time_range: &TimeRange,
     ) -> Result<()> {
         let dir = self.path.parent().expect("file has parent");
         // TODO flock tombstone file.
         let mut tombstone = TsmTombstone::open(dir, self.file_id).await?;
         tombstone
-            .add_range(&[(series_id, column_id)], time_range)
+            .add_range(series_ids, column_ids, time_range)
             .await?;
         tombstone.flush().await?;
         Ok(())
@@ -209,6 +209,16 @@ impl Drop for ColumnFile {
     }
 }
 
+impl std::fmt::Display for ColumnFile {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{ level:{}, file_id:{}, time_range:{}-{}, file size:{} }}",
+            self.level, self.file_id, self.time_range.min_ts, self.time_range.max_ts, self.size,
+        )
+    }
+}
+
 #[cfg(test)]
 impl ColumnFile {
     #[allow(clippy::too_many_arguments)]
@@ -239,7 +249,22 @@ impl ColumnFile {
     }
 }
 
-#[derive(Debug, Clone)]
+pub(crate) struct ColumnFiles<'a, F: AsRef<ColumnFile>>(pub &'a [F]);
+
+impl<'a, F: AsRef<ColumnFile>> std::fmt::Display for ColumnFiles<'a, F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut iter = self.0.iter();
+        if let Some(d) = iter.next() {
+            write!(f, "{}", d.as_ref())?;
+            for d in iter {
+                write!(f, ", {}", d.as_ref())?;
+            }
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug)]
 pub struct LevelInfo {
     /// the time_range of column file is overlap in L0,
     /// the time_range of column file is not overlap in L0,
@@ -367,6 +392,38 @@ impl LevelInfo {
             .collect::<Vec<Arc<ColumnFile>>>();
         res.sort_by_key(|f| *f.time_range());
         res
+    }
+}
+
+impl std::fmt::Display for LevelInfo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{{ L:{}, time_range: {}, files: [ ",
+            self.level, self.time_range,
+        )?;
+        for (i, file) in self.files.iter().enumerate() {
+            write!(f, "{}", file.as_ref())?;
+            if i < self.files.len() - 1 {
+                write!(f, ", ")?;
+            }
+        }
+        write!(f, "] }}")
+    }
+}
+
+pub(crate) struct LevelInfos<'a>(pub &'a [LevelInfo]);
+
+impl<'a> std::fmt::Display for LevelInfos<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut iter = self.0.iter();
+        if let Some(d) = iter.next() {
+            write!(f, "{d}")?;
+            for d in iter {
+                write!(f, ", {d}")?;
+            }
+        }
+        Ok(())
     }
 }
 
@@ -724,11 +781,9 @@ impl SuperVersion {
                     .series_id_filter()
                     .maybe_contains(sid.to_be_bytes().as_slice())
                 {
-                    for column_id in column_ids {
-                        column_file
-                            .add_tombstone(*sid, *column_id, time_range)
-                            .await?;
-                    }
+                    column_file
+                        .add_tombstone(series_ids, column_ids, time_range)
+                        .await?;
                 }
             }
         }

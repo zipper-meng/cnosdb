@@ -321,11 +321,12 @@ pub struct TskvTableSchema {
     pub db: String,
     pub name: String,
     pub schema_version: SchemaVersion,
-    next_column_id: ColumnId,
+    // FIXME(zipper): remove these temporary `pub` labels.
+    pub next_column_id: ColumnId,
 
-    columns: Vec<TableColumn>,
+    pub columns: Vec<TableColumn>,
     //ColumnName -> ColumnsIndex
-    columns_index: HashMap<String, usize>,
+    pub columns_index: HashMap<String, usize>,
 }
 
 impl PartialOrd for TskvTableSchema {

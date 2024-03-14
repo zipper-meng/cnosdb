@@ -324,6 +324,18 @@ impl Debug for TsmReader {
     }
 }
 
+#[tokio::test]
+async fn test_read_footer() {
+    let path = "/tmp/cnosdb/1001/db/data/cnosdb.public/3/tsm/_000019.tsm";
+    let file = file_manager::open_file(path).await.unwrap();
+    let reader = Arc::new(file);
+    let footer = read_footer(reader.clone()).await.unwrap();
+    println!("{:?}", footer);
+
+    let chunk_group_meta = read_chunk_group_meta(reader, &footer).await.unwrap();
+    println!("{:?}", chunk_group_meta);
+}
+
 pub async fn read_footer(reader: Arc<AsyncFile>) -> Result<Footer> {
     let pos = reader.len() - (FOOTER_SIZE as u64);
     let mut buffer = vec![0u8; FOOTER_SIZE];
