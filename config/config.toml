@@ -1,8 +1,8 @@
 [global]
-# node_id = 100
-host = "localhost"
-cluster_name = 'cluster_xxx'
-store_metrics = true
+# node_id = 1001
+# host = "localhost"
+# cluster_name = 'cluster_xxx'
+# store_metrics = true
 
 
 [deployment]
@@ -11,18 +11,18 @@ store_metrics = true
 # memory = 16
 
 [meta]
-service_addr = ["127.0.0.1:8901"]
-report_time_interval_secs = 30
+# service_addr = ["127.0.0.1:8901"]
+# report_time_interval = '30s'
 
 [query]
-max_server_connections = 10240
-query_sql_limit = 16777216     # 16 * 1024 * 1024
-write_sql_limit = 167772160    # 160 * 1024 * 1024
-auth_enabled = false
-read_timeout_ms = 3000
-write_timeout_ms = 3000
-stream_trigger_cpu = 1
-stream_executor_cpu = 2
+# max_server_connections = 10240
+# query_sql_limit = "16M" # 16,777,216 bytes
+# write_sql_limit = "160M" # 167,772,160 bytes
+# auth_enabled = false
+# read_timeout = "3s"
+# write_timeout = "3s"
+# stream_trigger_cpu = 1
+# stream_executor_cpu = 2
 
 [storage]
 
@@ -46,6 +46,9 @@ path = '/var/lib/cnosdb/data'
 ## The maximum count of opened file handles (for query) in each vnode.
 # max_cached_readers = 32
 
+## Whether to enable compaction.
+# enable_compaction = true
+
 ## The maxmimum level of a data file (from 0 to 4).
 # max_level = 4
 
@@ -62,15 +65,15 @@ path = '/var/lib/cnosdb/data'
 # max_concurrent_compaction = 4
 
 ## If true, write request will not be checked in detail.
-strict_write = false
+# strict_write = false
 
 ## copyinto trigger flush size
-#copyinto_trigger_flush_size = "128M" # 134217728
+#copyinto_trigger_flush_size = "128M" # 134,217,728 bytes
 
 [wal]
 
 ## If true, write requets on disk before writing to memory.
-enabled = true
+# enabled = true
 
 ## The directory where write ahead logs stored.
 path = '/var/lib/cnosdb/wal'
@@ -96,10 +99,10 @@ path = '/var/lib/cnosdb/wal'
 # max_buffer_size = '128M' # 134,217,728 bytes
 
 ## The partion number of memcache cache,default equal to cpu number
-# partition = 8
+# partition = 10
 
 [log]
-level = 'info'
+# level = 'info'
 path = '/var/log/cnosdb'
 ## Tokio trace, default turn off tokio trace
 # tokio_trace = { addr = "127.0.0.1:6669" }
@@ -121,13 +124,10 @@ enable_report = true
 
 [cluster]
 # raft_logs_to_keep = 5000
-# using_raft_replication = false
-
-[hinted_off]
-enable = true
-path = '/var/lib/cnosdb/hh'
-threads = 3
-
+# lmdb_max_map_size = "1G"
+# heartbeat_interval = "10s"
+# send_append_entries_timeout = "5s"
+# install_snapshot_timeout = "1h"
 
 # [trace]
 # auto_generate_span = false

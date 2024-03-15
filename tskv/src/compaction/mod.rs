@@ -18,8 +18,49 @@ use crate::memcache::MemCache;
 use crate::tseries_family::{ColumnFile, Version};
 use crate::{LevelId, TseriesFamilyId};
 
-pub struct CompactTask {
-    pub tsf_id: TseriesFamilyId,
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CompactTask {
+    /// Compact the files in the in_level into the out_level.
+    Normal(TseriesFamilyId),
+    /// Compact the files in level-0 to larger files.
+    Delta(TseriesFamilyId),
+}
+
+impl CompactTask {
+    pub fn ts_family_id(&self) -> TseriesFamilyId {
+        match self {
+            CompactTask::Normal(ts_family_id) => *ts_family_id,
+            CompactTask::Delta(ts_family_id) => *ts_family_id,
+        }
+    }
+
+    fn priority(&self) -> usize {
+        match self {
+            CompactTask::Delta(_) => 1,
+            CompactTask::Normal(_) => 2,
+        }
+    }
+}
+
+impl Ord for CompactTask {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.priority().cmp(&other.priority())
+    }
+}
+
+impl PartialOrd for CompactTask {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+impl std::fmt::Display for CompactTask {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CompactTask::Normal(ts_family_id) => write!(f, "Normal({})", ts_family_id),
+            CompactTask::Delta(ts_family_id) => write!(f, "Delta({})", ts_family_id),
+        }
+    }
 }
 
 pub struct CompactReq {
