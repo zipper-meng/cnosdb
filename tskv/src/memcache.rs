@@ -23,7 +23,6 @@ use utils::bitset::ImmutBitSet;
 
 use crate::database::FbSchema;
 use crate::error::Result;
-use crate::tseries_family::Version;
 use crate::tsm::writer::{Column as ColumnData, DataBlock};
 use crate::tsm::TsmWriteData;
 use crate::{Error, TseriesFamilyId};
@@ -498,22 +497,24 @@ impl SeriesData {
         }
     }
 
+    /// Transform `[RowGroup{ schema, rows, ... }]` to `[(&schema, &rows)]`
     pub fn flat_groups(&self) -> Vec<(TskvTableSchemaRef, &OrderedRowsData)> {
         self.groups
             .iter()
             .map(|g| (g.schema.clone(), &g.rows))
             .collect()
     }
+
+    /// Get the latest table schema, or None if there is no data.
     pub fn get_schema(&self) -> Option<Arc<TskvTableSchema>> {
         if let Some(item) = self.groups.back() {
             return Some(item.schema.clone());
         }
         None
     }
-    pub fn build_data_block(
-        &self,
-        version: Arc<Version>,
-    ) -> Result<Option<(String, DataBlock, DataBlock)>> {
+
+    /// Generate DataBlock2 with deduplicated and sorted column data that cloned form SeriesData.
+    pub fn build_data_block(&self) -> Result<Option<(String, DataBlock)>> {
         if let Some(schema) = self.get_schema() {
             let field_ids = schema.fields_id();
 
@@ -522,35 +523,19 @@ impl SeriesData {
                 .iter()
                 .map(|col| ColumnData::empty(col.column_type.to_physical_type()))
                 .collect::<Result<Vec<_>>>()?;
-            let mut delta_cols = cols.clone();
             let mut time_array = ColumnData::empty(PhysicalCType::Time(TimeUnit::from(
                 schema.time_column_precision(),
             )))?;
 
-            let mut delta_time_array = time_array.clone();
             let mut cols_desc = vec![None; schema.field_num()];
             for (schema, rows) in self.flat_groups() {
                 let values = dedup_and_sort_row_data(rows);
                 for row in values {
-                    match row.ts.cmp(&version.max_level_ts()) {
-                        cmp::Ordering::Greater => {
-                            time_array.push(Some(FieldVal::Integer(row.ts)));
-                        }
-                        _ => {
-                            delta_time_array.push(Some(FieldVal::Integer(row.ts)));
-                        }
-                    }
+                    time_array.push(Some(FieldVal::Integer(row.ts)));
                     for col in schema.fields().iter() {
                         if let Some(index) = field_ids.get(&col.id) {
                             let field = row.fields.get(*index).and_then(|v| v.clone());
-                            match row.ts.cmp(&version.max_level_ts()) {
-                                cmp::Ordering::Greater => {
-                                    cols[*index].push(field);
-                                }
-                                _ => {
-                                    delta_cols[*index].push(field);
-                                }
-                            }
+                            cols[*index].push(field);
                             if cols_desc[*index].is_none() {
                                 cols_desc[*index] = Some(col.clone());
                             }
@@ -566,7 +551,7 @@ impl SeriesData {
                 });
             }
 
-            if !time_array.is_all_set() || !delta_time_array.is_all_set() {
+            if !time_array.is_all_set() {
                 return Err(Error::CommonError {
                     reason: "Invalid time array in DataBlock".to_string(),
                 });
@@ -579,13 +564,6 @@ impl SeriesData {
                     schema.time_column(),
                     cols,
                     cols_desc.clone(),
-                ),
-                DataBlock::new(
-                    schema.clone(),
-                    delta_time_array,
-                    schema.time_column(),
-                    delta_cols,
-                    cols_desc,
                 ),
             )));
         }
@@ -624,7 +602,9 @@ pub struct MemCache {
 }
 
 impl MemCache {
-    pub fn to_chunk_group(&self, version: Arc<Version>) -> Result<(TsmWriteData, TsmWriteData)> {
+    /// Prepare data to flush into tsm file:
+    /// `BTreeMap<TableName, BTreeMap<SeriesId, (SeriesKey, DataBlock2)>>`.
+    pub fn to_chunk_group(&self) -> Result<TsmWriteData> {
         let partions: HashMap<SeriesId, Arc<RwLock<SeriesData>>> = self
             .partions
             .iter()
@@ -639,14 +619,11 @@ impl MemCache {
             .collect();
 
         let mut chunk_group: TsmWriteData = BTreeMap::new();
-        let mut delta_chunk_group: TsmWriteData = BTreeMap::new();
         partions
             .iter()
             .try_for_each(|(series_id, v)| -> Result<()> {
                 let data = v.read();
-                if let Some((table, datablock, delta_datablock)) =
-                    data.build_data_block(version.clone())?
-                {
+                if let Some((table, datablock)) = data.build_data_block()? {
                     if !datablock.is_empty() {
                         if let Some(chunk) = chunk_group.get_mut(&table) {
                             chunk.insert(*series_id, (data.series_key.clone(), datablock));
@@ -656,21 +633,12 @@ impl MemCache {
                             chunk_group.insert(table.clone(), chunk);
                         }
                     }
-
-                    if !delta_datablock.is_empty() {
-                        if let Some(chunk) = delta_chunk_group.get_mut(&table) {
-                            chunk.insert(*series_id, (data.series_key.clone(), delta_datablock));
-                        } else {
-                            let mut chunk = BTreeMap::new();
-                            chunk.insert(*series_id, (data.series_key.clone(), delta_datablock));
-                            delta_chunk_group.insert(table, chunk);
-                        }
-                    }
                 }
                 Ok(())
             })?;
-        Ok((chunk_group, delta_chunk_group))
+        Ok(chunk_group)
     }
+
     pub fn new(
         tf_id: TseriesFamilyId,
         max_size: u64,
@@ -1012,7 +980,7 @@ mod test_memcache {
         }
 
         #[rustfmt::skip]
-            let mut schema_1 = TskvTableSchema::new(
+        let mut schema_1 = TskvTableSchema::new(
             "test_tenant".to_string(), "test_db".to_string(), "test_table".to_string(),
             vec![
                 TableColumn::new_time_column(1, TimeUnit::Nanosecond),
@@ -1031,8 +999,7 @@ mod test_memcache {
             ts: 3,
             fields: vec![Some(FieldVal::Float(3.0))],
         });
-        #[rustfmt::skip]
-            let row_group_1 = RowGroup {
+        let row_group_1 = RowGroup {
             schema: Arc::new(schema_1),
             range: TimeRange::new(1, 3),
             rows,
@@ -1053,7 +1020,7 @@ mod test_memcache {
         }
 
         #[rustfmt::skip]
-            let mut schema_2 = TskvTableSchema::new(
+        let mut schema_2 = TskvTableSchema::new(
             "test_tenant".to_string(), "test_db".to_string(), "test_table".to_string(),
             vec![
                 TableColumn::new_time_column(1, TimeUnit::Nanosecond),
@@ -1073,8 +1040,7 @@ mod test_memcache {
             ts: 5,
             fields: vec![Some(FieldVal::Float(5.0)), Some(FieldVal::Integer(5))],
         });
-        #[rustfmt::skip]
-            let row_group_2 = RowGroup {
+        let row_group_2 = RowGroup {
             schema: Arc::new(schema_2),
             range: TimeRange::new(3, 5),
             rows,

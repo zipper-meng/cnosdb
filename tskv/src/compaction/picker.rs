@@ -332,10 +332,8 @@ mod test {
         let ts_family_id = 0;
         let mut level_infos =
             LevelInfo::init_levels(database.clone(), ts_family_id, opt.storage.clone());
-        let mut max_level_ts = 0_i64;
         let tsm_dir = &opt.storage.tsm_dir(&database, ts_family_id);
         for (level, lts_min, lts_max, column_files_sketch) in levels_sketch {
-            max_level_ts = max_level_ts.max(lts_max);
             let mut col_files = Vec::new();
             let mut cur_size = 0_u64;
             for (file_id, fts_min, fts_max, file_size, compacting) in column_files_sketch {
@@ -371,7 +369,6 @@ mod test {
             opt.storage.clone(),
             1,
             level_infos,
-            1000,
             Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
         ));
 

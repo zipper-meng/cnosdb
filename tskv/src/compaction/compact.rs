@@ -897,7 +897,6 @@ async fn handle_finish_write_tsm_meta(
         return Ok(false);
     }
 
-    let max_level_ts = request.version.max_level_ts();
     file_metas.insert(
         tsm_writer.file_id(),
         Arc::new(tsm_writer.series_bloom_filter().clone()),
@@ -910,7 +909,7 @@ async fn handle_finish_write_tsm_meta(
     );
 
     let cm = new_compact_meta(tsm_writer, request.ts_family_id, request.out_level);
-    version_edit.add_file(cm, max_level_ts);
+    version_edit.add_file(cm);
 
     Ok(true)
 }
@@ -1125,7 +1124,6 @@ pub mod test {
             opt.storage.clone(),
             1,
             LevelInfo::init_levels(database.clone(), 0, opt.storage.clone()),
-            1000,
             Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
         ));
         let compact_req = CompactReq {

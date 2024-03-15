@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::collections::HashMap;
 use std::fmt::Display;
 use std::path::{Path, PathBuf};
@@ -148,11 +147,10 @@ impl CompactMetaBuilder {
     }
 }
 
-#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Clone)]
+#[derive(Serialize, Deserialize, PartialEq, Eq, Debug, Default, Clone)]
 pub struct VersionEdit {
     pub seq_no: u64,
     pub file_id: u64,
-    pub max_level_ts: Timestamp,
     pub add_files: Vec<CompactMeta>,
     pub del_files: Vec<CompactMeta>,
 
@@ -160,22 +158,6 @@ pub struct VersionEdit {
     pub add_tsf: bool,
     pub tsf_id: TseriesFamilyId,
     pub tsf_name: String,
-}
-
-impl Default for VersionEdit {
-    fn default() -> Self {
-        Self {
-            seq_no: 0,
-            file_id: 0,
-            max_level_ts: i64::MIN,
-            add_files: vec![],
-            del_files: vec![],
-            del_tsf: false,
-            add_tsf: false,
-            tsf_id: 0,
-            tsf_name: String::from(""),
-        }
-    }
 }
 
 impl VersionEdit {
@@ -267,9 +249,8 @@ impl VersionEdit {
         Ok(list)
     }
 
-    pub fn add_file(&mut self, compact_meta: CompactMeta, max_level_ts: i64) {
+    pub fn add_file(&mut self, compact_meta: CompactMeta) {
         self.file_id = self.file_id.max(compact_meta.file_id);
-        self.max_level_ts = max(self.max_level_ts, max_level_ts);
         self.add_files.push(compact_meta);
     }
 
@@ -285,8 +266,8 @@ impl VersionEdit {
 
 impl Display for VersionEdit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "seq_no: {}, file_id: {}, add_files: {}, del_files: {}, del_tsf: {}, add_tsf: {}, tsf_id: {}, tsf_name: {}, max_level_ts: {}",
-               self.seq_no, self.file_id, self.add_files.len(), self.del_files.len(), self.del_tsf, self.add_tsf, self.tsf_id, self.tsf_name, self.max_level_ts)
+        write!(f, "seq_no: {}, file_id: {}, add_files: {}, del_files: {}, del_tsf: {}, add_tsf: {}, tsf_id: {}, tsf_name: {}",
+               self.seq_no, self.file_id, self.add_files.len(), self.del_files.len(), self.del_tsf, self.add_tsf, self.tsf_id, self.tsf_name)
     }
 }
 
@@ -439,10 +420,8 @@ impl Summary {
 
             let mut files: HashMap<u64, CompactMeta> = HashMap::new();
             let mut max_seq_no = 0;
-            let mut max_level_ts = i64::MIN;
             for e in edits {
                 max_seq_no = std::cmp::max(max_seq_no, e.seq_no);
-                max_level_ts = std::cmp::max(max_level_ts, e.max_level_ts);
                 max_file_id = std::cmp::max(max_file_id, e.file_id);
                 for m in e.del_files {
                     files.remove(&m.file_id);
@@ -479,7 +458,6 @@ impl Summary {
                 opt.storage.clone(),
                 max_seq_no,
                 levels,
-                max_level_ts,
                 tsm_reader_cache,
             );
             versions.insert(tsf_id, Arc::new(ver));
@@ -694,7 +672,7 @@ mod test {
             file_id: 100,
             ..Default::default()
         };
-        ve.add_file(add_file_100, 100_000_000);
+        ve.add_file(add_file_100);
 
         let del_file_101 = CompactMeta {
             file_id: 101,
@@ -960,7 +938,7 @@ mod test {
 
             let version = Arc::new(version);
             vnode.ts_family.write().await.new_version(version, None);
-            edit.add_file(meta, 1);
+            edit.add_file(meta);
 
             let (sender, receiver) = tokio::sync::oneshot::channel();
             let task = SummaryTask::new(vnode.ts_family.clone(), edit, None, None, sender);

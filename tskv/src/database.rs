@@ -131,7 +131,6 @@ impl Database {
             self.opt.storage.clone(),
             0,
             levels,
-            i64::MIN,
             tsm_reader_cache,
         ));
 
@@ -184,7 +183,6 @@ impl Database {
             self.opt.storage.clone(),
             ve.seq_no,
             levels,
-            ve.max_level_ts,
             tsm_reader_cache,
         ));
 

@@ -1,4 +1,3 @@
-use std::cmp::max;
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -15,7 +14,6 @@ use crate::context::GlobalContext;
 use crate::error::Result;
 use crate::memcache::MemCache;
 use crate::summary::{CompactMetaBuilder, SummaryTask, VersionEdit};
-use crate::tseries_family::Version;
 use crate::tsm::writer::TsmWriter;
 use crate::{ColumnFileId, Error, TsKvContext, TseriesFamilyId};
 
@@ -25,7 +23,6 @@ pub struct FlushTask {
     low_seq_no: u64,
     high_seq_no: u64,
     global_context: Arc<GlobalContext>,
-    path_tsm: PathBuf,
     path_delta: PathBuf,
 }
 
@@ -36,7 +33,6 @@ impl FlushTask {
         low_seq_no: u64,
         high_seq_no: u64,
         global_context: Arc<GlobalContext>,
-        path_tsm: impl AsRef<Path>,
         path_delta: impl AsRef<Path>,
     ) -> Self {
         Self {
@@ -45,85 +41,40 @@ impl FlushTask {
             low_seq_no,
             high_seq_no,
             global_context,
-            path_tsm: path_tsm.as_ref().into(),
             path_delta: path_delta.as_ref().into(),
         }
     }
 
-    pub async fn run(
-        self,
-        version: Arc<Version>,
-        edit: &mut VersionEdit,
-    ) -> Result<HashMap<u64, Arc<BloomFilter>>> {
-        let mut tsm_writer = None;
-        let mut delta_writer = None;
+    pub async fn run(self, edit: &mut VersionEdit) -> Result<HashMap<u64, Arc<BloomFilter>>> {
+        let mut tsm_writer = TsmWriter::open(
+            &self.path_delta,
+            self.global_context.file_id_next(),
+            0,
+            true,
+        )
+        .await?;
         let mut file_metas = HashMap::new();
 
         for memcache in self.mem_caches {
-            let (group, delta_group) = memcache.read().to_chunk_group(version.clone())?;
-            if tsm_writer.is_none() && !group.is_empty() {
-                tsm_writer = Some(
-                    TsmWriter::open(&self.path_tsm, self.global_context.file_id_next(), 0, false)
-                        .await?,
-                );
-            }
-            if delta_writer.is_none() && !delta_group.is_empty() {
-                delta_writer = Some(
-                    TsmWriter::open(
-                        &self.path_delta,
-                        self.global_context.file_id_next(),
-                        0,
-                        true,
-                    )
-                    .await?,
-                );
-            }
-            if let Some(tsm_writer) = tsm_writer.as_mut() {
-                tsm_writer.write_data(group).await?;
-            }
-            if let Some(delta_writer) = delta_writer.as_mut() {
-                delta_writer.write_data(delta_group).await?;
-            }
+            let group = memcache.read().to_chunk_group()?;
+            tsm_writer.write_data(group).await?;
         }
 
         let compact_meta_builder = CompactMetaBuilder::new(self.ts_family_id);
-        let mut max_level_ts = version.max_level_ts();
 
-        if let Some(mut tsm_writer) = tsm_writer {
-            tsm_writer.finish().await?;
-            file_metas.insert(
-                tsm_writer.file_id(),
-                Arc::new(tsm_writer.series_bloom_filter().clone()),
-            );
-            let tsm_meta = compact_meta_builder.build(
-                tsm_writer.file_id(),
-                tsm_writer.size() as u64,
-                1,
-                tsm_writer.min_ts(),
-                tsm_writer.max_ts(),
-            );
-            max_level_ts = max(max_level_ts, tsm_meta.max_ts);
-            edit.add_file(tsm_meta, max_level_ts);
-        }
-
-        if let Some(mut delta_writer) = delta_writer {
-            delta_writer.finish().await?;
-            file_metas.insert(
-                delta_writer.file_id(),
-                Arc::new(delta_writer.series_bloom_filter().clone()),
-            );
-
-            let delta_meta = compact_meta_builder.build(
-                delta_writer.file_id(),
-                delta_writer.size() as u64,
-                0,
-                delta_writer.min_ts(),
-                delta_writer.max_ts(),
-            );
-
-            max_level_ts = max(max_level_ts, delta_meta.max_ts);
-            edit.add_file(delta_meta, max_level_ts);
-        }
+        tsm_writer.finish().await?;
+        file_metas.insert(
+            tsm_writer.file_id(),
+            Arc::new(tsm_writer.series_bloom_filter().clone()),
+        );
+        let tsm_meta = compact_meta_builder.build(
+            tsm_writer.file_id(),
+            tsm_writer.size() as u64,
+            0,
+            tsm_writer.min_ts(),
+            tsm_writer.max_ts(),
+        );
+        edit.add_file(tsm_meta);
 
         Ok(file_metas)
     }
@@ -150,18 +101,13 @@ pub async fn run_flush_memtable_job(
         })?;
 
     // todo: build path by vnode data
-    let (storage_opt, version, database) = {
+    let path_delta = {
         let tsf_rlock = tsf.read().await;
         tsf_rlock.update_last_modified().await;
-        (
-            tsf_rlock.storage_opt(),
-            tsf_rlock.version(),
-            tsf_rlock.tenant_database(),
-        )
+        tsf_rlock
+            .storage_opt()
+            .delta_dir(tsf_rlock.tenant_database().as_str(), req.ts_family_id)
     };
-
-    let path_tsm = storage_opt.tsm_dir(&database, req.ts_family_id);
-    let path_delta = storage_opt.delta_dir(&database, req.ts_family_id);
 
     let flush_task = FlushTask::new(
         req.ts_family_id,
@@ -169,13 +115,12 @@ pub async fn run_flush_memtable_job(
         req.low_seq_no,
         req.high_seq_no,
         ctx.global_ctx.clone(),
-        path_tsm,
         path_delta,
     );
 
     let mut version_edit =
         VersionEdit::new_update_vnode(req.ts_family_id, req.owner, req.high_seq_no);
-    if let Ok(fm) = flush_task.run(version.clone(), &mut version_edit).await {
+    if let Ok(fm) = flush_task.run(&mut version_edit).await {
         file_metas = fm;
     }
 
@@ -227,10 +172,10 @@ pub mod flush_tests {
 
     pub fn default_table_schema(ids: Vec<ColumnId>) -> TskvTableSchema {
         let fields = ids
-            .iter()
-            .map(|i| TableColumn {
-                id: *i,
-                name: i.to_string(),
+            .into_iter()
+            .map(|id| TableColumn {
+                id,
+                name: format!("col_{id}"),
                 column_type: ColumnType::Field(ValueType::Unknown),
                 encoding: Encoding::Default,
             })
@@ -313,7 +258,7 @@ pub mod flush_tests {
     }
 
     #[tokio::test]
-    async fn test_flush() {
+    async fn test_flush_tsm2() {
         // todo!("test_flush");
     }
 }
