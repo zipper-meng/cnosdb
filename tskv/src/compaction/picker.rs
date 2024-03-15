@@ -270,7 +270,7 @@ struct DeltaCompactionPicker;
 
 // todo: get file timerange after remove tombstone file
 impl DeltaCompactionPicker {
-    async fn delta_file_last_remained_time_range(file: &ColumnFile) -> Result<TimeRange> {
+    async fn delta_file_first_remained_time_range(file: &ColumnFile) -> Result<TimeRange> {
         let tomb_path = file.tombstone_path();
         let tomb_trs = match TsmTombstoneCache::load(tomb_path).await? {
             Some(tomb_cache) => tomb_cache.all_excluded().clone(),
@@ -282,8 +282,8 @@ impl DeltaCompactionPicker {
         );
         match file.time_range().exclude_time_ranges(&tomb_trs) {
             Some(trs) => {
-                if let Some(last_tr) = trs.time_ranges().last() {
-                    Ok(last_tr)
+                if let Some(first_tr) = trs.time_ranges().next() {
+                    Ok(first_tr)
                 } else {
                     Ok(TimeRange::none())
                 }
@@ -329,8 +329,8 @@ impl DeltaCompactionPicker {
                 continue;
             }
 
-            let l0_file_remained_tr_last =
-                match Self::delta_file_last_remained_time_range(l0_file).await {
+            let l0_file_remained_tr_first =
+                match Self::delta_file_first_remained_time_range(l0_file).await {
                     Ok(trs) => trs,
                     Err(e) => {
                         let path = l0_file.tombstone_path();
@@ -343,17 +343,17 @@ impl DeltaCompactionPicker {
                 };
 
             let advised_out_level =
-                advise_out_level(&l0_file_remained_tr_last, version.levels_info());
+                advise_out_level(&l0_file_remained_tr_first, version.levels_info());
             if picked_time_range.is_none() {
                 // First cycle to pick l0_file
-                picked_time_range = l0_file_remained_tr_last;
+                picked_time_range = l0_file_remained_tr_first;
             }
             // For well ordered lv0-files, merged to level 1
             if 0 == advised_out_level {
                 *l0_file_compacting = true;
                 picked_l0_compacting_wlocks.push(l0_file_compacting);
                 picked_l0_files.push(l0_file.clone());
-                picked_time_range.merge(&l0_file_remained_tr_last);
+                picked_time_range.merge(&l0_file_remained_tr_first);
                 if picked_l0_files.len() >= version.storage_opt.compact_trigger_file_num as usize {
                     info!(
                         "Picker(delta) [{pick_timestamp}]: picked level_0 files({}) to level: 1",
@@ -378,13 +378,13 @@ impl DeltaCompactionPicker {
 
             // Find the first file in level1-4 that overlaps with lv0-file
             for lv in lv14 {
-                if lv.time_range.overlaps(&l0_file_remained_tr_last) {
+                if lv.time_range.overlaps(&l0_file_remained_tr_first) {
                     for lv_file in lv.files.iter() {
                         let mut lv_file_compacting = lv_file.write_lock_compacting().await;
                         if *lv_file_compacting {
                             continue;
                         }
-                        if lv_file.time_range().overlaps(&l0_file_remained_tr_last) {
+                        if lv_file.time_range().overlaps(&l0_file_remained_tr_first) {
                             *lv_file_compacting = true;
                             *l0_file_compacting = true;
                             info!("Picker(delta) [{pick_timestamp}]: picked two level files: level_0 file({l0_file}), level file: {lv_file} to level: {}", lv.level());
@@ -401,7 +401,8 @@ impl DeltaCompactionPicker {
                         }
                     }
                     // No file in the out-level overlaps with lv0-file, compact lv0-file to advised out-level.
-                    if let Some(out_time_range) = l0_file_remained_tr_last.intersect(&lv.time_range)
+                    if let Some(out_time_range) =
+                        l0_file_remained_tr_first.intersect(&lv.time_range)
                     {
                         return Some(CompactReq {
                             compact_task,
@@ -425,7 +426,7 @@ impl DeltaCompactionPicker {
                     files: vec![l0_file.clone()],
                     in_level: 0,
                     out_level: advised_out_level,
-                    out_time_range: l0_file_remained_tr_last,
+                    out_time_range: l0_file_remained_tr_first,
                 });
             }
         }

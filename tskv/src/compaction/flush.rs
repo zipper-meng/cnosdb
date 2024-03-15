@@ -503,7 +503,7 @@ pub mod flush_tests {
         std::fs::create_dir_all(&dir).unwrap();
         let delta_dir = dir.join("delta");
         let memory_pool: MemoryPoolRef = Arc::new(GreedyMemoryPool::new(1024 * 1024 * 1024));
-        let test_case = flush_test_case_1(&memory_pool, 10);
+        let test_case = flush_test_case_1(&memory_pool);
 
         let global_context = Arc::new(GlobalContext::new());
         let flush_task = FlushTask::new(test_case.caches(), 1, global_context, &delta_dir);
@@ -516,7 +516,6 @@ pub mod flush_tests {
 
         assert_eq!(version_edits.len(), 1);
         let ve = version_edits.first().unwrap();
-        assert_eq!(ve.max_level_ts, test_case.max_level_ts_after);
         assert_eq!(ve.add_files.len(), test_case.add_files_num());
         assert!(ve.del_files.is_empty());
 
@@ -545,8 +544,6 @@ pub mod flush_tests {
 
     struct FlushTestCase {
         caches: Vec<Arc<RwLock<MemCache>>>,
-        max_level_ts_before: Timestamp,
-        max_level_ts_after: Timestamp,
         /// Expected delta file data of each compact metas.
         expected_delta_data: Vec<HashMap<FieldId, Vec<DataBlock>>>,
         expected_file_size: Vec<u64>,
@@ -564,7 +561,7 @@ pub mod flush_tests {
         }
     }
 
-    fn flush_test_case_1(memory_pool: &MemoryPoolRef, max_level_ts: Timestamp) -> FlushTestCase {
+    fn flush_test_case_1(memory_pool: &MemoryPoolRef) -> FlushTestCase {
         let caches = vec![
             MemCache::new(1, 16, 2, 0, memory_pool),
             MemCache::new(1, 16, 2, 0, memory_pool),
@@ -627,8 +624,6 @@ pub mod flush_tests {
 
         FlushTestCase {
             caches,
-            max_level_ts_before: max_level_ts,
-            max_level_ts_after: 18,
             expected_delta_data: vec![expected_delta_data],
             expected_file_size: vec![1318],
             expected_min_ts: vec![1],

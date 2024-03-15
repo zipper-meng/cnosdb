@@ -176,7 +176,7 @@ pub struct VersionEdit {
     pub seq_no: u64,
     pub has_file_id: bool,
     pub file_id: u64,
-    pub max_level_ts: Timestamp,
+    pub padding_i64: i64,
     pub add_files: Vec<CompactMeta>,
     pub del_files: Vec<CompactMeta>,
     /// Partly deleted files, only for delta-compaction.
@@ -198,7 +198,7 @@ impl Default for VersionEdit {
             seq_no: 0,
             has_file_id: false,
             file_id: 0,
-            max_level_ts: i64::MIN,
+            padding_i64: i64::MIN,
             add_files: vec![],
             del_files: vec![],
             partly_del_files: vec![],
@@ -254,7 +254,6 @@ impl VersionEdit {
         }
         self.has_file_id = true;
         self.file_id = self.file_id.max(compact_meta.file_id);
-        self.max_level_ts = self.max_level_ts.max(compact_meta.max_ts);
         self.tsf_id = compact_meta.tsf_id;
         self.add_files.push(compact_meta);
     }
@@ -283,8 +282,8 @@ impl VersionEdit {
 
 impl std::fmt::Display for VersionEdit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "v1, seq_no: {}, file_id: {}, add_files: {}, del_files: {}, del_tsf: {}, add_tsf: {}, tsf_id: {}, tsf_name: {}, has_seq_no: {}, has_file_id: {}, max_level_ts: {}",
-               self.seq_no, self.file_id, self.add_files.len(), self.del_files.len(), self.del_tsf, self.add_tsf, self.tsf_id, self.tsf_name, self.has_seq_no, self.has_file_id, self.max_level_ts)
+        write!(f, "v1, seq_no: {}, file_id: {}, add_files: {}, del_files: {}, del_tsf: {}, add_tsf: {}, tsf_id: {}, tsf_name: {}, has_seq_no: {}, has_file_id: {}",
+               self.seq_no, self.file_id, self.add_files.len(), self.del_files.len(), self.del_tsf, self.add_tsf, self.tsf_id, self.tsf_name, self.has_seq_no, self.has_file_id)
     }
 }
 
@@ -449,7 +448,6 @@ impl Summary {
 
             let mut files: HashMap<u64, CompactMeta> = HashMap::new();
             let mut max_seq_no = 0;
-            let mut max_level_ts = i64::MIN;
             for e in edits {
                 if e.has_seq_no {
                     has_seq_no = true;
@@ -460,7 +458,6 @@ impl Summary {
                     has_file_id = true;
                     max_file_id_all = std::cmp::max(max_file_id_all, e.file_id);
                 }
-                max_level_ts = std::cmp::max(max_level_ts, e.max_level_ts);
                 for m in e.del_files {
                     files.remove(&m.file_id);
                 }
@@ -495,7 +492,6 @@ impl Summary {
                 opt.storage.clone(),
                 max_seq_no,
                 levels,
-                max_level_ts,
                 tsm_reader_cache,
             );
             versions.insert(tsf_id, Arc::new(ver));

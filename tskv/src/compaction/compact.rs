@@ -1224,7 +1224,6 @@ pub mod test {
         opt: Arc<Options>,
         next_file_id: ColumnFileId,
         files: Vec<Arc<ColumnFile>>,
-        max_level_ts: Timestamp,
     ) -> (CompactReq, Arc<GlobalContext>) {
         let vnode_id = 1;
         let version = Arc::new(Version::new(
@@ -1233,7 +1232,6 @@ pub mod test {
             opt.storage.clone(),
             1,
             LevelInfo::init_levels(tenant_database, 0, opt.storage.clone()),
-            max_level_ts,
             Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
         ));
         let compact_req = CompactReq {
@@ -1294,11 +1292,9 @@ pub mod test {
         let tenant_database = Arc::new("cnosdb.dba".to_string());
         let opt = create_options(dir.to_string(), true);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
-        let max_level_ts = 9;
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 2).await;
-        let (compact_req, kernel) =
-            prepare_compaction(tenant_database, opt, next_file_id, files, max_level_ts);
+        let (compact_req, kernel) = prepare_compaction(tenant_database, opt, next_file_id, files);
         let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
@@ -1342,11 +1338,9 @@ pub mod test {
         let tenant_database = Arc::new("cnosdb.dba".to_string());
         let opt = create_options(dir.to_string(), true);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
-        let max_level_ts = 9;
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 2).await;
-        let (compact_req, kernel) =
-            prepare_compaction(tenant_database, opt, next_file_id, files, max_level_ts);
+        let (compact_req, kernel) = prepare_compaction(tenant_database, opt, next_file_id, files);
         let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
@@ -1389,11 +1383,9 @@ pub mod test {
         let tenant_database = Arc::new("cnosdb.dba".to_string());
         let opt = create_options(dir.to_string(), true);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
-        let max_level_ts = 9;
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 2).await;
-        let (compact_req, kernel) =
-            prepare_compaction(tenant_database, opt, next_file_id, files, max_level_ts);
+        let (compact_req, kernel) = prepare_compaction(tenant_database, opt, next_file_id, files);
         let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
@@ -1430,7 +1422,6 @@ pub mod test {
         let tenant_database = Arc::new("cnosdb.dba".to_string());
         let opt = create_options(dir.to_string(), true);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
-        let max_level_ts = 9;
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 2).await;
         for f in files.iter().take(2 + 1).skip(1) {
@@ -1439,8 +1430,7 @@ pub mod test {
             write_to_tsm_tombstone_v2(path, &TsmTombstoneCache::with_all_excluded((2, 6).into()))
                 .await;
         }
-        let (compact_req, kernel) =
-            prepare_compaction(tenant_database, opt, next_file_id, files, max_level_ts);
+        let (compact_req, kernel) = prepare_compaction(tenant_database, opt, next_file_id, files);
         let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
@@ -1685,18 +1675,12 @@ pub mod test {
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
-        let max_level_ts = 6500;
 
         let column_files = write_data_block_desc(&dir, &data_desc, 2).await;
         let next_file_id = 4_u64;
 
-        let (compact_req, kernel) = prepare_compaction(
-            tenant_database,
-            opt,
-            next_file_id,
-            column_files,
-            max_level_ts,
-        );
+        let (compact_req, kernel) =
+            prepare_compaction(tenant_database, opt, next_file_id, column_files);
         let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
@@ -1753,17 +1737,11 @@ pub mod test {
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
-        let max_level_ts = 6500;
 
         let column_files = write_data_block_desc(&dir, &data_desc, 2).await;
         let next_file_id = 4_u64;
-        let (compact_req, kernel) = prepare_compaction(
-            tenant_database,
-            opt,
-            next_file_id,
-            column_files,
-            max_level_ts,
-        );
+        let (compact_req, kernel) =
+            prepare_compaction(tenant_database, opt, next_file_id, column_files);
         let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
@@ -1866,17 +1844,11 @@ pub mod test {
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
         }
-        let max_level_ts = 6500;
 
         let column_files = write_data_block_desc(&dir, &data_desc, 2).await;
         let next_file_id = 4_u64;
-        let (compact_req, kernel) = prepare_compaction(
-            tenant_database,
-            opt,
-            next_file_id,
-            column_files,
-            max_level_ts,
-        );
+        let (compact_req, kernel) =
+            prepare_compaction(tenant_database, opt, next_file_id, column_files);
         let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await

@@ -471,8 +471,6 @@ pub struct Version {
     pub storage_opt: Arc<StorageOptions>,
     /// The max seq_no of write batch in wal flushed to column file.
     pub last_seq: u64,
-    /// The max timestamp of write batch in wal flushed to column file.
-    pub max_level_ts: i64,
     pub levels_info: [LevelInfo; 5],
     pub tsm_reader_cache: Arc<ShardedAsyncCache<String, Arc<TsmReader>>>,
 }
@@ -485,7 +483,6 @@ impl Version {
         storage_opt: Arc<StorageOptions>,
         last_seq: u64,
         levels_info: [LevelInfo; 5],
-        max_level_ts: i64,
         tsm_reader_cache: Arc<ShardedAsyncCache<String, Arc<TsmReader>>>,
     ) -> Self {
         Self {
@@ -493,7 +490,6 @@ impl Version {
             database,
             storage_opt,
             last_seq,
-            max_level_ts,
             levels_info,
             tsm_reader_cache,
         }
@@ -547,35 +543,14 @@ impl Version {
         }
 
         Self::update_max_ts_of_levels(&mut new_levels);
-
-        let mut new_version = Self {
+        Self {
             ts_family_id: self.ts_family_id,
             database: self.database.clone(),
             storage_opt: self.storage_opt.clone(),
             last_seq: last_seq.unwrap_or(self.last_seq),
-            max_level_ts: self.max_level_ts,
             levels_info: new_levels,
             tsm_reader_cache: self.tsm_reader_cache.clone(),
-        };
-        new_version.update_max_level_ts();
-        new_version
-    }
-
-    fn update_max_level_ts(&mut self) {
-        if self.levels_info.is_empty() {
-            return;
         }
-        let mut max_ts = Timestamp::MIN;
-        for level in self.levels_info.iter() {
-            if level.files.is_empty() {
-                continue;
-            }
-            for file in level.files.iter() {
-                max_ts = file.time_range.max_ts.max(max_ts);
-            }
-        }
-
-        self.max_level_ts = max_ts;
     }
 
     /// Find the last level that has files, then update the time_range of previous levels that have no files.
@@ -1407,7 +1382,7 @@ pub mod test_tseries_family {
         ];
         let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
         #[rustfmt::skip]
-        let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3100, tsm_reader_cache);
+        let version = Version::new(1, database, opt.storage.clone(), 1, levels, tsm_reader_cache);
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
         ve.add_file(CompactMeta {
@@ -1429,7 +1404,6 @@ pub mod test_tseries_family {
             version.copy_apply_version_edits(version_edits, &mut HashMap::new(), Some(3));
 
         assert_eq!(new_version.last_seq, 3);
-        assert_eq!(new_version.max_level_ts, 3150);
 
         let lvl = new_version.levels_info.get(1).unwrap();
         assert_eq!(lvl.time_range, TimeRange::new(3051, 3150));
@@ -1500,7 +1474,7 @@ pub mod test_tseries_family {
         ];
         let tsm_reader_cache = Arc::new(ShardedAsyncCache::create_lru_sharded_cache(16));
         #[rustfmt::skip]
-        let version = Version::new(1, database, opt.storage.clone(), 1, levels, 3150, tsm_reader_cache);
+        let version = Version::new(1, database, opt.storage.clone(), 1, levels, tsm_reader_cache);
 
         let mut version_edits = Vec::new();
         let mut ve = VersionEdit::new(1);
@@ -1539,7 +1513,6 @@ pub mod test_tseries_family {
 
         // [(none), (3151, 3151), (1, 3150), (none), (none)]
         assert_eq!(new_version.last_seq, 3);
-        assert_eq!(new_version.max_level_ts, 3150);
 
         let lvl = new_version.levels_info.get(1).unwrap();
         assert_eq!(lvl.time_range, TimeRange::new(3151, 3151));
@@ -1566,7 +1539,6 @@ pub mod test_tseries_family {
         files.sort_by_key(|f| f.file_id);
         let mut levels =
             LevelInfo::init_levels(database.clone(), ts_family_id, storage_opt.clone());
-        let max_level_ts = i64::MIN;
         for file in files {
             let lv = &mut levels[file.level as usize];
             lv.cur_size += file.size;
@@ -1581,7 +1553,6 @@ pub mod test_tseries_family {
             storage_opt,
             0,
             levels,
-            max_level_ts,
             tsm_reader_cache,
         )
     }
@@ -1608,7 +1579,6 @@ pub mod test_tseries_family {
                 opt.storage.clone(),
                 0,
                 LevelInfo::init_levels(database, 0, opt.storage.clone()),
-                0,
                 Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
             )),
             opt.cache.clone(),

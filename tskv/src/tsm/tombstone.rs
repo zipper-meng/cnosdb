@@ -384,25 +384,21 @@ impl TsmTombstone {
     pub fn is_data_block_all_excluded_by_tombstones(
         &self,
         field_id: FieldId,
-        data_block: &DataBlock,
+        block_tr: &TimeRange,
     ) -> bool {
-        if let Some(block_tr_tuple) = data_block.time_range() {
-            let block_tr: &TimeRange = &block_tr_tuple.into();
-            let cache = self.cache.lock();
-            let mut all_excluded = cache.all_excluded.clone();
+        let cache = self.cache.lock();
+        let mut all_excluded = cache.all_excluded.clone();
+        if all_excluded.includes(block_tr) {
+            return true;
+        }
+        if let Some(time_ranges) = cache.fields_excluded.get(&field_id) {
+            for t in time_ranges.time_ranges() {
+                all_excluded.push(t);
+            }
             if all_excluded.includes(block_tr) {
                 return true;
             }
-            if let Some(time_ranges) = cache.fields_excluded.get(&field_id) {
-                for t in time_ranges.time_ranges() {
-                    all_excluded.push(t);
-                }
-                if all_excluded.includes(block_tr) {
-                    return true;
-                }
-            }
         }
-
         false
     }
 
@@ -977,7 +973,7 @@ pub mod test {
                 val: vec![10, 1500],
                 enc: DataBlockEncoding::default(),
             };
-            assert!(tombstone.is_data_block_all_excluded_by_tombstones(1, &data_block));
+            assert!(tombstone.is_data_block_all_excluded_by_tombstones(1, &(1, 150).into()));
             tombstone.data_block_exclude_tombstones(1, &mut data_block);
             assert_eq!(
                 data_block,
@@ -994,7 +990,7 @@ pub mod test {
                 val: vec![1500, 1510],
                 enc: DataBlockEncoding::default(),
             };
-            assert!(!tombstone.is_data_block_all_excluded_by_tombstones(1, &data_block));
+            assert!(!tombstone.is_data_block_all_excluded_by_tombstones(1, &(150, 151).into()));
             tombstone.data_block_exclude_tombstones(1, &mut data_block);
             assert_eq!(
                 data_block,

@@ -739,7 +739,7 @@ mod test {
 
     use cache::ShardedAsyncCache;
     use models::codec::Encoding;
-    use models::{FieldId, Timestamp, ValueType};
+    use models::{FieldId, ValueType};
 
     use super::*;
     use crate::compaction::test::{
@@ -857,7 +857,6 @@ mod test {
         tsm_files: Vec<Arc<ColumnFile>>,
         out_time_range: TimeRange,
         out_level: LevelId,
-        out_level_max_ts: Timestamp,
     ) -> (CompactReq, Arc<GlobalContext>) {
         let vnode_id = 1;
         let version = Arc::new(Version::new(
@@ -866,7 +865,6 @@ mod test {
             opt.storage.clone(),
             1,
             LevelInfo::init_levels(tenant_database, 0, opt.storage.clone()),
-            out_level_max_ts,
             Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
         ));
         let mut files = delta_files;
@@ -920,7 +918,6 @@ mod test {
         let tenant_database = Arc::new("cnosdb.dba".to_string());
         let opt = create_options(dir.to_string(), true);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
-        let max_level_ts = 9;
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 0).await;
         let (compact_req, kernel) = prepare_delta_compaction(
@@ -931,7 +928,6 @@ mod test {
             vec![],
             (1, 9).into(),
             1,
-            max_level_ts,
         );
         let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
@@ -975,7 +971,6 @@ mod test {
         let tenant_database = Arc::new("cnosdb.dba".to_string());
         let opt = create_options(dir.to_string(), true);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
-        let max_level_ts = 9;
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 0).await;
         let (compact_req, kernel) = prepare_delta_compaction(
@@ -986,7 +981,6 @@ mod test {
             vec![],
             (1, 9).into(),
             1,
-            max_level_ts,
         );
         let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
@@ -1024,7 +1018,6 @@ mod test {
         let tenant_database = Arc::new("cnosdb.dba".to_string());
         let opt = create_options(dir.to_string(), true);
         let dir = opt.storage.tsm_dir(&tenant_database, 1);
-        let max_level_ts = 9;
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data, 0).await;
         for f in files.iter().take(2 + 1).skip(1) {
@@ -1041,7 +1034,6 @@ mod test {
             vec![],
             (1, 9).into(),
             1,
-            max_level_ts,
         );
         let out_level = compact_req.out_level;
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
@@ -1057,7 +1049,6 @@ mod test {
         delta_files_desc: &[TsmSchema],
         tsm_files_desc: &[TsmSchema],
         out_time_range: TimeRange,
-        max_ts: Timestamp,
         expected_data_desc: HashMap<FieldId, Vec<DataBlock>>,
         expected_data_level: LevelId,
         expected_delta_tombstone_all_excluded: HashMap<ColumnFileId, TimeRanges>,
@@ -1096,7 +1087,6 @@ mod test {
             tsm_files,
             out_time_range,
             expected_data_level,
-            max_ts,
         );
         compact_req.in_level = 0;
         compact_req.out_level = expected_data_level;
@@ -1169,7 +1159,6 @@ mod test {
             ], vec![]),
         ];
         // The target tsm file: [2001~5050]
-        let max_level_ts = 5050;
         #[rustfmt::skip]
         let tsm_file_desc: TsmSchema = (1, vec![
             // 1, 2001~5050
@@ -1223,7 +1212,6 @@ mod test {
             &delta_files_desc, // (1,2500), (1,4500), (1001,6500)
             &[tsm_file_desc],  // (2005,5050)
             (2001, 5050).into(),
-            max_level_ts,
             expected_data_target_level,
             1,
             HashMap::from([

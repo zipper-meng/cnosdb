@@ -163,7 +163,6 @@ impl Database {
             self.opt.storage.clone(),
             seq_no,
             LevelInfo::init_levels(self.owner.clone(), tsf_id, self.opt.storage.clone()),
-            i64::MIN,
             cache.into(),
         ));
         let tf = TseriesFamily::new(

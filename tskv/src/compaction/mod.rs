@@ -186,7 +186,6 @@ pub mod test {
         pub tenant_database: Arc<String>,
         pub levels: [LevelSketch; 5],
         pub tombstone_map: HashMap<u64, TimeRange>,
-        pub max_level_ts: i64,
     }
 
     impl VersionSketch {
@@ -204,12 +203,10 @@ pub mod test {
                 tenant_database,
                 levels,
                 tombstone_map: HashMap::new(),
-                max_level_ts: i64::MIN,
             }
         }
 
         pub fn add(mut self, level: usize, file: FileSketch) -> Self {
-            self.max_level_ts = self.max_level_ts.max(file.1 .1);
             let level_sketch = &mut self.levels[level];
             level_sketch.1 .0 = level_sketch.1 .0.min(file.1 .0);
             level_sketch.1 .1 = level_sketch.1 .1.max(file.1 .1);
@@ -269,7 +266,6 @@ pub mod test {
                 storage_opt,
                 1,
                 level_infos,
-                self.max_level_ts,
                 Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
             )
         }
@@ -369,7 +365,6 @@ pub mod test {
             .add(4, FileSketch(5, (1, 300), 400, false));
         assert_eq!(vnode_sketch.id, 1);
         assert_eq!(vnode_sketch.tenant_database.as_str(), "dba");
-        assert_eq!(vnode_sketch.max_level_ts, 800);
         let levels_sketch = vnode_sketch.levels.clone();
         assert_eq!(levels_sketch[0].0, 0);
         assert_eq!(levels_sketch[0].1, (1, 800));

@@ -492,7 +492,13 @@ impl TsmReader {
 
     /// Returns a DataBlock without tombstone
     pub async fn get_data_block(&self, block_meta: &BlockMeta) -> ReadTsmResult<Option<DataBlock>> {
-        let _blk_range = (block_meta.min_ts(), block_meta.max_ts());
+        if self.tombstone.is_data_block_all_excluded_by_tombstones(
+            block_meta.field_id(),
+            &block_meta.time_range(),
+        ) {
+            return Ok(None);
+        }
+
         let mut blk = read_data_block(
             self.reader.clone(),
             block_meta.size() as usize,
@@ -501,12 +507,6 @@ impl TsmReader {
             block_meta.val_off(),
         )
         .await?;
-        if self
-            .tombstone
-            .is_data_block_all_excluded_by_tombstones(block_meta.field_id(), &blk)
-        {
-            return Ok(None);
-        }
         self.tombstone
             .data_block_exclude_tombstones(block_meta.field_id(), &mut blk);
         Ok(Some(blk))
