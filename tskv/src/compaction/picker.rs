@@ -40,7 +40,6 @@ pub async fn pick_compaction(
 
 /// Compaction picker for picking a level from level-1 to level-4, and then
 /// pick inner files of the level.
-#[derive(Debug)]
 struct LevelCompactionPicker;
 
 impl LevelCompactionPicker {
@@ -265,7 +264,6 @@ fn advise_out_level(time_range: &TimeRange, levels: &[LevelInfo; 5]) -> LevelId 
     1
 }
 
-#[derive(Debug)]
 struct DeltaCompactionPicker;
 
 // todo: get file timerange after remove tombstone file

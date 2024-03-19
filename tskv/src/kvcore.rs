@@ -1258,7 +1258,7 @@ impl Engine for TsKv {
                 if let Some(req) =
                     compaction::pick_compaction(CompactTask::Manual(vnode_id), version).await
                 {
-                    info!("Compaction request : {:}", req);
+                    info!("Manual compaction request : {:}", req);
                     match compaction::run_compaction_job(req, self.global_ctx.clone()).await {
                         Ok(Some((version_edit, file_metas))) => {
                             let (summary_tx, _summary_rx) = oneshot::channel();

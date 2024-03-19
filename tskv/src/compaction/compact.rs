@@ -760,7 +760,7 @@ pub async fn run_compaction_job(
     request: CompactReq,
     ctx: Arc<GlobalContext>,
 ) -> Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
-    info!("Compaction: Running compaction job on {request}");
+    info!("Compaction: Running compaction job: {request}");
 
     if request.files.is_empty() {
         // Nothing to compact
