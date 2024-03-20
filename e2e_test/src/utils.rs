@@ -909,6 +909,8 @@ fn kill_child_process(mut proc: Child, force: bool) {
 
 #[cfg(windows)]
 fn kill_child_process(mut proc: Child, force: bool) {
+    use std::io::{BufRead, BufReader};
+
     let pid = proc.id();
 
     // TODO(zipper) find a way to pass a signal to cnosdb process to let it shutdown gracefully.

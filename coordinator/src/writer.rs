@@ -328,10 +328,10 @@ impl PointWriter {
                     });
                 }
                 for vnode in points.repl_set.vnodes.iter() {
-                    debug!(
-                        "Preparing write points on vnode {:?}, start at {:?}",
-                        vnode, now
-                    );
+                    // debug!(
+                    //     "Preparing write points on vnode {:?}, start at {:?}",
+                    //     vnode, now
+                    // );
                     if vnode.status == VnodeStatus::Copying {
                         return Err(CoordinatorError::CommonError {
                             msg: "vnode is moving write forbidden ".to_string(),
@@ -354,12 +354,12 @@ impl PointWriter {
         }
 
         for res in futures::future::join_all(requests).await {
-            debug!(
-                "Parallel write points on vnode over, start at: {:?}, elapsed: {} millis, result: {:?}",
-                now,
-                now.elapsed().as_millis(),
-                res
-            );
+            // debug!(
+            //     "Parallel write points on vnode over, start at: {:?}, elapsed: {} millis, result: {:?}",
+            //     now,
+            //     now.elapsed().as_millis(),
+            //     res
+            // );
             res?
         }
 
@@ -381,7 +381,7 @@ impl PointWriter {
             let result = self
                 .write_to_local_node(span_recorder.span_ctx(), vnode_id, tenant, precision, data)
                 .await;
-            debug!("write data to local {}({}) {:?}", node_id, vnode_id, result);
+            // debug!("write data to local {}({}) {:?}", node_id, vnode_id, result);
 
             return result;
         }
@@ -408,10 +408,10 @@ impl PointWriter {
                 || err.error_code().to_string() == meta_retry.error_code().to_string()
                 || err.error_code().to_string() == tskv_memory.error_code().to_string()
             {
-                info!(
-                    "write data to remote {}({}) failed {}; write to hh!",
-                    node_id, vnode_id, err
-                );
+                // info!(
+                //     "write data to remote {}({}) failed {}; write to hh!",
+                //     node_id, vnode_id, err
+                // );
 
                 span_recorder.error(err.to_string());
 
@@ -421,13 +421,13 @@ impl PointWriter {
             }
         }
 
-        debug!(
-            "write data to remote {}({}) , inst exist: {}, {:?}!",
-            node_id,
-            vnode_id,
-            self.kv_inst.is_some(),
-            result
-        );
+        // debug!(
+        //     "write data to remote {}({}) , inst exist: {}, {:?}!",
+        //     node_id,
+        //     vnode_id,
+        //     self.kv_inst.is_some(),
+        //     result
+        // );
 
         result
     }

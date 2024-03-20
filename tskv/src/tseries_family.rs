@@ -1216,6 +1216,7 @@ pub fn schedule_vnode_compaction(
                         // Check if level-0 files is more than 0 .
                         let version = vnode.read().await.super_version().version.clone();
                         let mut level_0_files = 0_u32;
+                        info!("debug: checking level-0 files in vnode {tsf_id}, total_files_num: {}", version.levels_info()[0].files.len());
                         for file in version.levels_info()[0].files.iter() {
                             if file.is_deleted() || file.is_compacting().await {
                                 continue;

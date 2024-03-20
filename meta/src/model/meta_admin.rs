@@ -315,7 +315,7 @@ impl AdminMeta {
 
                 request.3 = watch_data.max_ver;
             } else {
-                info!("watch response wrong {:?}", watch_rsp);
+                // info!("watch response wrong {:?}", watch_rsp);
                 tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
             }
         }
