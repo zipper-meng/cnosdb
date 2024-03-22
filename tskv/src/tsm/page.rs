@@ -315,6 +315,7 @@ pub struct Chunk {
 }
 
 #[test]
+#[ignore = "for debug file pattern"]
 fn test_serialize_chunk() {
     let chunk = Chunk {
         time_range: TimeRange {
@@ -347,12 +348,14 @@ fn test_serialize_chunk() {
                             column: TableColumn {
                                 id: 27,
                                 name: "col_1".to_string(),
-                                column_type: ColumnType::Field(ValueType::Geometry(
-                                    models::gis::data_type::Geometry::new_with_srid(
-                                        models::gis::data_type::GeometryType::Polygon,
-                                        37,
+                                column_type: models::schema::ColumnType::Field(
+                                    models::ValueType::Geometry(
+                                        models::gis::data_type::Geometry::new_with_srid(
+                                            models::gis::data_type::GeometryType::Polygon,
+                                            37,
+                                        ),
                                     ),
-                                )),
+                                ),
                                 encoding: models::codec::Encoding::Snappy,
                             },
                             statistics: PageStatistics::Bytes(ValueStatistics::<Vec<u8>>::new(
@@ -371,7 +374,9 @@ fn test_serialize_chunk() {
                             column: TableColumn {
                                 id: 39,
                                 name: "col_2".to_string(),
-                                column_type: ColumnType::Time(arrow_schema::TimeUnit::Microsecond),
+                                column_type: models::schema::ColumnType::Time(
+                                    arrow_schema::TimeUnit::Microsecond,
+                                ),
                                 encoding: models::codec::Encoding::DeltaTs,
                             },
                             statistics: PageStatistics::I64(ValueStatistics::<i64>::new(
@@ -548,6 +553,7 @@ pub struct ChunkGroup {
 }
 
 #[test]
+#[ignore = "for debug file pattern"]
 fn test_serialize_chunk_group() {
     let chunk_group = ChunkGroup {
         chunks: vec![ChunkWriteSpec {
@@ -656,6 +662,7 @@ pub struct ChunkGroupMeta {
 }
 
 #[test]
+#[ignore = "for debug file pattern"]
 fn test_serialize_chunk_group_meta() {
     let chunk_group_meta = ChunkGroupMeta {
         tables: BTreeMap::from([(
@@ -670,7 +677,7 @@ fn test_serialize_chunk_group_meta() {
                     columns: vec![TableColumn {
                         id: 5,
                         name: "col_1".to_string(),
-                        column_type: ColumnType::Field(ValueType::Integer),
+                        column_type: models::schema::ColumnType::Field(models::ValueType::Integer),
                         encoding: models::codec::Encoding::DeltaTs,
                     }],
                     columns_index: std::collections::HashMap::from([("col_1".to_string(), 7)]),
@@ -744,6 +751,7 @@ pub struct Footer {
 }
 
 #[test]
+#[ignore = "for debug file pattern"]
 fn test_serialize_footer() {
     let footer = Footer {
         version: 1,

@@ -919,7 +919,7 @@ fn kill_child_process(mut proc: Child, force: bool) {
 }
 
 #[cfg(windows)]
-fn kill_child_process(proc: &mut Child, force: bool) {
+fn kill_child_process(mut proc: Child, force: bool) {
     let pid = proc.id().to_string();
     let mut kill = Command::new("taskkill.exe");
     let mut killing_thread = if force {
@@ -937,6 +937,12 @@ fn kill_child_process(proc: &mut Child, force: bool) {
         Ok(kill_exit_code) => println!("- Killed process {pid}, exit status: {kill_exit_code}"),
         Err(e) => println!("- Process {pid} not running: {e}"),
     }
+
+    // Remove defunct process
+    if let Err(e) = proc.wait() {
+        println!("- Process {pid} not running: {e}");
+    }
+    drop(proc);
 }
 
 /// Build meta store config with paths:

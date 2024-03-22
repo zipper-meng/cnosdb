@@ -507,6 +507,26 @@ async fn write_tombstone_record(writer: &mut record_file::Writer, data: &[u8]) -
         .await
 }
 
+/// Generate pathbuf by tombstone path.
+/// - For tombstone file: /tmp/test/000001.tombstone, return /tmp/test/000001.compact.tmp
+pub fn tombstone_compact_tmp_path(tombstone_path: &Path) -> Result<PathBuf> {
+    match tombstone_path.file_name().map(|os_str| {
+        let mut s = os_str.to_os_string();
+        s.push(".compact.tmp");
+        s
+    }) {
+        Some(name) => {
+            let mut p = tombstone_path.to_path_buf();
+            p.set_file_name(name);
+            Ok(p)
+        }
+        None => Err(Error::InvalidFileName {
+            file_name: tombstone_path.display().to_string(),
+            message: "invalid tombstone file name".to_string(),
+        }),
+    }
+}
+
 #[derive(Clone)]
 pub struct TsmTombstoneCache {
     /// The excluded time ranges of each series.
@@ -853,7 +873,7 @@ impl TsmTombstoneCache {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use std::path::{Path, PathBuf};
 
     use models::predicate::domain::{TimeRange, TimeRanges};

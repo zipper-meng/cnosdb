@@ -746,26 +746,9 @@ fn overlaps_tuples(r1: (i64, i64), r2: (i64, i64)) -> bool {
 
 pub async fn run_compaction_job(
     request: CompactReq,
-    kernel: Arc<GlobalContext>,
+    ctx: Arc<GlobalContext>,
 ) -> Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
-    info!(
-        "Compaction: Running compaction job on ts_family: {} and files: [ {} ]",
-        request.ts_family_id,
-        request
-            .files
-            .iter()
-            .map(|f| {
-                format!(
-                    "{{ Level-{}, file_id: {}, time_range: {}-{} }}",
-                    f.level(),
-                    f.file_id(),
-                    f.time_range().min_ts,
-                    f.time_range().max_ts
-                )
-            })
-            .collect::<Vec<String>>()
-            .join(", ")
-    );
+    info!("Compaction: Running compaction job: {request}");
 
     if request.files.is_empty() {
         // Nothing to compact
@@ -773,7 +756,8 @@ pub async fn run_compaction_job(
     }
 
     // Buffers all tsm-files and it's indexes for this compaction
-    let tsf_id = request.ts_family_id;
+    let tsf_id = request.compact_task.ts_family_id();
+    let out_level = request.out_level;
     let mut tsm_readers = Vec::new();
     for col_file in request.files.iter() {
         let tsm_reader = request.version.get_tsm_reader(col_file.file_path()).await?;
@@ -782,10 +766,20 @@ pub async fn run_compaction_job(
 
     let max_block_size = TseriesFamily::MAX_DATA_BLOCK_SIZE as usize;
     let mut iter = CompactIterator::new(tsm_readers, max_block_size, false);
-    let tsm_dir = request.storage_opt.tsm_dir(&request.database, tsf_id);
-    let max_file_size = request.storage_opt.level_max_file_size(request.out_level);
-    let mut tsm_writer =
-        TsmWriter::open(&tsm_dir, kernel.file_id_next(), max_file_size, false).await?;
+    let (tsm_dir, max_file_size) = {
+        let storage_opt = request.version.borrowed_storage_opt();
+        (
+            storage_opt.tsm_dir(&request.version.borrowed_tenant_database(), tsf_id),
+            storage_opt.level_max_file_size(request.out_level),
+        )
+    };
+    let mut tsm_writer = TsmWriter::open(
+        &tsm_dir,
+        ctx.file_id_next(),
+        max_file_size,
+        false,
+    )
+    .await?;
     // let mut tsm_writer = tsm::new_tsm_writer(&tsm_dir, kernel.file_id_next(), false, 0).await?;
     info!(
         "Compaction: File: {} been created (level: {}).",
@@ -796,7 +790,7 @@ pub async fn run_compaction_job(
     let mut file_metas: HashMap<ColumnFileId, Arc<BloomFilter>> = HashMap::new();
     let mut version_edit = VersionEdit::new_update_vnode(
         tsf_id,
-        request.database.to_string(),
+        request.version.borrowed_tenant_database().to_string(),
         request.version.last_seq(),
     );
     let mut previous_merged_block: Option<CompactingBlock> = None;
@@ -811,13 +805,18 @@ pub async fn run_compaction_job(
                     &mut tsm_writer,
                     &mut file_metas,
                     &mut version_edit,
-                    &request,
+                    tsf_id,
+                    out_level,
                 )
                 .await?
                 {
-                    tsm_writer =
-                        TsmWriter::open(&tsm_dir, kernel.file_id_next(), max_file_size, false)
-                            .await?;
+                    tsm_writer = TsmWriter::open(
+                        &tsm_dir,
+                        ctx.file_id_next(),
+                        max_file_size,
+                        false,
+                    )
+                    .await?;
                 }
             }
         }
@@ -845,12 +844,18 @@ pub async fn run_compaction_job(
                 &mut tsm_writer,
                 &mut file_metas,
                 &mut version_edit,
-                &request,
+                tsf_id,
+                out_level,
             )
             .await?
             {
-                tsm_writer =
-                    TsmWriter::open(&tsm_dir, kernel.file_id_next(), max_file_size, false).await?;
+                tsm_writer = TsmWriter::open(
+                    &tsm_dir,
+                    ctx.file_id_next(),
+                    max_file_size,
+                    false,
+                )
+                .await?;
             }
         }
     }
@@ -860,7 +865,8 @@ pub async fn run_compaction_job(
             &mut tsm_writer,
             &mut file_metas,
             &mut version_edit,
-            &request,
+            tsf_id,
+            out_level,
         )
         .await?;
     }
@@ -871,7 +877,8 @@ pub async fn run_compaction_job(
             &mut tsm_writer,
             &mut file_metas,
             &mut version_edit,
-            &request,
+            tsf_id,
+            out_level,
         )
         .await?;
     }
@@ -891,7 +898,8 @@ async fn handle_finish_write_tsm_meta(
     tsm_writer: &mut TsmWriter,
     file_metas: &mut HashMap<ColumnFileId, Arc<BloomFilter>>,
     version_edit: &mut VersionEdit,
-    request: &CompactReq,
+    vnode_id: TseriesFamilyId,
+    out_level: LevelId,
 ) -> Result<bool> {
     if !tsm_writer.is_finished() {
         return Ok(false);
@@ -904,11 +912,11 @@ async fn handle_finish_write_tsm_meta(
     info!(
         "Compaction: File: {} write finished (level: {}, {} B).",
         tsm_writer.file_id(),
-        request.out_level,
+        out_level,
         tsm_writer.size()
     );
 
-    let cm = new_compact_meta(tsm_writer, request.ts_family_id, request.out_level);
+    let cm = new_compact_meta(tsm_writer, vnode_id, out_level);
     version_edit.add_file(cm);
 
     Ok(true)
@@ -945,7 +953,7 @@ pub mod test {
     use models::schema::{ColumnType, PhysicalCType, TableColumn, TskvTableSchema};
     use models::{PhysicalDType, SeriesId, SeriesKey, ValueType};
 
-    use crate::compaction::{run_compaction_job, CompactReq};
+    use crate::compaction::{run_compaction_job, CompactReq, CompactTask};
     use crate::context::GlobalContext;
     use crate::file_system::file_manager;
     use crate::file_utils;
@@ -956,7 +964,7 @@ pub mod test {
     use crate::tsm::writer::{Column, DataBlock, TsmWriter};
     use crate::tsm::TsmTombstone;
 
-    pub(crate) async fn write_data_blocks_to_column_file(
+    pub async fn write_data_blocks_to_column_file(
         dir: impl AsRef<Path>,
         data: Vec<HashMap<SeriesId, DataBlock>>,
     ) -> (u64, Vec<Arc<ColumnFile>>) {
@@ -980,7 +988,6 @@ pub mod test {
                 2,
                 TimeRange::new(writer.min_ts(), writer.max_ts()),
                 writer.size() as u64,
-                false,
                 writer.path(),
             );
             cf.set_field_id_filter(Arc::new(writer.series_bloom_filter().clone()));
@@ -1076,7 +1083,7 @@ pub mod test {
     }
 
     /// Compare DataBlocks in path with the expected_Data using assert_eq.
-    async fn check_column_file(
+    pub async fn check_column_file(
         dir: impl AsRef<Path>,
         version_edit: VersionEdit,
         expected_data: HashMap<SeriesId, Vec<DataBlock>>,
@@ -1105,21 +1112,32 @@ pub mod test {
         }
     }
 
-    pub(crate) fn create_options(base_dir: String) -> Arc<Options> {
+    pub fn create_tskv_options(base_dir: String, always_compact: bool) -> Arc<Options> {
         let mut config = config::get_config_for_test();
         config.storage.path = base_dir;
+        if always_compact {
+            config.storage.compact_trigger_file_num = 1;
+        }
         let opt = Options::from(&config);
         Arc::new(opt)
     }
 
-    fn prepare_compact_req_and_kernel(
+    #[test]
+    fn test_create_options() {
+        let dir = "/tmp/test/compaction/test_create_options";
+        let opt = create_tskv_options(dir.to_string(), false);
+        assert_eq!(opt.storage.path.to_string_lossy(), dir);
+    }
+
+    fn prepare_compaction(
         database: Arc<String>,
         opt: Arc<Options>,
         next_file_id: u64,
         files: Vec<Arc<ColumnFile>>,
     ) -> (CompactReq, Arc<GlobalContext>) {
+        let vnode_id = 1;
         let version = Arc::new(Version::new(
-            1,
+            vnode_id,
             database.clone(),
             opt.storage.clone(),
             1,
@@ -1127,12 +1145,12 @@ pub mod test {
             Arc::new(ShardedAsyncCache::create_lru_sharded_cache(1)),
         ));
         let compact_req = CompactReq {
-            ts_family_id: 1,
-            database,
-            storage_opt: opt.storage.clone(),
-            files,
+            compact_task: CompactTask::Normal(vnode_id),
             version,
+            files,
+            in_level: 1,
             out_level: 2,
+            out_time_range: TimeRange::all(),
         };
         let kernel = Arc::new(GlobalContext::new());
         kernel.set_file_id(next_file_id);
@@ -1248,12 +1266,12 @@ pub mod test {
 
         let dir = "/tmp/test/compaction/fast";
         let database = Arc::new("dba".to_string());
-        let opt = create_options(dir.to_string());
+        let opt = create_tskv_options(dir.to_string(), true);
         let dir = opt.storage.tsm_dir(&database, 1);
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data).await;
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, files);
+            prepare_compaction(database, opt, next_file_id, files);
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
@@ -1369,12 +1387,12 @@ pub mod test {
 
         let dir = "/tmp/test/compaction/1";
         let database = Arc::new("dba".to_string());
-        let opt = create_options(dir.to_string());
+        let opt = create_tskv_options(dir.to_string(), true);
         let dir = opt.storage.tsm_dir(&database, 1);
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data).await;
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, files);
+            prepare_compaction(database, opt, next_file_id, files);
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
@@ -1518,12 +1536,12 @@ pub mod test {
 
         let dir = "/tmp/test/compaction/2";
         let database = Arc::new("dba".to_string());
-        let opt = create_options(dir.to_string());
+        let opt = create_tskv_options(dir.to_string(), true);
         let dir = opt.storage.tsm_dir(&database, 1);
 
         let (next_file_id, files) = write_data_blocks_to_column_file(&dir, data).await;
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, files);
+            prepare_compaction(database, opt, next_file_id, files);
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
             .unwrap()
@@ -1912,7 +1930,7 @@ pub mod test {
 
         let dir = "/tmp/test/compaction/3";
         let database = Arc::new("dba".to_string());
-        let opt = create_options(dir.to_string());
+        let opt = create_tskv_options(dir.to_string(), true);
         let dir = opt.storage.tsm_dir(&database, 1);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -1933,7 +1951,6 @@ pub mod test {
                 2,
                 TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
                 tsm_writer.size() as u64,
-                false,
                 tsm_writer.path(),
             )));
         }
@@ -1941,7 +1958,7 @@ pub mod test {
         let next_file_id = 4_u64;
 
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
+            prepare_compaction(database, opt, next_file_id, column_files);
 
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await
@@ -2268,7 +2285,7 @@ pub mod test {
 
         let dir = "/tmp/test/compaction/4";
         let database = Arc::new("dba".to_string());
-        let opt = create_options(dir.to_string());
+        let opt = create_tskv_options(dir.to_string(), true);
         let dir = opt.storage.tsm_dir(&database, 1);
         if !file_manager::try_exists(&dir) {
             std::fs::create_dir_all(&dir).unwrap();
@@ -2301,7 +2318,6 @@ pub mod test {
                 2,
                 TimeRange::new(tsm_writer.min_ts(), tsm_writer.max_ts()),
                 tsm_writer.size() as u64,
-                false,
                 tsm_writer.path(),
             )));
         }
@@ -2309,7 +2325,7 @@ pub mod test {
         let next_file_id = 4_u64;
 
         let (compact_req, kernel) =
-            prepare_compact_req_and_kernel(database, opt, next_file_id, column_files);
+            prepare_compaction(database, opt, next_file_id, column_files);
 
         let (version_edit, _) = run_compaction_job(compact_req, kernel)
             .await

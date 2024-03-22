@@ -262,6 +262,7 @@ impl Column {
             }
         }
     }
+
     pub fn col_to_page(&self, desc: &TableColumn) -> Result<Page> {
         let null_count = 1;
         let len_bitset = self.valid.byte_len() as u32;
@@ -436,6 +437,10 @@ impl Column {
 
     pub fn valid(&self) -> &BitSet {
         &self.valid
+    }
+
+    pub fn physical_type(&self) -> &PhysicalCType {
+        &self.column_type
     }
 }
 
@@ -695,6 +700,10 @@ impl DataBlock {
             });
         }
         Ok(())
+    }
+
+    pub fn ts(&self) -> &Column {
+        &self.ts
     }
 
     pub fn column(&self, id: ColumnId) -> Option<&Column> {
@@ -1178,7 +1187,7 @@ impl TsmWriter {
 }
 
 #[cfg(test)]
-mod test {
+pub mod test {
     use std::path::PathBuf;
     use std::sync::Arc;
 

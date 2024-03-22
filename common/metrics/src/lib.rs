@@ -206,7 +206,7 @@ pub static COMPACTION_DURATION: Lazy<HistogramVec> = Lazy::new(|| {
         .namespace(NAMESPACE)
         .subsystem(TSKV_SUBSYSTEM)
         .buckets(linear_buckets(0.0, 300.0, 2400).unwrap()),
-        &["db", "ts_family", "level"],
+        &["db", "ts_family", "in_level", "out_level", "status"],
     )
     .expect("tskv metric cannot be created")
 });
@@ -231,10 +231,23 @@ pub fn incr_compaction_failed() {
     COMPACTION_FAILED.inc();
 }
 
-pub fn sample_tskv_compaction_duration(db: &str, ts_family: &str, level: &str, delta: f64) {
+pub fn sample_tskv_compaction_duration(
+    db: &str,
+    ts_family: u32,
+    in_level: u32,
+    out_level: u32,
+    status: bool,
+    duration: f64,
+) {
     COMPACTION_DURATION
-        .with_label_values(&[db, ts_family, level])
-        .observe(delta)
+        .with_label_values(&[
+            db,
+            ts_family.to_string().as_str(),
+            in_level.to_string().as_str(),
+            out_level.to_string().as_str(),
+            status.to_string().as_str(),
+        ])
+        .observe(duration)
 }
 
 pub fn gather_metrics() -> Vec<u8> {

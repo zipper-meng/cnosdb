@@ -128,9 +128,7 @@ pub async fn run_flush_memtable_job(
     if trigger_compact {
         let _ = ctx
             .compact_task_sender
-            .send(CompactTask {
-                tsf_id: req.ts_family_id,
-            })
+            .send(CompactTask::Delta(req.ts_family_id))
             .await;
     }
 

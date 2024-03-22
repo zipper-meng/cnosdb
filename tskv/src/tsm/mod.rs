@@ -2,6 +2,8 @@ pub mod codec;
 pub(crate) mod page;
 pub mod reader;
 pub mod statistics;
+#[cfg(test)]
+pub mod test_helper;
 mod tombstone;
 mod types;
 pub mod writer;
@@ -10,7 +12,10 @@ pub mod writer;
 use std::collections::BTreeMap;
 
 use models::{SeriesId, SeriesKey};
-pub use tombstone::{TombstoneEntry, TsmTombstone, TOMBSTONE_FILE_SUFFIX};
+pub use tombstone::{
+    tombstone_compact_tmp_path, TombstoneEntry, TsmTombstone, TsmTombstoneCache,
+    TOMBSTONE_FILE_SUFFIX,
+};
 
 use crate::tsm::writer::DataBlock;
 

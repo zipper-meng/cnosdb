@@ -15,7 +15,7 @@ use models::{ColumnId, FieldId, SeriesId, SeriesKey, Timestamp};
 use parking_lot::RwLock;
 use snafu::ResultExt as _;
 use tokio::sync::mpsc::Sender;
-use tokio::sync::RwLock as TokioRwLock;
+use tokio::sync::{RwLock as TokioRwLock, RwLockWriteGuard as TokioRwLockWriteGuard};
 use tokio::time::Instant;
 use trace::{debug, error, info};
 use utils::BloomFilter;
@@ -38,12 +38,11 @@ use crate::{tsm, ColumnFileId, LevelId, Options, TsKvContext, TseriesFamilyId};
 pub struct ColumnFile {
     file_id: ColumnFileId,
     level: LevelId,
-    is_delta: bool,
     time_range: TimeRange,
     size: u64,
     series_id_filter: Arc<BloomFilter>,
     deleted: AtomicBool,
-    compacting: AtomicBool,
+    compacting: Arc<TokioRwLock<bool>>,
 
     path: PathBuf,
     tsm_reader_cache: Weak<ShardedAsyncCache<String, Arc<TsmReader>>>,
@@ -59,12 +58,11 @@ impl ColumnFile {
         Self {
             file_id: meta.file_id,
             level: meta.level,
-            is_delta: meta.is_delta,
             time_range: TimeRange::new(meta.min_ts, meta.max_ts),
             size: meta.file_size,
             series_id_filter,
             deleted: AtomicBool::new(false),
-            compacting: AtomicBool::new(false),
+            compacting: Arc::new(TokioRwLock::new(false)),
             path: path.as_ref().into(),
             tsm_reader_cache,
         }
@@ -79,7 +77,7 @@ impl ColumnFile {
     }
 
     pub fn is_delta(&self) -> bool {
-        self.is_delta
+        self.level == 0
     }
 
     pub fn time_range(&self) -> &TimeRange {
@@ -155,18 +153,22 @@ impl ColumnFile {
         self.deleted.store(true, Ordering::Release);
     }
 
-    pub fn is_compacting(&self) -> bool {
-        self.compacting.load(Ordering::Acquire)
+    pub async fn is_compacting(&self) -> bool {
+        *self.compacting.read().await
     }
 
-    pub fn mark_compacting(&self) -> bool {
-        self.compacting
-            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-            .is_ok()
+    pub async fn write_lock_compacting(&self) -> TokioRwLockWriteGuard<'_, bool> {
+        self.compacting.write().await
     }
 
-    pub fn unmark_compacting(&self) {
-        self.compacting.store(false, Ordering::Release);
+    pub async fn mark_compacting(&self) -> bool {
+        let mut compacting = self.compacting.write().await;
+        if *compacting {
+            false
+        } else {
+            *compacting = true;
+            true
+        }
     }
 }
 
@@ -227,18 +229,16 @@ impl ColumnFile {
         level: LevelId,
         time_range: TimeRange,
         size: u64,
-        is_delta: bool,
         path: impl AsRef<Path>,
     ) -> Self {
         Self {
             file_id,
             level,
-            is_delta,
             time_range,
             size,
             series_id_filter: Arc::new(BloomFilter::default()),
             deleted: AtomicBool::new(false),
-            compacting: AtomicBool::new(false),
+            compacting: Arc::new(TokioRwLock::new(false)),
             path: path.as_ref().into(),
             tsm_reader_cache: Weak::new(),
         }
@@ -520,12 +520,21 @@ impl Version {
         self.tenant_database.clone()
     }
 
+    pub fn borrowed_tenant_database(&self) -> &str {
+        self.tenant_database.as_str()
+    }
+
     pub fn levels_info(&self) -> &[LevelInfo; 5] {
         &self.levels_info
     }
 
     pub fn storage_opt(&self) -> Arc<StorageOptions> {
         self.storage_opt.clone()
+    }
+
+    /// Get borrowed storage options.
+    pub fn borrowed_storage_opt(&self) -> &StorageOptions {
+        self.storage_opt.as_ref()
     }
 
     // todo:
@@ -1357,7 +1366,7 @@ pub mod test_tseries_family {
             LevelInfo::init(database.clone(), 0, 0, opt.storage.clone()),
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file(&tsm_dir, 3))),
+                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, make_tsm_file(&tsm_dir, 3))),
                 ],
                 database: database.clone(),
                 tsf_id: 1,
@@ -1369,8 +1378,8 @@ pub mod test_tseries_family {
             },
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file(&tsm_dir, 1))),
-                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file(&tsm_dir, 2))),
+                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, make_tsm_file(&tsm_dir, 1))),
+                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, make_tsm_file(&tsm_dir, 2))),
                 ],
                 database: database.clone(),
                 tsf_id: 1,
@@ -1450,8 +1459,8 @@ pub mod test_tseries_family {
             LevelInfo::init(database.clone(), 0, 1, opt.storage.clone()),
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, false, make_tsm_file(&tsm_dir, 3))),
-                    Arc::new(ColumnFile::new(4, 1, TimeRange::new(3051, 3150), 100, false, make_tsm_file(&tsm_dir, 4))),
+                    Arc::new(ColumnFile::new(3, 1, TimeRange::new(3001, 3100), 100, make_tsm_file(&tsm_dir, 3))),
+                    Arc::new(ColumnFile::new(4, 1, TimeRange::new(3051, 3150), 100, make_tsm_file(&tsm_dir, 4))),
                 ],
                 database: database.clone(),
                 tsf_id: 1,
@@ -1463,8 +1472,8 @@ pub mod test_tseries_family {
             },
             LevelInfo {
                 files: vec![
-                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, false, make_tsm_file(&tsm_dir, 1))),
-                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, false, make_tsm_file(&tsm_dir, 2))),
+                    Arc::new(ColumnFile::new(1, 2, TimeRange::new(1, 1000), 1000, make_tsm_file(&tsm_dir, 1))),
+                    Arc::new(ColumnFile::new(2, 2, TimeRange::new(1001, 2000), 1000, make_tsm_file(&tsm_dir, 2))),
                 ],
                 database: database.clone(),
                 tsf_id: 1,

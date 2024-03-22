@@ -9,9 +9,8 @@ use tokio::sync::mpsc::Receiver;
 use tokio::sync::{oneshot, RwLock, RwLockWriteGuard, Semaphore};
 use trace::{error, info};
 
-use crate::compaction::{flush, CompactTask, FlushReq, LevelCompactionPicker, Picker};
+use crate::compaction::{flush, picker, CompactTask, FlushReq};
 use crate::summary::SummaryTask;
-use crate::tseries_family::TseriesFamily;
 use crate::{TsKvContext, TseriesFamilyId};
 
 const COMPACT_BATCH_CHECKING_SECONDS: u64 = 1;
@@ -106,7 +105,7 @@ struct CompactJobInner {
     runtime: Arc<Runtime>,
     compact_task_group: Arc<RwLock<CompactTaskGroup>>,
     enable_compaction: Arc<AtomicBool>,
-    running_compactions: Arc<AtomicUsize>,
+    running_compactions_num: Arc<AtomicUsize>,
 }
 
 impl CompactJobInner {
@@ -118,7 +117,7 @@ impl CompactJobInner {
             runtime,
             compact_task_group: compact_processor,
             enable_compaction: Arc::new(AtomicBool::new(false)),
-            running_compactions: Arc::new(AtomicUsize::new(0)),
+            running_compactions_num: Arc::new(AtomicUsize::new(0)),
         }
     }
 
@@ -151,7 +150,7 @@ impl CompactJobInner {
         let runtime_inner = self.runtime.clone();
         let compact_task_group = self.compact_task_group.clone();
         let enable_compaction = self.enable_compaction.clone();
-        let running_compaction = self.running_compactions.clone();
+        let running_compactions_num = self.running_compactions_num.clone();
         let ctx = self.ctx.clone();
 
         self.runtime.spawn(async move {
@@ -185,108 +184,21 @@ impl CompactJobInner {
                 };
 
                 for (vnode_id, compact_tasks) in vnode_compact_tasks {
-                    let vnode = match ctx
-                        .version_set
-                        .read()
-                        .await
-                        .get_tsfamily_by_tf_id(vnode_id)
-                        .await
-                    {
-                        Some(vnode) => vnode,
-                        None => continue,
-                    };
                     // Method acquire_owned() will return AcquireError if the semaphore has been closed.
-                    let permit = compaction_limit.clone().acquire_owned().await.unwrap();
-                    let ctx = ctx.clone();
-                    let vnode_compacting_map = vnode_compacting_map.clone();
+                    let permit = compaction_limit.acquire().await.unwrap();
 
-                    runtime_inner.spawn()
+                    runtime_inner.spawn(Self::run_vnode_compaction_tasks(
+                        ctx.clone(),
+                        vnode_id,
+                        compact_tasks,
+                        enable_compaction.clone(),
+                        running_compactions_num.clone(),
+                    ));
+
+                    // Mark vnode as not compacting.
+                    vnode_compacting_map.write().await.remove(&vnode_id);
+                    drop(permit);
                 }
-
-                let vnode_ids = compact_task_group.write().await.take();
-                let vnode_ids_for_debug = vnode_ids.clone();
-                let now = Instant::now();
-                info!("Compacting on vnode(job start): {:?}", &vnode_ids_for_debug);
-                for vnode_id in vnode_ids {
-                    let ts_family = ctx
-                        .version_set
-                        .read()
-                        .await
-                        .get_tsfamily_by_tf_id(vnode_id)
-                        .await;
-                    if let Some(tsf) = ts_family {
-                        info!("Starting compaction on ts_family {}", vnode_id);
-                        let start = Instant::now();
-                        if !tsf.read().await.can_compaction() {
-                            info!("forbidden compaction on moving vnode {}", vnode_id);
-                            return;
-                        }
-                        let picker = LevelCompactionPicker::new(ctx.options.storage.clone());
-                        let version = tsf.read().await.version();
-                        let compact_req = picker.pick_compaction(version);
-                        if let Some(req) = compact_req {
-                            let database = req.database.clone();
-                            let compact_ts_family = req.ts_family_id;
-                            let out_level = req.out_level;
-
-                            // Method acquire_owned() will return AcquireError if the semaphore has been closed.
-                            let permit = compaction_limit.clone().acquire_owned().await.unwrap();
-                            let enable_compaction = enable_compaction.clone();
-                            let running_compaction = running_compaction.clone();
-
-                            let ctx = ctx.clone();
-                            runtime_inner.spawn(async move {
-                                // Check enable compaction
-                                if !enable_compaction.load(atomic::Ordering::SeqCst) {
-                                    return;
-                                }
-                                // Edit running_compation
-                                running_compaction.fetch_add(1, atomic::Ordering::SeqCst);
-                                let _sub_running_compaction_guard = DeferGuard(Some(|| {
-                                    running_compaction.fetch_sub(1, atomic::Ordering::SeqCst);
-                                }));
-
-                                match super::run_compaction_job(req, ctx.global_ctx.clone()).await {
-                                    Ok(Some((version_edit, file_metas))) => {
-                                        metrics::incr_compaction_success();
-                                        let (summary_tx, _summary_rx) = oneshot::channel();
-                                        let _ = ctx
-                                            .summary_task_sender
-                                            .send(SummaryTask::new(
-                                                tsf.clone(),
-                                                version_edit,
-                                                Some(file_metas),
-                                                None,
-                                                summary_tx,
-                                            ))
-                                            .await;
-
-                                        metrics::sample_tskv_compaction_duration(
-                                            database.as_str(),
-                                            compact_ts_family.to_string().as_str(),
-                                            out_level.to_string().as_str(),
-                                            start.elapsed().as_secs_f64(),
-                                        )
-                                        // TODO Handle summary result using summary_rx.
-                                    }
-                                    Ok(None) => {
-                                        info!("There is nothing to compact.");
-                                    }
-                                    Err(e) => {
-                                        metrics::incr_compaction_failed();
-                                        error!("Compaction job failed: {:?}", e);
-                                    }
-                                }
-                                drop(permit);
-                            });
-                        }
-                    }
-                }
-                info!(
-                    "Compacting on vnode(job start): {:?} costs {} sec",
-                    vnode_ids_for_debug,
-                    now.elapsed().as_secs()
-                );
             }
         });
     }
@@ -325,13 +237,32 @@ impl CompactJobInner {
     }
 
     async fn run_vnode_compaction_tasks(
+        ctx: Arc<TsKvContext>,
         vnode_id: TseriesFamilyId,
-        vnode: Arc<RwLock<TseriesFamily>>,
         compact_tasks: Vec<CompactTask>,
+        enable_compaction: Arc<AtomicBool>,
+        running_compactions_num: Arc<AtomicUsize>,
     ) {
+        let vnode = {
+            let vs = ctx.version_set.read().await;
+            let vn = vs.get_tsfamily_by_tf_id(vnode_id).await;
+            drop(vs);
+            match vn {
+                Some(vn) => vn,
+                None => return,
+            }
+        };
+
         for compact_task in compact_tasks {
-            info!("Starting compaction: {compact_task}");
-            let start = Instant::now();
+            // Check enable compaction
+            if !enable_compaction.load(atomic::Ordering::SeqCst) {
+                return;
+            }
+            // Edit running_compaction_num
+            running_compactions_num.fetch_add(1, atomic::Ordering::SeqCst);
+            let _sub_running_compaction_guard = DeferGuard(Some(|| {
+                running_compactions_num.fetch_sub(1, atomic::Ordering::SeqCst);
+            }));
 
             let version = {
                 let vnode_rlock = vnode.read().await;
@@ -341,26 +272,31 @@ impl CompactJobInner {
                 }
                 vnode_rlock.version()
             };
+
+            info!("Compaction: Starting compaction: {compact_task}");
+            let start = Instant::now();
             let compact_req = match picker::pick_compaction(compact_task, version).await {
                 Some(req) => req,
                 None => {
-                    info!("Finished compaction, did nothing");
+                    info!("Compaction: Finished compaction, did nothing");
                     continue;
                 }
             };
-            let database = compact_req.version.database();
+            let database = compact_req.version.tenant_database();
             let in_level = compact_req.in_level;
             let out_level = compact_req.out_level;
 
-            info!("Running compaction job: {compact_task}, sending to summary write.");
-            match super::run_compaction_job(compact_req, ctx.clone()).await {
+            info!("Compaction: Running compaction job: {compact_task}, sending to summary write.");
+            match super::run_compaction_job(compact_req, ctx.global_ctx.clone()).await {
                 Ok(Some((version_edit, file_metas))) => {
-                    info!("Finished compaction1: {compact_task}, sending to summary write.");
+                    info!("Compaction: Finished compaction: {compact_task}, sending to summary write.");
                     metrics::incr_compaction_success();
                     let (summary_tx, summary_rx) = oneshot::channel();
-                    let _ = summary_task_sender
+                    let _ = ctx
+                        .summary_task_sender
                         .send(SummaryTask::new(
-                            vec![version_edit.clone()],
+                            vnode.clone(),
+                            version_edit.clone(),
                             Some(file_metas),
                             None,
                             summary_tx,
@@ -369,12 +305,13 @@ impl CompactJobInner {
 
                     metrics::sample_tskv_compaction_duration(
                         database.as_str(),
-                        vnode_id.to_string().as_str(),
-                        in_level.to_string().as_str(),
-                        out_level.to_string().as_str(),
+                        vnode_id,
+                        in_level,
+                        out_level,
+                        true,
                         start.elapsed().as_secs_f64(),
                     );
-                    info!("Finished compaction2: {compact_task}, waiting for summary write.");
+                    info!("Compaction: Finished compaction: {compact_task}, waiting for summary write.");
                     match summary_rx.await {
                         Ok(Ok(())) => {
                             info!("Compaction: summary write success: {version_edit:?}");
@@ -388,16 +325,25 @@ impl CompactJobInner {
                     }
                     // Send a normal compact request if it's a delta compaction.
                     if let CompactTask::Delta(vnode_id) = &compact_task {
-                        let _ = compact_task_sender
+                        let _ = ctx
+                            .compact_task_sender
                             .send(CompactTask::Normal(*vnode_id))
                             .await;
                     }
                 }
                 Ok(None) => {
-                    info!("Compaction There is nothing to compact.");
+                    info!("Compaction: Compaction There is nothing to compact.");
                 }
                 Err(e) => {
                     metrics::incr_compaction_failed();
+                    metrics::sample_tskv_compaction_duration(
+                        database.as_str(),
+                        vnode_id,
+                        in_level,
+                        out_level,
+                        false,
+                        start.elapsed().as_secs_f64(),
+                    );
                     error!("Compaction: job failed: {}", e);
                 }
             }
@@ -413,7 +359,7 @@ impl CompactJobInner {
         let mut check_interval = tokio::time::interval(Duration::from_millis(100));
         loop {
             check_interval.tick().await;
-            if self.running_compactions.load(atomic::Ordering::SeqCst) == 0 {
+            if self.running_compactions_num.load(atomic::Ordering::SeqCst) == 0 {
                 return;
             }
         }
@@ -485,23 +431,46 @@ mod test {
 
     use super::DeferGuard;
     use crate::compaction::job::CompactTaskGroup;
-    use crate::TseriesFamilyId;
+    use crate::compaction::CompactTask;
 
     #[test]
     fn test_build_compact_batch() {
-        let mut compact_batch_builder = CompactTaskGroup::default();
-        compact_batch_builder.insert(1);
-        compact_batch_builder.insert(2);
-        compact_batch_builder.insert(1);
-        compact_batch_builder.insert(3);
-        assert_eq!(compact_batch_builder.compact_tasks.len(), 3);
+        let mut ctg = CompactTaskGroup::default();
+        ctg.insert(CompactTask::Normal(2));
+        ctg.insert(CompactTask::Normal(1));
+        ctg.insert(CompactTask::Delta(2));
+        ctg.insert(CompactTask::Delta(1));
+        ctg.insert(CompactTask::Normal(3));
+        assert_eq!(ctg.compact_tasks.len(), 5);
+        assert_eq!(ctg.compact_tasks.get(&CompactTask::Normal(1)), Some(&2));
+        assert_eq!(ctg.compact_tasks.get(&CompactTask::Normal(2)), Some(&1));
+        assert_eq!(ctg.compact_tasks.get(&CompactTask::Normal(3)), Some(&1));
+        assert_eq!(ctg.compact_tasks.get(&CompactTask::Delta(2)), Some(&1));
 
-        let mut keys: Vec<TseriesFamilyId> = compact_batch_builder.compact_tasks.clone();
-        keys.sort();
-        assert_eq!(keys, vec![1, 2, 3]);
+        let compact_tasks = ctg.try_take();
+        assert!(compact_tasks.is_some());
+        let compact_tasks = compact_tasks.unwrap();
+        assert_eq!(compact_tasks.len(), 3);
+        assert_eq!(
+            compact_tasks.get(&1),
+            Some(&vec![CompactTask::Delta(1), CompactTask::Normal(1)])
+        );
+        assert_eq!(
+            compact_tasks.get(&2),
+            Some(&vec![CompactTask::Delta(2), CompactTask::Normal(2)])
+        );
+        assert_eq!(compact_tasks.get(&3), Some(&vec![CompactTask::Normal(3)]));
 
-        let vnode_ids = compact_batch_builder.take();
-        assert_eq!(vnode_ids, vec![1, 2, 3]);
+        let compact_tasks = ctg.try_take();
+        assert!(compact_tasks.is_none());
+
+        ctg.extend(vec![CompactTask::Normal(1), CompactTask::Delta(1)]);
+        let compact_tasks = ctg.try_take().unwrap();
+        assert_eq!(compact_tasks.len(), 1);
+        assert_eq!(
+            compact_tasks.get(&1),
+            Some(&vec![CompactTask::Delta(1), CompactTask::Normal(1),])
+        );
     }
 
     #[test]
