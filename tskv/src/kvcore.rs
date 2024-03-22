@@ -99,7 +99,7 @@ impl TsKv {
             options: shared_options.clone(),
             global_ctx: summary.global_context(),
             global_seq_ctx: global_seq_ctx.clone(),
-            version_set,
+            version_set: version_set.clone(),
             meta_manager,
             runtime: runtime.clone(),
             memory_pool,
@@ -125,7 +125,7 @@ impl TsKv {
         compaction::job::run(
             shared_options.storage.clone(),
             runtime,
-            compact_task_sender,
+            compact_task_sender.clone(),
             compact_task_receiver,
             summary.global_context(),
             global_seq_ctx.clone(),
@@ -138,6 +138,13 @@ impl TsKv {
             global_seq_task_receiver,
             global_seq_ctx,
         );
+
+        version_set
+            .read()
+            .await
+            .sechedule_compaction(compact_task_sender)
+            .await;
+
         Ok(core)
     }
 

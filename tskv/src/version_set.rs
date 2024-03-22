@@ -16,7 +16,7 @@ use crate::context::GlobalSequenceContext;
 use crate::database::Database;
 use crate::error::{MetaSnafu, Result};
 use crate::summary::VersionEdit;
-use crate::tseries_family::{TseriesFamily, Version};
+use crate::tseries_family::{self, schedule_vnode_compaction, TseriesFamily, Version};
 use crate::{ColumnFileId, Options, TseriesFamilyId};
 
 #[derive(Debug)]
@@ -235,6 +235,18 @@ impl VersionSet {
         }
 
         GlobalSequenceContext::new(tsf_seq_map)
+    }
+
+    /// **Please call this function only once after tskv recovered.**
+    ///
+    /// Schedules all vnode compaction tasks.
+    pub async fn sechedule_compaction(&self, compact_task_sender: Sender<CompactTask>) {
+        for db in self.dbs.values() {
+            let db = db.read().await;
+            for tsf in db.ts_families().values().cloned() {
+                schedule_vnode_compaction(self.runtime.clone(), tsf, compact_task_sender.clone())
+            }
+        }
     }
 }
 

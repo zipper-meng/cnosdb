@@ -92,10 +92,8 @@ impl Database {
             self.memory_pool.clone(),
             &self.metrics_register,
         );
-        let tf_ref = Arc::new(RwLock::new(tf));
-        schedule_vnode_compaction(self.runtime.clone(), tf_ref.clone(), compact_task_sender);
-
-        self.ts_families.insert(ver.tf_id(), tf_ref);
+        self.ts_families
+            .insert(ver.tf_id(), Arc::new(RwLock::new(tf)));
     }
 
     // todo: Maybe TseriesFamily::new() should be refactored.
