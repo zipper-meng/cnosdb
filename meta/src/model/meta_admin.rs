@@ -85,6 +85,7 @@ impl AdminMeta {
     }
 
     pub async fn new(config: Config) -> Arc<Self> {
+        trace::info!("meta: Connecting to meta service");
         let meta_service_addr = config.cluster.meta_service_addr.clone();
         let meta_url = meta_service_addr.join(";");
         let (watch_notify, receiver) = mpsc::channel(1024);
@@ -115,7 +116,9 @@ impl AdminMeta {
             watch_tenants: RwLock::new(HashSet::new()),
         });
 
+        trace::info!("meta: Synchronizing global information from meta service");
         let base_ver = admin.sync_gobal_info().await.unwrap();
+        trace::info!("meta: Fetched global information from meta service");
         admin.watch_version.store(base_ver, Ordering::Relaxed);
 
         tokio::spawn(AdminMeta::watch_task_manager(admin.clone(), receiver));
@@ -404,6 +407,7 @@ impl AdminMeta {
 
     /******************** Data Node Operation Begin *********************/
     pub async fn add_data_node(&self) -> MetaResult<()> {
+        trace::info!("meta: Registering data node to meta service");
         let grpc_addr = build_address_with_optional_addr(
             &self.config.host,
             self.config.cluster.grpc_listen_port,
@@ -420,6 +424,7 @@ impl AdminMeta {
         self.report_node_metrics().await?;
 
         self.data_nodes.write().insert(node.id, node);
+        trace::info!("meta: Registered data node to meta service");
 
         Ok(())
     }

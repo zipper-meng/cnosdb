@@ -410,6 +410,7 @@ impl Summary {
         let mut database_map: HashMap<String, Arc<String>> = HashMap::new();
         let mut tsf_database_map: HashMap<TseriesFamilyId, Arc<String>> = HashMap::new();
 
+        trace::info!("tskv: Loading summary file.");
         loop {
             let res = reader.read_record().await;
             match res {
@@ -438,6 +439,7 @@ impl Summary {
                 }
             }
         }
+        trace::info!("tskv: Load summary file completed.");
 
         let mut versions = HashMap::new();
         let mut has_seq_no = false;
@@ -475,10 +477,19 @@ impl Summary {
             ));
             let weak_tsm_reader_cache = Arc::downgrade(&tsm_reader_cache);
             let mut levels = LevelInfo::init_levels(database.clone(), tsf_id, opt.storage.clone());
+            trace::info!("tskv: Loading tsm indexes for vnode {tsf_id}");
             for meta in files.into_values() {
                 let field_filter = if load_field_filter {
+                    trace::info!(
+                        "tskv: Loading tsm index from file [{tsf_id}]-[{}]",
+                        meta.file_id
+                    );
                     let tsm_path = meta.file_path(opt.storage.as_ref(), &database, tsf_id);
                     let tsm_reader = TsmReader::open(tsm_path).await?;
+                    trace::info!(
+                        "tskv: Loaded tsm index for from [{tsf_id}]-[{}]",
+                        meta.file_id
+                    );
                     tsm_reader.bloom_filter()
                 } else {
                     Arc::new(BloomFilter::default())

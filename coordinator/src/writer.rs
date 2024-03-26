@@ -17,7 +17,7 @@ use snafu::ResultExt;
 use tokio::sync::mpsc::Sender;
 use tokio::sync::oneshot;
 use tonic::Code;
-use trace::{debug, info, SpanContext, SpanExt, SpanRecorder};
+use trace::{debug, SpanContext, SpanExt, SpanRecorder};
 use trace_http::ctx::append_trace_context;
 use tskv::EngineRef;
 
@@ -316,7 +316,7 @@ impl PointWriter {
             }
         }
 
-        let now = tokio::time::Instant::now();
+        // let now = tokio::time::Instant::now();
         let mut requests = vec![];
         {
             let _span_recorder = SpanRecorder::new(span_ctx.child_span("build requests"));

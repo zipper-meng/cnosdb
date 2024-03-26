@@ -237,7 +237,9 @@ impl ServiceBuilder {
 
     pub async fn build_singleton(&self, server: &mut Server) -> Option<EngineRef> {
         let meta_service = MetaService::new(self.cpu, self.config.clone());
+        trace::info!("meta: Starting singleton meta service");
         meta_service.start().await.unwrap();
+        trace::info!("meta: Started singleton meta service");
 
         // wait meta server ready!
         tokio::time::sleep(std::time::Duration::from_millis(100)).await;
@@ -257,6 +259,7 @@ impl ServiceBuilder {
         runtime: Arc<Runtime>,
         memory_pool: MemoryPoolRef,
     ) -> EngineRef {
+        trace::info!("data: Starting tskv service");
         let options = tskv::Options::from(&self.config);
         let kv = TsKv::open(
             meta,
@@ -269,24 +272,25 @@ impl ServiceBuilder {
         .unwrap();
 
         let kv: EngineRef = Arc::new(kv);
-
+        trace::info!("data: Started tskv service");
         kv
     }
 
     async fn create_dbms(&self, coord: CoordinatorRef, memory_pool: MemoryPoolRef) -> DBMSRef {
+        trace::info!("data: Starting database management service");
         let options = tskv::Options::from(&self.config);
         let dbms = make_cnosdbms(coord, options.clone(), memory_pool)
             .await
             .expect("make dbms");
 
         let dbms: DBMSRef = Arc::new(dbms);
-
+        trace::info!("data: Started database management service");
         dbms
     }
 
     async fn create_coord(&self, meta: MetaRef, kv: Option<EngineRef>) -> CoordinatorRef {
         let _options = tskv::Options::from(&self.config);
-
+        trace::info!("data: Starting coordinator service");
         let coord: CoordinatorRef = CoordService::new(
             self.runtime.clone(),
             kv,
@@ -296,7 +300,7 @@ impl ServiceBuilder {
             self.metrics_register.clone(),
         )
         .await;
-
+        trace::info!("data: Started coordinator service");
         coord
     }
 

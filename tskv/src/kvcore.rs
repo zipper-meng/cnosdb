@@ -81,6 +81,7 @@ impl TsKv {
         let (global_seq_task_sender, global_seq_task_receiver) =
             mpsc::channel::<GlobalSequenceTask>(GLOBAL_TASK_REQ_CHANNEL_CAP);
         let (close_sender, _close_receiver) = broadcast::channel(1);
+        info!("tskv: Starting summary recovery");
         let (version_set, summary) = Self::recover_summary(
             runtime.clone(),
             memory_pool.clone(),
@@ -92,6 +93,7 @@ impl TsKv {
             metrics.clone(),
         )
         .await;
+        info!("tskv: Completed summary recovery");
         let global_seq_ctx = version_set.read().await.get_global_sequence_context().await;
         let global_seq_ctx = Arc::new(global_seq_ctx);
 
@@ -112,8 +114,11 @@ impl TsKv {
             metrics,
         };
 
+        info!("tskv: Starting wal recovery");
         let wal_manager = core.recover_wal().await;
         core.run_wal_job(wal_manager, wal_receiver);
+        info!("tskv: Completed wal recovery");
+        info!("tskv: Starting background job: flush");
         core.run_flush_job(
             flush_task_receiver,
             summary.global_context(),
@@ -122,6 +127,7 @@ impl TsKv {
             summary_task_sender.clone(),
             compact_task_sender.clone(),
         );
+        info!("tskv: Starting background job: compaction");
         compaction::job::run(
             shared_options.storage.clone(),
             runtime,
@@ -132,7 +138,9 @@ impl TsKv {
             summary.version_set(),
             summary_task_sender.clone(),
         );
+        info!("tskv: Starting background job: summary");
         core.run_summary_job(summary, summary_task_receiver);
+        info!("tskv: Starting background job: global_context");
         context::run_global_context_job(
             core.runtime.clone(),
             global_seq_task_receiver,

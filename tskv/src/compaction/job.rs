@@ -138,7 +138,7 @@ pub fn run(
                 let ctx = ctx.clone();
                 let seq_ctx = seq_ctx.clone();
                 let version_set = version_set.clone();
-                let compact_task_sender = compact_task_sender.clone();
+                let _compact_task_sender = compact_task_sender.clone();
                 let summary_task_sender = summary_task_sender.clone();
                 let vnode_compacting_map = vnode_compacting_map.clone();
                 runtime_inner.spawn(async move {
@@ -226,11 +226,11 @@ pub fn run(
                                     }
                                 }
                                 // Send a normal compact request if it's a delta compaction.
-                                if let CompactTask::Delta(vnode_id) = &compact_task {
-                                    let _ = compact_task_sender
-                                        .send(CompactTask::Normal(*vnode_id))
-                                        .await;
-                                }
+                                // if let CompactTask::Delta(vnode_id) = &compact_task {
+                                //     let _ = compact_task_sender
+                                //         .send(CompactTask::Normal(*vnode_id))
+                                //         .await;
+                                // }
                             }
                             Ok(None) => {
                                 info!("Compaction There is nothing to compact.");
