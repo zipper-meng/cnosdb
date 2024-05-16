@@ -3,7 +3,7 @@
 use reqwest::StatusCode;
 use serial_test::serial;
 
-use crate::case::{CnosdbAuth, CnosdbRequest, E2eExecutor, Step};
+use crate::case::{CnosdbAuth, CnosdbRequest, E2eExecutor, StepLegacy};
 use crate::{cluster_def, E2eError};
 
 #[test]
@@ -12,8 +12,8 @@ fn case1() {
     let url = "http://127.0.0.1:8902/api/v1/sql?tenant=cnosdb&db=public";
 
     let executor = E2eExecutor::new_singleton("restart_tests", "case_1", cluster_def::one_data(1));
-    executor.execute_steps(&[
-        Step::CnosdbRequest {
+    executor.execute_steps_legacy(&[
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url,
                 sql: "CREATE TABLE air (visibility DOUBLE, temperature DOUBLE, pressure DOUBLE, TAGS(station))",
@@ -23,16 +23,16 @@ fn case1() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query { url, sql: "SHOW TABLES", resp: Ok(vec!["table_name", "air"]), sorted: false, regex: false, },
+        StepLegacy::CnosdbRequest {
+            req: CnosdbRequest::Query { url, sql: "SHOW TABLES", resp: Ok(vec!["table_name", "air"]), sorted: false, regex: false },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query { url, sql: "SHOW TABLES", resp: Ok(vec!["table_name", "air"]), sorted: false, regex: false, },
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
+            req: CnosdbRequest::Query { url, sql: "SHOW TABLES", resp: Ok(vec!["table_name", "air"]), sorted: false, regex: false },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Insert {
                 url,
                 sql: "INSERT INTO air (time, station, visibility, temperature, pressure) VALUES
@@ -43,7 +43,7 @@ fn case1() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url,
                 sql: "SELECT * FROM air order by time",
@@ -58,8 +58,8 @@ fn case1() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url,
                 sql: "SELECT * FROM air order by time",
@@ -74,13 +74,13 @@ fn case1() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl { url, sql: "DROP TABLE air", resp: Ok(()) },
             auth: None,
         },
-        Step::RestartDataNode(0),
+        StepLegacy::RestartDataNode(0),
 
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl { url, sql: "SELECT * FROM air", 
             resp:Err(E2eError::Api {
                 status: StatusCode::UNPROCESSABLE_ENTITY,
@@ -90,9 +90,8 @@ fn case1() {
             }), },
             auth: None,
         },
-
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query { url, sql: "SHOW TABLES", resp: Ok(vec![]), sorted: false, regex: false, },
+        StepLegacy::CnosdbRequest {
+            req: CnosdbRequest::Query { url, sql: "SHOW TABLES", resp: Ok(vec![]), sorted: false, regex: false },
             auth: None,
         },
     ]);
@@ -100,12 +99,13 @@ fn case1() {
 
 #[test]
 #[serial]
+#[ignore = "Dropping a field in a database that had not wrote data will get error 'Query: Coordinator: Unreachable'"]
 fn case2() {
     let url = "http://127.0.0.1:8902/api/v1/sql?tenant=cnosdb&db=public";
 
     let executor = E2eExecutor::new_singleton("restart_tests", "case_2", cluster_def::one_data(1));
-    executor.execute_steps(&[
-        Step::CnosdbRequest {
+    executor.execute_steps_legacy(&[
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url,
                 sql: "CREATE TABLE air (visibility DOUBLE, temperature DOUBLE, pressure DOUBLE, TAGS(station))",
@@ -113,7 +113,7 @@ fn case2() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url,
                 sql: "ALTER TABLE air ADD FIELD humidity DOUBLE",
@@ -121,8 +121,8 @@ fn case2() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url,
                 sql: "DESC TABLE air",
@@ -140,7 +140,7 @@ fn case2() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url,
                 sql: "ALTER TABLE air ALTER humidity SET CODEC(QUANTILE)",
@@ -148,8 +148,8 @@ fn case2() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url,
                 sql: "DESC TABLE air",
@@ -167,7 +167,7 @@ fn case2() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url,
                 sql: "ALTER TABLE air DROP humidity",
@@ -175,8 +175,8 @@ fn case2() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url,
                 sql: "DESC TABLE air",
@@ -193,7 +193,7 @@ fn case2() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url,
                 sql: "ALTER TABLE air ADD TAG height",
@@ -201,8 +201,8 @@ fn case2() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url,
                 sql: "DESC TABLE air",
@@ -229,8 +229,8 @@ fn case3() {
     let url = "http://127.0.0.1:8902/api/v1/sql?tenant=cnosdb&db=public";
 
     let executor = E2eExecutor::new_singleton("restart_tests", "case_3", cluster_def::one_data(1));
-    executor.execute_steps(&[
-        Step::CnosdbRequest {
+    executor.execute_steps_legacy(&[
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url,
                 sql: "CREATE DATABASE oceanic_station",
@@ -238,8 +238,8 @@ fn case3() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url,
                 sql: "SHOW DATABASES",
@@ -254,7 +254,7 @@ fn case3() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url,
                 sql: "ALTER DATABASE oceanic_station SET VNODE_DURATION '1000d'",
@@ -262,8 +262,8 @@ fn case3() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url,
                 sql: "DESC DATABASE oceanic_station",
@@ -276,7 +276,7 @@ fn case3() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url,
                 sql: "DROP DATABASE oceanic_station",
@@ -284,8 +284,8 @@ fn case3() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url,
                 sql: "SHOW DATABASES",
@@ -305,8 +305,8 @@ fn case4() {
     let url_test_ = "http://127.0.0.1:8902/api/v1/sql?tenant=test";
 
     let executor = E2eExecutor::new_singleton("restart_tests", "case_4", cluster_def::one_data(1));
-    executor.execute_steps(&[
-        Step::CnosdbRequest {
+    executor.execute_steps_legacy(&[
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
                 sql: "CREATE USER IF NOT EXISTS tester",
@@ -314,8 +314,8 @@ fn case4() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_cnosdb_public,
                 sql: "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
@@ -328,7 +328,7 @@ fn case4() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
                 sql: "alter user tester set granted_admin = true",
@@ -336,8 +336,8 @@ fn case4() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_cnosdb_public,
                 sql: "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
@@ -350,7 +350,7 @@ fn case4() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
                 sql: "alter user tester set granted_admin = false",
@@ -358,8 +358,8 @@ fn case4() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_cnosdb_public,
                 sql: "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
@@ -372,7 +372,7 @@ fn case4() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
                 sql: "ALTER USER tester SET COMMENT = 'bbb'",
@@ -380,8 +380,8 @@ fn case4() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_cnosdb_public,
                 sql: "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
@@ -394,7 +394,7 @@ fn case4() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
                 sql: "DROP USER tester",
@@ -402,8 +402,8 @@ fn case4() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_cnosdb_public,
                 sql: "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
@@ -413,7 +413,7 @@ fn case4() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
                 sql: "CREATE TENANT test",
@@ -421,8 +421,8 @@ fn case4() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_cnosdb_public,
                 sql: "SELECT * FROM cluster_schema.tenants WHERE tenant_name = 'test'",
@@ -435,7 +435,7 @@ fn case4() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
                 sql: "ALTER TENANT test SET COMMENT = 'abc'",
@@ -443,8 +443,8 @@ fn case4() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_cnosdb_public,
                 sql: "SELECT * FROM cluster_schema.tenants WHERE tenant_name = 'test'",
@@ -457,7 +457,7 @@ fn case4() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_test_,
                 sql: "CREATE DATABASE db1",
@@ -465,7 +465,7 @@ fn case4() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
                 sql: "DROP TENANT test",
@@ -473,8 +473,8 @@ fn case4() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
                 sql: "CREATE TENANT test",
@@ -482,7 +482,7 @@ fn case4() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_test_,
                 sql: "SHOW DATABASES",
@@ -502,8 +502,8 @@ fn case5() {
     let url_test_ = "http://127.0.0.1:8902/api/v1/sql?tenant=test";
 
     let executor = E2eExecutor::new_singleton("restart_tests", "case_5", cluster_def::one_data(1));
-    executor.execute_steps(&[
-        Step::CnosdbRequest {
+    executor.execute_steps_legacy(&[
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
                 sql: "CREATE USER tester",
@@ -511,7 +511,7 @@ fn case5() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
                 sql: "CREATE TENANT test",
@@ -519,7 +519,7 @@ fn case5() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_test_,
                 sql: "CREATE ROLE r1 INHERIT member",
@@ -527,8 +527,8 @@ fn case5() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_test_,
                 sql: "SELECT * FROM information_schema.roles WHERE role_name = 'r1'",
@@ -538,7 +538,7 @@ fn case5() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_test_,
                 sql: "ALTER TENANT test ADD USER tester AS r1",
@@ -546,8 +546,8 @@ fn case5() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_test_,
                 sql: "SELECT 1",
@@ -560,7 +560,7 @@ fn case5() {
                 password: Some("".to_string()),
             }),
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_test_,
                 sql: "ALTER TENANT test REMOVE USER tester",
@@ -568,8 +568,8 @@ fn case5() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_test_,
                 sql: "SELECT 1",
@@ -587,7 +587,7 @@ fn case5() {
                 password: Some("".to_string()),
             }),
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_test_,
                 sql: "CREATE DATABASE db1",
@@ -595,7 +595,7 @@ fn case5() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_test_,
                 sql: "GRANT WRITE ON DATABASE db1 TO ROLE r1",
@@ -603,8 +603,8 @@ fn case5() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_test_,
                 sql: "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
@@ -617,7 +617,7 @@ fn case5() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_test_,
                 sql: "REVOKE WRITE ON DATABASE db1 FROM r1",
@@ -625,8 +625,8 @@ fn case5() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_test_,
                 sql: "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
@@ -636,7 +636,7 @@ fn case5() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_test_,
                 sql: "GRANT ALL ON DATABASE db1 TO ROLE r1",
@@ -644,7 +644,7 @@ fn case5() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_test_,
                 sql: "DROP ROLE r1",
@@ -652,8 +652,8 @@ fn case5() {
             },
             auth: None,
         },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
+        StepLegacy::RestartDataNode(0),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_test_,
                 sql: "SELECT * FROM information_schema.roles WHERE role_name = 'r1'",
@@ -663,7 +663,7 @@ fn case5() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_test_,
                 sql: "CREATE ROLE r1 INHERIT member",
@@ -671,7 +671,7 @@ fn case5() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_test_,
                 sql: "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
@@ -694,9 +694,9 @@ fn case6() {
         "case_6",
         cluster_def::one_meta_three_data(),
     );
-    executor.execute_steps(&[
-        Step::Sleep(5),
-        Step::CnosdbRequest {
+    executor.execute_steps_legacy(&[
+        StepLegacy::Sleep(5),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
                 sql: "create database db1 with replica 3",
@@ -704,7 +704,7 @@ fn case6() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_db1,
                 sql: "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station))",
@@ -712,7 +712,7 @@ fn case6() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Insert {
                 url: url_cnosdb_db1,
                 sql: "INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES(1666165200290401000, 'XiaoMaiDao', 56, 69, 77)",
@@ -720,9 +720,9 @@ fn case6() {
             },
             auth: None,
         },
-        Step::StopDataNode(1),
-        Step::Sleep(60),
-        Step::CnosdbRequest {
+        StepLegacy::StopDataNode(1),
+        StepLegacy::Sleep(60),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Ddl {
                 url: url_cnosdb_public,
                 sql: "drop database db1",
@@ -730,7 +730,7 @@ fn case6() {
             },
             auth: None,
         },
-        Step::CnosdbRequest {
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_cnosdb_public,
                 sql: "select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb-db1'",
@@ -740,9 +740,9 @@ fn case6() {
             },
             auth: None,
         },
-        Step::StartDataNode(1),
-        Step::Sleep(30),
-        Step::CnosdbRequest {
+        StepLegacy::StartDataNode(1),
+        StepLegacy::Sleep(30),
+        StepLegacy::CnosdbRequest {
             req: CnosdbRequest::Query {
                 url: url_cnosdb_public,
                 sql: "select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb-db1'",

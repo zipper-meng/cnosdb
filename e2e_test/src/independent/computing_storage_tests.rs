@@ -3,7 +3,7 @@
 use reqwest::StatusCode;
 use serial_test::serial;
 
-use crate::case::{CnosdbRequest, E2eExecutor, Step};
+use crate::case::{CnosdbRequest, E2eExecutor, StepLegacy as Step};
 use crate::{cluster_def, E2eError};
 
 //auto test about issue 669 799 842
@@ -15,7 +15,7 @@ fn separated_start_test() {
         "separated_start_test",
         cluster_def::one_meta_two_data_separated(),
     );
-    executor.execute_steps(&[
+    executor.execute_steps_legacy(&[
         Step::CnosdbRequest {
             req: CnosdbRequest::Write {
                 url: "http://127.0.0.1:8902/api/v1/write?db=public",
@@ -75,7 +75,7 @@ fn meta_primary_crash_test() {
         cluster_def::three_meta_two_data_bundled(),
     );
 
-    executor.execute_steps(&[
+    executor.execute_steps_legacy(&[
         Step::Sleep(10),
         Step::StopMetaNode(0),
         Step::Sleep(50),

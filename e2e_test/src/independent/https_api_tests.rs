@@ -9,7 +9,7 @@ use http_protocol::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
 use reqwest::{Method, StatusCode};
 use serial_test::serial;
 
-use crate::case::{CnosdbRequest, E2eExecutor, Step};
+use crate::case::{CnosdbRequest, E2eExecutor, StepLegacy as Step};
 use crate::utils::{
     build_data_node_config, copy_cnosdb_server_certificate, get_workspace_dir, kill_all,
     run_singleton, Client,
@@ -334,10 +334,10 @@ fn es_api_test() {
     let executor =
         E2eExecutor::new_singleton("api_router_tests", "es_api_test", cluster_def::one_data(1));
 
-    executor.execute_steps(&[
+    executor.execute_steps_legacy(&[
         Step::CnosdbRequest {
             req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/write", 
+                url: "http://127.0.0.1:8902/api/v1/es/write",
                 req: r#"{"create":{}}
                 {"msg":"test"}"#,
                 resp: Err(E2eError::Api {
@@ -351,7 +351,7 @@ fn es_api_test() {
         },
         Step::CnosdbRequest { // no time_column, no tag_columns
             req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/write?table=test1", 
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test1",
                 req: r#"{"create":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
                 resp: Ok("".to_string()),
@@ -360,7 +360,7 @@ fn es_api_test() {
         },
         Step::CnosdbRequest { // no time_column, one tag_columns
             req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/write?table=test2&tag_columns=name", 
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test2&tag_columns=name",
                 req: r#"{"create":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
                 resp: Ok("".to_string()),
@@ -378,7 +378,7 @@ fn es_api_test() {
         },
         Step::CnosdbRequest { // time_column, multi tag_columns
             req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/write?table=test4&time_column=date&tag_columns=name,sex", 
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test4&time_column=date&tag_columns=name,sex",
                 req: r#"{"create":{}}
                 {"date":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
                 resp: Ok("".to_string()),
@@ -387,7 +387,7 @@ fn es_api_test() {
         },
         Step::CnosdbRequest { // no time, no tag_columns
             req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/write?table=test5", 
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test5",
                 req: r#"{"create":{}}
                 {"name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
                 resp: Ok("".to_string()),
@@ -396,7 +396,7 @@ fn es_api_test() {
         },
         Step::CnosdbRequest { // no time, multi tag_columns
             req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/write?table=test6&tag_columns=name,sex", 
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test6&tag_columns=name,sex",
                 req: r#"{"create":{}}
                 {"name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
                 resp: Ok("".to_string()),
@@ -405,7 +405,7 @@ fn es_api_test() {
         },
         Step::CnosdbRequest { // nest json, multi tag_columns
             req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/write?table=test7&tag_columns=name,age,is_student", 
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test7&tag_columns=name,age,is_student",
                 req: r#"{"create":{}}
                 {"time": "2021-01-01T00:00:00Z","name": "John Doe","age": 43,"is_student": false,"address": {"street": "123 Main Street","city": "Springfield","state": "IL","zip": {"code": 62701}},"children": [{"name": "Jane Doe","age": 7,"is_student": {"grade": 2},"shoes": [{"brand": "Nike","size": 7},{"brand": "Adidas","size": 8}]},{"name": "Dave Doe","age": 12}]}"#,
                 resp: Ok("".to_string()),
@@ -414,7 +414,7 @@ fn es_api_test() {
         },
         Step::CnosdbRequest { // create and index
             req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/write?table=test8", 
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test8",
                 req: r#"{"create":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
                 {"index":{}}
@@ -425,7 +425,7 @@ fn es_api_test() {
         },
         Step::CnosdbRequest { // index and create
             req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/write?table=test9", 
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test9",
                 req: r#"{"index":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
                 {"create":{}}
@@ -436,7 +436,7 @@ fn es_api_test() {
         },
         Step::CnosdbRequest { // create and create
             req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/write?table=test10", 
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test10",
                 req: r#"{"create":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
                 {"create":{}}
@@ -447,7 +447,7 @@ fn es_api_test() {
         },
         Step::CnosdbRequest { // index and index
             req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/write?table=test11", 
+                url: "http://127.0.0.1:8902/api/v1/es/write?table=test11",
                 req: r#"{"index":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
                 {"index":{}}

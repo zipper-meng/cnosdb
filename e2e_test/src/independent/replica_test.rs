@@ -1,6 +1,6 @@
 #[cfg(test)]
 pub mod test {
-    use std::sync::{Arc, Mutex};
+    use std::sync::Arc;
 
     use http_protocol::status_code;
     use meta::model::meta_admin::AdminMeta;
@@ -8,7 +8,7 @@ pub mod test {
     use rand::Rng;
 
     use crate::cluster_def;
-    use crate::utils::{data_config_file_path, kill_process, run_cluster, Client};
+    use crate::utils::{kill_process, run_cluster, Client};
     const SERVER_URL: &str = "http://127.0.0.1:8902/api/v1/sql?db=replica_test_db";
 
     fn _time_str() -> String {
@@ -102,13 +102,8 @@ pub mod test {
             true,
         );
         std::thread::sleep(std::time::Duration::from_secs(2));
-        let data_server = Arc::new(Mutex::new(data_server.unwrap()));
-        let file_name = data_server.lock().unwrap().data_node_definitions[0]
-            .config_file_name
-            .clone();
-        let config_file = data_config_file_path("replica_test", &file_name);
-
-        let config = config::get_config(config_file).unwrap();
+        let data_server = data_server.unwrap();
+        let config = data_server.data_node_configs[0].clone();
         let meta = runtime.block_on(AdminMeta::new(config));
         let meta_client = runtime.block_on(meta.tenant_meta("cnosdb")).unwrap();
 
