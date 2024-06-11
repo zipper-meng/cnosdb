@@ -3,7 +3,7 @@ use std::fmt::Display;
 use std::sync::Arc;
 
 use models::predicate::domain::{TimeRange, TimeRanges};
-use models::{FieldId, Timestamp, ValueType};
+use models::{utils as model_utils, FieldId, Timestamp, ValueType};
 use utils::BloomFilter;
 
 use crate::byte_utils::{decode_be_i64, decode_be_u16, decode_be_u32, decode_be_u64};
@@ -58,6 +58,18 @@ impl Index {
     /// Get field_ids and the offset of their IndexMeta in index-block.
     pub fn field_id_offs(&self) -> &[(FieldId, usize)] {
         self.field_id_offs.as_slice()
+    }
+
+    /// Todo
+    pub fn field_id_offs_sorted_by_series_id(&self) -> Vec<(FieldId, usize)> {
+        let mut field_id_offs = self.field_id_offs.clone();
+        field_id_offs.sort_by(|(a, _), (b, _)| {
+            match model_utils::low(*a).cmp(&model_utils::low(*b)) {
+                cmp::Ordering::Equal => model_utils::low(*a).cmp(&model_utils::low(*b)),
+                other => other,
+            }
+        });
+        field_id_offs
     }
 }
 
@@ -385,6 +397,40 @@ impl BlockEntry {
             offset: decode_be_u64(&data[20..28]),
             size: decode_be_u64(&data[28..36]),
             val_offset: decode_be_u64(&data[36..44]),
+        }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+
+    #[test]
+    fn test_index_field_id_offs_sorted_by_series_id() {
+        let index = Index {
+            tsm_id: 0,
+            bloom_filter: Arc::new(BloomFilter::new(8)),
+            data: vec![],
+            field_id_offs: vec![
+                (model_utils::unite_id(1, 1), 0),
+                (model_utils::unite_id(1, 2), 0),
+                (model_utils::unite_id(1, 3), 0),
+                (model_utils::unite_id(2, 1), 0),
+                (model_utils::unite_id(2, 2), 0),
+                (model_utils::unite_id(2, 3), 0),
+            ],
+        };
+        for i in 0..index.field_id_offs.len() - 1 {
+            assert!(index.field_id_offs[i].0 < index.field_id_offs[i + 1].0);
+        }
+        let field_id_offs_sorted_by_series_id = index.field_id_offs_sorted_by_series_id();
+        assert_eq!(
+            field_id_offs_sorted_by_series_id.len(),
+            index.field_id_offs.len()
+        );
+
+        for i in 0..index.field_id_offs.len() - 1 {
+            assert!(index.field_id_offs[i].0 < index.field_id_offs[i + 1].0);
         }
     }
 }

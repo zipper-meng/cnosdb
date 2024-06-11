@@ -274,9 +274,11 @@ impl TsKv {
 
         async fn on_tick_check_total_size(
             version_set: Arc<RwLock<VersionSet>>,
+            global_seq_ctx: Arc<GlobalSequenceContext>,
             wal_manager: &mut WalManager,
             check_to_flush_duration: &Duration,
             check_to_flush_instant: &mut Instant,
+            vnode_state: &mut HashMap<TseriesFamilyId, (u64, Option<Instant>)>,
         ) {
             // TODO(zipper): This is not a good way to prevent too frequent flushing.
             if check_to_flush_instant.elapsed().lt(check_to_flush_duration) {
@@ -284,7 +286,50 @@ impl TsKv {
             }
             *check_to_flush_instant = Instant::now();
             if wal_manager.is_total_file_size_exceed() {
+                let summary_vnode_seq_map = global_seq_ctx.cloned();
+                let mut vnodes_to_flush = Vec::new();
+                for (vnode_id, (flush_seq, flush_inst)) in vnode_state.iter_mut() {
+                    if let Some(inst) = flush_inst {
+                        if inst.elapsed().gt(check_to_flush_duration) {
+                            vnodes_to_flush.push(vnode_id);
+                        } else if let Some(summary_seq) = summary_vnode_seq_map.get(vnode_id) {
+                            if *summary_seq > *flush_seq {
+                                vnodes_to_flush.push(vnode_id);
+                                *flush_seq = *summary_seq;
+                            }
+                        }
+                    }
+                    *flush_inst = Some(Instant::now());
+                }
+
                 warn!("WAL total file size({}) exceed flush_trigger_total_file_size, force flushing all vnodes.", wal_manager.total_file_size());
+                let vnode_seq_no_map = global_seq_ctx.cloned();
+                let min_seq_no = global_seq_ctx.min_seq();
+                let vnodes = {
+                    let vs_rlock = version_set.read().await;
+                    let databases: Vec<Arc<RwLock<Database>>> =
+                        vs_rlock.get_all_db().values().cloned().collect();
+                    drop(vs_rlock);
+                    for db in databases {
+                        let db_rlock = db.read().await;
+                        let vnodes: Vec<Arc<RwLock<TseriesFamily>>> =
+                            db_rlock.ts_families().values().cloned().collect();
+                        drop(db_rlock);
+                        for vn in vnodes {
+                            let vn_rlock = vn.read().await;
+                            if let Some(seq) = vnode_seq_no_map.get(&vn_rlock.tf_id()) {
+                                if vn_rlock.seq_no() < *seq {
+                                    //
+                                } else {
+                                    // Already flushed, ignore.
+                                }
+                            } else {
+                                // New vnode, ignore.
+                            }
+                        }
+                    }
+                };
+
                 version_set.read().await.send_flush_req().await;
                 wal_manager.check_to_delete().await;
             }
@@ -299,6 +344,7 @@ impl TsKv {
         }
 
         info!("Job 'WAL' starting.");
+        let global_seq_ctx = self.global_seq_ctx.clone();
         let version_set = self.version_set.clone();
         let mut close_receiver = self.close_sender.subscribe();
         self.runtime.spawn(async move {
@@ -308,6 +354,7 @@ impl TsKv {
             let mut check_total_size_ticker = tokio::time::interval(Duration::from_secs(10));
             let check_to_flush_duration = Duration::from_secs(3600);
             let mut check_to_flush_instant = Instant::now();
+            let mut vnode_state: HashMap<TseriesFamilyId, (u64, Option<Instant>)> = HashMap::new();
             if sync_interval == Duration::ZERO {
                 loop {
                     tokio::select! {
@@ -321,8 +368,12 @@ impl TsKv {
                         }
                         _ = check_total_size_ticker.tick() => {
                             on_tick_check_total_size(
-                                version_set.clone(), &mut wal_manager,
-                                &check_to_flush_duration, &mut check_to_flush_instant,
+                                version_set.clone(),
+                                global_seq_ctx.clone(),
+                                &mut wal_manager,
+                                &check_to_flush_duration,
+                                &mut check_to_flush_instant,
+                                &mut vnode_state,
                             ).await;
                         }
                         _ = close_receiver.recv() => {
@@ -348,8 +399,12 @@ impl TsKv {
                         }
                         _ = check_total_size_ticker.tick() => {
                             on_tick_check_total_size(
-                                version_set.clone(), &mut wal_manager,
-                                &check_to_flush_duration, &mut check_to_flush_instant,
+                                version_set.clone(),
+                                global_seq_ctx.clone(),
+                                &mut wal_manager,
+                                &check_to_flush_duration,
+                                &mut check_to_flush_instant,
+                                &mut vnode_state,
                             ).await;
                         }
                         _ = close_receiver.recv() => {

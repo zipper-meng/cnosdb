@@ -9,7 +9,7 @@ use datafusion::arrow::record_batch::RecordBatch;
 use futures::Future;
 use tokio::runtime::Runtime;
 use tokio::sync::mpsc::{Receiver, Sender};
-use tokio::sync::{oneshot, OwnedSemaphorePermit, RwLock, Semaphore};
+use tokio::sync::{oneshot, Mutex, OwnedSemaphorePermit, RwLock, Semaphore};
 use trace::{debug, error, info, warn};
 
 use crate::compaction::{picker, CompactTask};
@@ -167,7 +167,7 @@ impl CompactionJob {
                                 .await
                                 .insert(vnode_id, compaction_info.clone());
                             let compacting_vnodes_ref = compacting_vnodes.clone();
-                            let d = DeferGuard::new(runtime_ref.clone(), async move {
+                            let d = AsyncDeferGuard::new(runtime_ref.clone(), async move {
                                 compacting_vnodes_ref.write().await.remove(&vnode_id);
                             });
                             (t, d, compaction_info)
@@ -200,7 +200,7 @@ impl CompactionJob {
         context: Arc<CompactionContext>,
         compaction_info: VnodeCompactionInfo,
         _permit: OwnedSemaphorePermit,
-        _after_compact: DeferGuard<impl Future<Output = ()> + Send>,
+        _after_compact: AsyncDeferGuard<impl Future<Output = ()> + Send>,
     ) {
         let start = Instant::now();
 
@@ -295,12 +295,12 @@ impl CompactionJob {
     }
 }
 
-pub struct DeferGuard<F: Future<Output = ()> + Send + 'static> {
+pub struct AsyncDeferGuard<F: Future<Output = ()> + Send + 'static> {
     runtime: Arc<Runtime>,
     f: Option<F>,
 }
 
-impl<F: Future<Output = ()> + Send + 'static> DeferGuard<F> {
+impl<F: Future<Output = ()> + Send + 'static> AsyncDeferGuard<F> {
     pub fn new(runtime: Arc<Runtime>, f: F) -> Self {
         Self {
             runtime,
@@ -309,7 +309,7 @@ impl<F: Future<Output = ()> + Send + 'static> DeferGuard<F> {
     }
 }
 
-impl<F: Future<Output = ()> + Send + 'static> Drop for DeferGuard<F> {
+impl<F: Future<Output = ()> + Send + 'static> Drop for AsyncDeferGuard<F> {
     fn drop(&mut self) {
         if let Some(f) = self.f.take() {
             self.runtime.spawn(f);
@@ -329,11 +329,11 @@ impl CompactionInfoManager {
         }
     }
 
-    pub async fn vnodes_owned(&self) -> HashMap<TseriesFamilyId, VnodeCompactionInfoInner> {
-        let vnodes = self.vnodes.read().await;
-        let mut vnodes_owned = HashMap::with_capacity(vnodes.len());
-        for (vnode_id, vnode_info) in vnodes.iter() {
-            vnodes_owned.insert(*vnode_id, vnode_info.inner_owned().await);
+    pub async fn vnodes_owned(&self) -> Vec<VnodeCompactionInfoInner> {
+        let vnodes: Vec<VnodeCompactionInfo> = self.vnodes.read().await.values().cloned().collect();
+        let mut vnodes_owned = Vec::with_capacity(vnodes.len());
+        for vnode_info in vnodes {
+            vnodes_owned.push(vnode_info.inner_owned().await);
         }
         vnodes_owned
     }
@@ -343,8 +343,8 @@ impl CompactionInfoManager {
         let mut start_times = Time32SecondBuilder::new();
         let mut states = StringBuilder::new();
         let vnode_compaction_infos = self.vnodes_owned().await;
-        for (vnode_id, compaction_info) in vnode_compaction_infos.iter() {
-            vnode_ids.append_value(*vnode_id);
+        for compaction_info in vnode_compaction_infos {
+            vnode_ids.append_value(compaction_info.vnode_id);
             start_times.append_value(compaction_info.start_time().elapsed().as_secs() as i32);
             states.append_value(compaction_info.state().as_str());
         }
@@ -375,11 +375,11 @@ impl Default for CompactionInfoManager {
 }
 
 #[derive(Clone)]
-pub struct VnodeCompactionInfo(pub Arc<RwLock<VnodeCompactionInfoInner>>);
+pub struct VnodeCompactionInfo(pub Arc<Mutex<VnodeCompactionInfoInner>>);
 
 impl VnodeCompactionInfo {
     fn new(vnode_id: TseriesFamilyId) -> Self {
-        Self(Arc::new(RwLock::new(VnodeCompactionInfoInner {
+        Self(Arc::new(Mutex::new(VnodeCompactionInfoInner {
             vnode_id,
             start_time: Instant::now(),
             state: VnodeCompactionState::Starting,
@@ -387,23 +387,11 @@ impl VnodeCompactionInfo {
     }
 
     async fn change_state(&self, state: VnodeCompactionState) {
-        self.inner_write().await.state = state;
-    }
-
-    fn inner(&self) -> Arc<RwLock<VnodeCompactionInfoInner>> {
-        self.0.clone()
-    }
-
-    async fn inner_read(&self) -> tokio::sync::RwLockReadGuard<'_, VnodeCompactionInfoInner> {
-        self.0.read().await
-    }
-
-    async fn inner_write(&self) -> tokio::sync::RwLockWriteGuard<'_, VnodeCompactionInfoInner> {
-        self.0.write().await
+        self.0.lock().await.state = state;
     }
 
     async fn inner_owned(&self) -> VnodeCompactionInfoInner {
-        self.0.read().await.clone()
+        self.0.lock().await.clone()
     }
 }
 
