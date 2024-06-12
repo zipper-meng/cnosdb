@@ -1,10 +1,10 @@
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use models::codec::Encoding;
-use models::{utils as model_utils, ColumnId, FieldId, SeriesId, Timestamp, ValueType};
+use models::{FieldId, SeriesId, Timestamp, ValueType};
 use parking_lot::RwLock;
 use snafu::ResultExt;
 use tokio::sync::mpsc::Sender;
@@ -16,6 +16,7 @@ use utils::BloomFilter;
 use crate::compaction::{CompactTask, FlushReq};
 use crate::context::{GlobalContext, GlobalSequenceContext};
 use crate::error::{self, Result};
+use crate::memcache::iterator::{SeriesDataFieldValues, SeriesDataFieldValuesBuilder};
 use crate::memcache::{FieldVal, MemCache, SeriesData};
 use crate::summary::{CompactMeta, CompactMetaBuilder, SummaryTask, VersionEdit};
 use crate::tsm::codec::DataBlockEncoding;
@@ -65,8 +66,8 @@ impl FlushTask {
         }
         // TODO(zipper, delta_compaction): this changed the order of fields in a tsm file.
         // For old tsm file , field_ids are not ordered, so cannot use delta-compaction cache.
-        let mut flushing_mems_data: BTreeMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>> =
-            BTreeMap::new();
+        let mut flushing_mems_data: HashMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>> =
+            HashMap::new();
         let flushing_mems_len = flushing_mems.len();
         for mem in flushing_mems.into_iter() {
             let seq_no = mem.seq_no();
@@ -108,53 +109,29 @@ impl FlushTask {
     /// (Sometimes one of the two file type.), returns `CompactMeta`s of the wrote files.
     async fn flush_mem_caches(
         &self,
-        caches_data: BTreeMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>>,
+        caches_data: HashMap<SeriesId, Vec<Arc<RwLock<SeriesData>>>>,
         max_data_block_size: usize,
     ) -> Result<Option<(CompactMeta, Arc<BloomFilter>)>> {
         let mut writer = WriterWrapper::new(self.ts_family_id, max_data_block_size);
 
-        type FlushingData = (Vec<(Timestamp, FieldVal)>, ValueType, Encoding);
-        let mut column_values_map: HashMap<ColumnId, FlushingData> = HashMap::new();
-        let mut field_values_map: BTreeMap<FieldId, FlushingData> = BTreeMap::new();
-        for (sid, series_datas) in caches_data {
-            column_values_map.clear();
-
+        let mut field_values: BTreeSet<SeriesDataFieldValues> = BTreeSet::new();
+        for series_datas in caches_data.values() {
             // Iterates [ MemCache ] -> next_series_id -> [ SeriesData ]
             for series_data in series_datas {
-                // Iterates SeriesData -> [ RowGroups{ schema_id, schema, [ RowData ] } ]
-                for (_sch_id, sch_cols, rows) in series_data.read().flat_groups() {
-                    // Iterates [ RowData ]
-                    for row in rows.iter() {
-                        // Iterates RowData -> [ Option<FieldVal>, column_id ]
-                        for (val, col) in row.fields.iter().zip(sch_cols.fields().iter()) {
-                            if let Some(v) = val {
-                                let (values, _, _) =
-                                    column_values_map.entry(col.id).or_insert_with(|| {
-                                        // Use the first column value to determine the value type and encoding.
-                                        (Vec::with_capacity(64), v.value_type(), col.encoding)
-                                    });
-                                values.push((row.ts, v.clone()));
-                            }
-                        }
-                    }
+                // Build lazy field value extractor.
+                if let Some(builder) = SeriesDataFieldValuesBuilder::try_new(series_data.read()) {
+                    field_values.extend(builder.build());
                 }
-            }
-
-            for (cid, (mut values, value_type, encoding)) in column_values_map.drain() {
-                // Sort by timestamp.
-                values.sort_by_key(|a| a.0);
-                // Dedup by timestamp.
-                utils::dedup_front_by_key(&mut values, |a| a.0);
-
-                let fid = model_utils::unite_id(cid, sid);
-                field_values_map.insert(fid, (values, value_type, encoding));
             }
         }
 
-        for (field_id, (values, value_type, encoding)) in field_values_map {
-            let encoding = DataBlockEncoding::new(Encoding::Default, encoding);
+        let mut values = Vec::new();
+        for fv in field_values.iter() {
+            values.clear();
+            let (val_typ, val_enc) = fv.get(&mut values);
+            let encoding = DataBlockEncoding::new(Encoding::Default, val_enc);
             writer
-                .write_field(field_id, values, value_type, encoding, self)
+                .write_field(fv.field_id(), &values, val_typ, encoding, self)
                 .await?;
         }
 
@@ -296,7 +273,7 @@ impl WriterWrapper {
     pub async fn write_field(
         &mut self,
         field_id: FieldId,
-        values: Vec<(Timestamp, FieldVal)>,
+        values: &[(Timestamp, FieldVal)],
         value_type: ValueType,
         encoding: DataBlockEncoding,
         flush_task: &FlushTask,
@@ -320,7 +297,7 @@ impl WriterWrapper {
         // Fill buffer and write to disk if buffer is full.
         for (ts, val) in values {
             let buffer = &mut self.buffers[buf_idx];
-            buffer.insert(val.data_value(ts));
+            buffer.insert(val.data_value(*ts));
             if buffer.len() > self.max_data_block_size {
                 buffer.set_encoding(encoding);
                 Self::write_tsm(&mut self.writer, flush_task, field_id, buffer).await?;
@@ -723,7 +700,7 @@ pub mod flush_tests {
         expected_delta_data.push((field_id, vec![delta_data_block]));
 
         writer
-            .write_field(field_id, values, value_type, encoding, flush_task)
+            .write_field(field_id, &values, value_type, encoding, flush_task)
             .await
             .unwrap();
     }
