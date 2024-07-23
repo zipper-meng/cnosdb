@@ -238,6 +238,8 @@ impl SeriesGroupBatchReaderFactory {
         self.query_option.df_schema.clone()
     }
 
+    /// Create a new instance of BatchReader.
+    /// ```ignore
     /// ParallelMergeAdapter: schema=[{}]                               -------- 并行执行多个 stream
     ///   SchemaAlignmenter: schema=[{}]                                -------- 用 Null 值补齐缺失的 tag 列
     ///    SeriesReader: sid={}, schema=[{}]                            -------- 根据 series key 补齐对应的 tag 列
@@ -256,7 +258,7 @@ impl SeriesGroupBatchReaderFactory {
     ///            MemRowGroup/ChunkReader [PageReader]
     ///          ......
     ///        ......
-    ///  SchemaAlignmenter: schema=[{}]                                                
+    ///  SchemaAlignmenter: schema=[{}]
     ///    SeriesReader: sid={}, schema=[{}]
     ///      DataMerger: schema=[{}]
     ///        SchemaAlignmenter:
@@ -267,6 +269,7 @@ impl SeriesGroupBatchReaderFactory {
     ///          ......
     ///      ......
     ///    ......
+    /// ```
     pub async fn create(
         &self,
         span: Span,

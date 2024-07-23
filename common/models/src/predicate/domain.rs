@@ -574,6 +574,7 @@ impl PartialEq for Marker {
             .eq(other.value.as_ref().unwrap())
     }
 }
+
 impl Ord for Marker {
     fn cmp(&self, other: &Self) -> Ordering {
         debug_assert!(self.check_type_compatibility(other));
@@ -661,14 +662,15 @@ impl Display for Range {
             marker: &Marker,
             is_left_bound: bool,
         ) -> std::fmt::Result {
-            write!(f, "({})", marker.data_type)?;
+            write!(f, "{{ type: {}, value: \"", marker.data_type)?;
             if let Some(ref v) = &marker.value {
-                write!(f, "{}", v)
+                write!(f, "{}", v)?;
             } else if is_left_bound {
-                write!(f, "-∞")
+                write!(f, "-∞")?;
             } else {
-                write!(f, "∞")
+                write!(f, "∞")?;
             }
+            write!(f, "\" }}")
         }
         fn write_marker_for_bound_display(
             f: &mut std::fmt::Formatter<'_>,
@@ -946,7 +948,11 @@ impl<'a> Deserialize<'a> for ValueEntry {
 
 impl Display for ValueEntry {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({}) {}", self.data_type, self.value)
+        write!(
+            f,
+            "{{ type: {}, value: \"{}\" }}",
+            self.data_type, self.value
+        )
     }
 }
 
@@ -1009,27 +1015,28 @@ impl Display for RangeValueSet {
                     Bound::Exactly => write!(f, "[")?,
                     Bound::Above => write!(f, "(")?,
                 }
-                write!(f, "({})", &marker.data_type)?;
-                if let Some(ref v) = marker.value {
-                    write!(f, "{v}")?;
+                write!(f, "{{ type: {}, value: ", &marker.data_type)?;
+                match &marker.value {
+                    Some(v) => write!(f, "\"{v}\"")?,
+                    None => write!(f, "null")?,
                 }
-                write!(f, ",..")
+                write!(f, " }},..)")
             }
         }
 
-        write!(f, "{{ ")?;
+        write!(f, "[ ")?;
         if !self.low_indexed_ranges.is_empty() {
             let max_i = self.low_indexed_ranges.len() - 1;
             for (i, (marker, range)) in self.low_indexed_ranges.iter().enumerate() {
-                write!(f, "(")?;
+                write!(f, "{{ low: ")?;
                 write_marker_for_range_value_set_display(f, marker)?;
-                write!(f, ": {range}")?;
+                write!(f, ", range: {range} }}")?;
                 if i < max_i {
                     write!(f, ", ")?;
                 }
             }
         }
-        write!(f, " }}")
+        write!(f, " ]")
     }
 }
 
@@ -1056,11 +1063,11 @@ impl EqutableValueSet {
 
 impl Display for EqutableValueSet {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "({} ", self.data_type)?;
-        if self.white_list {
-            write!(f, "white_list")?;
-        }
-        write!(f, ") [")?;
+        write!(
+            f,
+            "{{ data_type: {}, white_list: {}, values: [ ",
+            self.data_type, self.white_list
+        )?;
         if !self.entries.is_empty() {
             let max_i = self.entries.len() - 1;
             for (i, value_entry) in self.entries.iter().enumerate() {
@@ -1070,7 +1077,7 @@ impl Display for EqutableValueSet {
                 }
             }
         }
-        write!(f, " ]")?;
+        write!(f, " ] }}")?;
 
         Ok(())
     }
@@ -1380,12 +1387,14 @@ impl Domain {
 
 impl Display for Domain {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{{ ")?;
         match self {
-            Domain::Range(s) => write!(f, "range({s})"),
-            Domain::Equtable(s) => write!(f, "equtable({s})"),
-            Domain::None => write!(f, "none"),
-            Domain::All => write!(f, "all"),
+            Domain::Range(s) => write!(f, "type: range, value_set: {s}")?,
+            Domain::Equtable(s) => write!(f, "type: equtable, value_set: {s}")?,
+            Domain::None => write!(f, "type: none")?,
+            Domain::All => write!(f, "type: all")?,
         }
+        write!(f, " }}")
     }
 }
 
@@ -1568,11 +1577,13 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{{ ")?;
         if let Some(ref column_to_domain) = self.column_to_domain {
-            let max_i = column_to_domain.len() - 1;
-            for (i, (column, domain)) in column_to_domain.iter().enumerate() {
-                write!(f, "{column}: {domain}")?;
-                if i < max_i {
-                    write!(f, ", ")?;
+            if !column_to_domain.is_empty() {
+                let max_i = column_to_domain.len() - 1;
+                for (i, (column, domain)) in column_to_domain.iter().enumerate() {
+                    write!(f, "{column}: {domain}")?;
+                    if i < max_i {
+                        write!(f, ", ")?;
+                    }
                 }
             }
         }
@@ -2079,26 +2090,29 @@ mod tests {
 
     #[test]
     fn test_of_values() {
-        let val = ScalarValue::Int32(Some(10_i32));
+        let val_1 = ScalarValue::Int32(Some(10_i32));
+        let val_2 = ScalarValue::Int32(Some(10_i32));
+        let val_3 = ScalarValue::Int32(Some(11_i32));
 
-        let elementss = &[&val, &val];
+        let elementss = &[&val_1, &val_2, &val_3];
         let domain = Domain::of_values(&DataType::Int32, true, elementss);
 
-        let except_result = ValueEntry {
-            data_type: DataType::Int32,
-            value: val,
-        };
-
-        // println!("{:#?}", domain);
+        println!("{domain}");
 
         match domain {
             Domain::Equtable(val_set) => {
                 assert!(
-                    val_set.entries.len() == 1,
-                    "except val_set contain one value"
+                    val_set.entries.len() == 2,
+                    "except val_set contain two value"
                 );
-                let ele = val_set.entries.iter().next().unwrap();
-                assert_eq!(ele.to_owned(), except_result);
+                assert!(val_set.entries.contains(&ValueEntry {
+                    data_type: DataType::Int32,
+                    value: val_1,
+                }));
+                assert!(val_set.entries.contains(&ValueEntry {
+                    data_type: DataType::Int32,
+                    value: val_3,
+                }));
             }
             _ => {
                 panic!("excepted Domain::Equtable")

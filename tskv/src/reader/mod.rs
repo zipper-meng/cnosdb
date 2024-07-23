@@ -46,6 +46,7 @@ mod trace;
 mod utils;
 mod visitor;
 
+pub mod plan;
 pub mod query_executor;
 pub mod serialize;
 pub mod sort_merge;
@@ -95,15 +96,18 @@ pub struct Projection {
 }
 
 impl Projection {
+    /// Create Projection from schema.
+    /// - `fields` will be the same as all columns' ids of the argument `schema`.
+    /// - `fields_with_time` will be the same as schema's field_ids if `time` column is exists in schema,
+    ///    otherwise, the argument `time_column_id` will be added to the end.
     fn from_schema(schema: &TskvTableSchema, time_column_id: ColumnId) -> Self {
         let column_ids = schema.columns().iter().map(|f| f.id).collect::<Vec<_>>();
 
         let fields_with_time = if schema.column_index(TIME_FIELD_NAME).is_none() {
-            column_ids
-                .iter()
-                .cloned()
-                .chain(std::iter::once(time_column_id))
-                .collect()
+            let mut new_column_ids = Vec::with_capacity(column_ids.len() + 1);
+            new_column_ids.copy_from_slice(&column_ids);
+            new_column_ids.push(time_column_id);
+            new_column_ids
         } else {
             column_ids.clone()
         };

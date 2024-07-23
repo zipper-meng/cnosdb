@@ -197,10 +197,13 @@ impl<'a> Display for PredicateDisplay<'a> {
         let filter = self.0;
         write!(
             f,
-            "limit={:?}, predicate={:?}, filter={:?}",
+            "limit={:?}, predicate={}, filter={}",
             filter.limit(),
             filter.filter(),
-            filter.physical_expr().map(|e| e.to_string()),
+            match filter.physical_expr() {
+                Some(expr) => expr as &dyn Display,
+                None => &"None" as &dyn Display,
+            }
         )
     }
 }
