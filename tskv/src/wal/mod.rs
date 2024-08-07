@@ -35,6 +35,7 @@
 //! +------------+---------------+--------------+--------------+
 //! ```
 
+mod metrics;
 mod reader;
 pub mod wal_store;
 pub mod writer;

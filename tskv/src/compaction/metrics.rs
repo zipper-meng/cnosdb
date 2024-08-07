@@ -9,11 +9,22 @@ use metrics::metric_register::MetricsRegister;
 use metrics::DURATION_MAX;
 use models::meta_data::{NodeId, VnodeId};
 
-static UNIT: &str = "unit";
-static SAMPLE_SIZE: &str = "sample_size";
-static NODE_ID: &str = "node_id";
-static VNODE_ID: &str = "vnode_id";
-static TYPE: &str = "type";
+static METRIC_COMPACTION_TOTAL: &str = "compaction_total";
+static METRIC_COMPACTION_READ_AVG: &str = "compaction_read_avg";
+static METRIC_COMPACTION_READ_MIN: &str = "compaction_read_min";
+static METRIC_COMPACTION_READ_MAX: &str = "compaction_read_max";
+static METRIC_COMPACTION_MERGE_AVG: &str = "compaction_merge_avg";
+static METRIC_COMPACTION_MERGE_MIN: &str = "compaction_merge_min";
+static METRIC_COMPACTION_MERGE_MAX: &str = "compaction_merge_max";
+static METRIC_COMPACTION_WRITE_AVG: &str = "compaction_write_avg";
+static METRIC_COMPACTION_WRITE_MIN: &str = "compaction_write_min";
+static METRIC_COMPACTION_WRITE_MAX: &str = "compaction_write_max";
+
+static LABEL_UNIT: &str = "unit";
+static LABEL_SAMPLE_SIZE: &str = "sample_size";
+static LABEL_NODE_ID: &str = "node_id";
+static LABEL_VNODE_ID: &str = "vnode_id";
+static LABEL_TYPE: &str = "type";
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
@@ -166,7 +177,7 @@ impl VnodeCompactionMetrics {
     }
 
     const DEFAULT_TIME_UNIT: TimeUnit = TimeUnit::Microsecond;
-    const DEFAULT_SAMPLE_SIZE: usize = 10_000;
+    const DEFAULT_SAMPLE_SIZE: usize = 1_000;
 
     /// Create a standard metrics recorder, record the total time cost, read, merge, and write time cost of a vnode compaction.
     pub fn new_standard(
@@ -184,7 +195,7 @@ impl VnodeCompactionMetrics {
         )
         .build(
             registry,
-            "compaction_total".to_string(),
+            METRIC_COMPACTION_TOTAL.to_string(),
             format!("The total time taken of compaction: {compaction_type}({node_id}.{vnode_id})"),
             total_duration_buckets(),
         );
@@ -199,16 +210,16 @@ impl VnodeCompactionMetrics {
         .build_aggregated(
             registry,
             (
-                "compaction_read_avg".to_string(),
-                format!("The average time taken to read data {SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
+                METRIC_COMPACTION_READ_AVG.to_string(),
+                format!("The average time taken to read data {LABEL_SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
             ),
             (
-                "compaction_read_min".to_string(),
-                format!("The minimum time taken to read data {SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
+                METRIC_COMPACTION_READ_MIN.to_string(),
+                format!("The minimum time taken to read data {LABEL_SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
             ),
             (
-                "compaction_read_max".to_string(),
-                format!("The maximum time taken to read data {SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
+                METRIC_COMPACTION_READ_MAX.to_string(),
+                format!("The maximum time taken to read data {LABEL_SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
             ),
             read_duration_buckets(),
         );
@@ -222,16 +233,16 @@ impl VnodeCompactionMetrics {
         .build_aggregated(
             registry,
             (
-                "compaction_merge_avg".to_string(),
-                format!("The average time taken to merge data {SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
+                METRIC_COMPACTION_MERGE_AVG.to_string(),
+                format!("The average time taken to merge data {LABEL_SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
             ),
             (
-                "compaction_merge_min".to_string(),
-                format!("The minimum time taken to merge data {SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
+                METRIC_COMPACTION_MERGE_MIN.to_string(),
+                format!("The minimum time taken to merge data {LABEL_SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
             ),
             (
-                "compaction_merge_max".to_string(),
-                format!("The maximum time taken to merge data {SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
+                METRIC_COMPACTION_MERGE_MAX.to_string(),
+                format!("The maximum time taken to merge data {LABEL_SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
             ),
             merge_duration_buckets(),
         );
@@ -245,16 +256,16 @@ impl VnodeCompactionMetrics {
         .build_aggregated(
             registry,
             (
-                "compaction_write_avg".to_string(),
-                format!("The average time taken to write data {SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
+                METRIC_COMPACTION_WRITE_AVG.to_string(),
+                format!("The average time taken to write data {LABEL_SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
             ),
             (
-                "compaction_write_min".to_string(),
-                format!("The minimum time taken to write data {SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
+                METRIC_COMPACTION_WRITE_MIN.to_string(),
+                format!("The minimum time taken to write data {LABEL_SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
             ),
             (
-                "compaction_write_max".to_string(),
-                format!("The maximum time taken to write data {SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
+                METRIC_COMPACTION_WRITE_MAX.to_string(),
+                format!("The maximum time taken to write data {LABEL_SAMPLE_SIZE} times in compaction: {compaction_type}({node_id}.{vnode_id})"),
             ),
             write_duration_buckets(),
         );
@@ -282,7 +293,7 @@ impl VnodeCompactionMetrics {
         )
         .build(
             registry,
-            "compaction_total".to_string(),
+            METRIC_COMPACTION_TOTAL.to_string(),
             format!("The total time taken of compaction: {compaction_type}({node_id}.{vnode_id})"),
             total_duration_buckets(),
         );
@@ -351,11 +362,11 @@ impl MetricRecorderOptions {
     ) -> Self {
         let mut labels = Labels::default();
         labels.extend([
-            (UNIT, Cow::Owned(time_unit.to_string())),
-            (SAMPLE_SIZE, Cow::Owned(sample_size.to_string())),
-            (NODE_ID, Cow::Owned(node_id.to_string())),
-            (VNODE_ID, Cow::Owned(vnode_id.to_string())),
-            (TYPE, Cow::Owned(compaction_type.to_string())),
+            (LABEL_UNIT, Cow::Owned(time_unit.to_string())),
+            (LABEL_SAMPLE_SIZE, Cow::Owned(sample_size.to_string())),
+            (LABEL_NODE_ID, Cow::Owned(node_id.to_string())),
+            (LABEL_VNODE_ID, Cow::Owned(vnode_id.to_string())),
+            (LABEL_TYPE, Cow::Owned(compaction_type.to_string())),
         ]);
 
         Self {
@@ -707,7 +718,8 @@ mod tests {
     fn test_aggregator_group_size_1000() {
         let sample_size = 1000;
         let mut aggregator = Aggregator::new(TimeUnit::Millisecond, sample_size);
-        for i in 0..sample_size {
+        // It costs from 45sec to 1min.
+        for i in 0..sample_size * 3 {
             aggregator.goto_now();
             if i % 2 == 0 {
                 // Sleep a duration > 10ms, and assume that it < 99ms.
