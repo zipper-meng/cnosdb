@@ -33,6 +33,9 @@ where
     K: Eq + std::hash::Hash,
 {
     pub fn new(capacity: usize, ttl: Option<Duration>) -> Self {
+        if capacity == 0 {
+            panic!("Cache capacity must be greater than 0");
+        }
         let cache_cap = unsafe { NonZeroUsize::new_unchecked(capacity) };
         AuthCache {
             ttl,
