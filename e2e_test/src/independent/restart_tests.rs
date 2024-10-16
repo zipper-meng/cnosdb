@@ -10,7 +10,8 @@ use rand::Rng;
 use reqwest::StatusCode;
 use serial_test::serial;
 
-use crate::case::{CnosdbAuth, CnosdbRequest, E2eExecutor, Step};
+use crate::case::step::{ControlStep, RequestStep, Sql, SqlNoResult, StepPtr, StepResult};
+use crate::case::{CnosdbAuth, E2eExecutor};
 use crate::cluster_def::CnosdbClusterDefinition;
 use crate::utils::{
     kill_all, run_cluster_with_customized_configs, CnosdbDataTestHelper, CnosdbMetaTestHelper,
@@ -23,121 +24,98 @@ fn case1() {
     let url = "http://127.0.0.1:8902/api/v1/sql?tenant=cnosdb&db=public";
 
     let executor = E2eExecutor::new_singleton("restart_tests", "case_1", cluster_def::one_data(1));
-    executor.execute_steps(&[
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url,
-                sql: "CREATE TABLE air (visibility DOUBLE, temperature DOUBLE, pressure DOUBLE, TAGS(station))",
-                resp: Ok(vec![]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query { url, sql: "SHOW TABLES", resp: Ok(vec!["table_name", "air"]), sorted: false, regex: false, },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query { url, sql: "SHOW TABLES", resp: Ok(vec!["table_name", "air"]), sorted: false, regex: false, },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Insert {
-                url,
-                sql: "INSERT INTO air (time, station, visibility, temperature, pressure) VALUES
-                    ('2023-01-01 01:10:00', 'XiaoMaiDao', 79, 80, 63),
-                    ('2023-01-01 01:20:00', 'XiaoMaiDao', 80, 60, 63),
-                    ('2023-01-01 01:30:00', 'XiaoMaiDao', 81, 70, 61)",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url,
-                sql: "compact database public",
-                resp: Ok(vec![]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url,
-                sql: "SELECT * FROM air order by time",
-                resp: Ok(vec![
-                    "time,station,visibility,temperature,pressure",
-                    "2023-01-01T01:10:00.000000000,XiaoMaiDao,79.0,80.0,63.0",
-                    "2023-01-01T01:20:00.000000000,XiaoMaiDao,80.0,60.0,63.0",
-                    "2023-01-01T01:30:00.000000000,XiaoMaiDao,81.0,70.0,61.0",
-                ]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Insert {
-                url,
-                sql: "INSERT INTO air (time, station, visibility, temperature, pressure) VALUES
-                    ('2023-01-01 01:10:00', 'XiaoMaiDao', 89, 90, 73),
-                    ('2023-01-01 01:20:00', 'XiaoMaiDao', 90, 70, 73),
-                    ('2023-01-01 01:30:00', 'XiaoMaiDao', 91, 80, 71)",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url,
-                sql: "compact database public",
-                resp: Ok(vec![]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url,
-                sql: "SELECT * FROM air order by time",
-                resp: Ok(vec![
-                    "time,station,visibility,temperature,pressure",
-                    "2023-01-01T01:10:00.000000000,XiaoMaiDao,89.0,90.0,73.0",
-                    "2023-01-01T01:20:00.000000000,XiaoMaiDao,90.0,70.0,73.0",
-                    "2023-01-01T01:30:00.000000000,XiaoMaiDao,91.0,80.0,71.0",
-                ]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl { url, sql: "DROP TABLE air", resp: Ok(()) },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
+    let steps: Vec<StepPtr> = vec![
+        RequestStep::new_boxed("create table", SqlNoResult::build_request_with_str(
+            url,
+            "CREATE TABLE air (visibility DOUBLE, temperature DOUBLE, pressure DOUBLE, TAGS(station))",
+            Ok(()),
+        ), None, None),
+        RequestStep::new_boxed("show tables after create table", Sql::build_request_with_str(
+            url,
+            "SHOW TABLES",
+            Ok(vec!["table_name", "air"]),
+            false, false,
+        ), None, None),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("show tables after restart", Sql::build_request_with_str(
+            url,
+            "SHOW TABLES",
+            Ok(vec!["table_name", "air"]),
+            false, false,
+        ), None, None),
+        RequestStep::new_boxed("insert data", SqlNoResult::build_request_with_str(
+            url,
+            "INSERT INTO air (time, station, visibility, temperature, pressure) VALUES
+            ('2023-01-01 01:10:00', 'XiaoMaiDao', 79, 80, 63),
+            ('2023-01-01 01:20:00', 'XiaoMaiDao', 80, 60, 63),
+            ('2023-01-01 01:30:00', 'XiaoMaiDao', 81, 70, 61)",
+            Ok(()),
+        ), None, None),
+        RequestStep::new_boxed("compact manually", SqlNoResult::build_request_with_str(
+            url,
+            "compact database public",
+            Ok(()),
+        ), None, None),
+        RequestStep::new_boxed("select data", Sql::build_request_with_str(
+            url,
+            "SELECT * FROM air order by time",
+            Ok(vec![
+                "time,station,visibility,temperature,pressure",
+                "2023-01-01T01:10:00.000000000,XiaoMaiDao,79.0,80.0,63.0",
+                "2023-01-01T01:20:00.000000000,XiaoMaiDao,80.0,60.0,63.0",
+                "2023-01-01T01:30:00.000000000,XiaoMaiDao,81.0,70.0,61.0",
+            ]), false, false,
+        ), None, None),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("replace old data with new data", SqlNoResult::build_request_with_str(
+            url,
+            "INSERT INTO air (time, station, visibility, temperature, pressure) VALUES
+            ('2023-01-01 01:10:00', 'XiaoMaiDao', 89, 90, 73),
+            ('2023-01-01 01:20:00', 'XiaoMaiDao', 90, 70, 73),
+            ('2023-01-01 01:30:00', 'XiaoMaiDao', 91, 80, 71)",
+            Ok(()),
+        ), None, None),
+        RequestStep::new_boxed("compact manually", SqlNoResult::build_request_with_str(
+            url,
+            "compact database public",
+            Ok(()),
+        ), None, None),
+        RequestStep::new_boxed("select new data", Sql::build_request_with_str(
+            url,
+            "SELECT * FROM air order by time",
+            Ok(vec![
+                "time,station,visibility,temperature,pressure",
+                "2023-01-01T01:10:00.000000000,XiaoMaiDao,89.0,90.0,73.0",
+                "2023-01-01T01:20:00.000000000,XiaoMaiDao,90.0,70.0,73.0",
+                "2023-01-01T01:30:00.000000000,XiaoMaiDao,91.0,80.0,71.0",
+            ]), false, false,
+        ), None, None),
+        RequestStep::new_boxed("drop table", SqlNoResult::build_request_with_str(
+            url,
+            "DROP TABLE air",
+            Ok(()),
+        ), None, None),
+        ControlStep::new_boxed_restart_data_node("name", 0),
 
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl { url, sql: "SELECT * FROM air", 
-            resp:Err(E2eError::Api {
+        RequestStep::new_boxed("select data after drop table", Sql::build_request_with_str(
+            url,
+            "SELECT * FROM air",
+            StepResult::Err(E2eError::Api {
                 status: StatusCode::UNPROCESSABLE_ENTITY,
                 url: None,
                 req: None,
                 resp: Some(r#"{"error_code":"010001","error_message":"Datafusion: Error during planning: Table not found, tenant: cnosdb db: public, table: air"}"#.to_string()),
-            }), },
-            auth: None,
-        },
+            }), false, false,
+        ), None, None),
 
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query { url, sql: "SHOW TABLES", resp: Ok(vec!["table_name"]), sorted: false, regex: false, },
-            auth: None,
-        },
-    ]);
+        RequestStep::new_boxed("show tables after drop table", Sql::build_request_with_str(
+            url,
+            "SHOW TABLES",
+            Ok(vec!["table_name",]),
+            false, false,
+        ), None, None),
+    ];
+    executor.execute_steps(&steps);
 }
 
 #[test]
@@ -146,29 +124,24 @@ fn case2() {
     let url = "http://127.0.0.1:8902/api/v1/sql?tenant=cnosdb&db=public";
 
     let executor = E2eExecutor::new_singleton("restart_tests", "case_2", cluster_def::one_data(1));
-    executor.execute_steps(&[
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
+    let steps: Vec<StepPtr> = vec![
+        RequestStep::new_boxed("create table", SqlNoResult::build_request_with_str(
                 url,
-                sql: "CREATE TABLE air (visibility DOUBLE, temperature DOUBLE, pressure DOUBLE, TAGS(station))",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
+                "CREATE TABLE air (visibility DOUBLE, temperature DOUBLE, pressure DOUBLE, TAGS(station))",
+                Ok(()),
+            ), None, None,
+        ),
+        RequestStep::new_boxed("alter table", SqlNoResult::build_request_with_str(
                 url,
-                sql: "ALTER TABLE air ADD FIELD humidity DOUBLE",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
+                "ALTER TABLE air ADD FIELD humidity DOUBLE",
+                Ok(()),
+            ), None, None,
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("describe table after restart", Sql::build_request_with_str(
                 url,
-                sql: "DESC TABLE air",
-                resp: Ok(vec![
+                "DESC TABLE air",
+                Ok(vec![
                     "column_name,data_type,column_type,compression_codec",
                     "humidity,DOUBLE,FIELD,DEFAULT",
                     "pressure,DOUBLE,FIELD,DEFAULT",
@@ -177,25 +150,20 @@ fn case2() {
                     "time,TIMESTAMP(NANOSECOND),TIME,DEFAULT",
                     "visibility,DOUBLE,FIELD,DEFAULT",
                 ]),
-                sorted: true,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
+                true, false,
+            ), None, None
+        ),
+        RequestStep::new_boxed("alter table set column codec", SqlNoResult::build_request_with_str(
                 url,
-                sql: "ALTER TABLE air ALTER humidity SET CODEC(QUANTILE)",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
+                "ALTER TABLE air ALTER humidity SET CODEC(QUANTILE)",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("describe table after restart", Sql::build_request_with_str(
                 url,
-                sql: "DESC TABLE air",
-                resp: Ok(vec![
+                "DESC TABLE air",
+                Ok(vec![
                     "column_name,data_type,column_type,compression_codec",
                     "humidity,DOUBLE,FIELD,QUANTILE",
                     "pressure,DOUBLE,FIELD,DEFAULT",
@@ -203,52 +171,40 @@ fn case2() {
                     "temperature,DOUBLE,FIELD,DEFAULT",
                     "time,TIMESTAMP(NANOSECOND),TIME,DEFAULT",
                     "visibility,DOUBLE,FIELD,DEFAULT",
-                ]),
-                sorted: true,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
+                ]), true, false,
+            ), None, None,
+        ),
+        RequestStep::new_boxed("alter table drop column", SqlNoResult::build_request_with_str(
                 url,
-                sql: "ALTER TABLE air DROP humidity",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
+                "ALTER TABLE air DROP humidity",
+                Ok(()),
+            ), None, None,
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("descrbie table after restart", Sql::build_request_with_str(
                 url,
-                sql: "DESC TABLE air",
-                resp: Ok(vec![
+                "DESC TABLE air",
+                Ok(vec![
                     "column_name,data_type,column_type,compression_codec",
                     "pressure,DOUBLE,FIELD,DEFAULT",
                     "station,STRING,TAG,DEFAULT",
                     "temperature,DOUBLE,FIELD,DEFAULT",
                     "time,TIMESTAMP(NANOSECOND),TIME,DEFAULT",
                     "visibility,DOUBLE,FIELD,DEFAULT",
-                ]),
-                sorted: true,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
+                ]), true, false,
+            ), None, None
+        ),
+        RequestStep::new_boxed("alter table add tag", SqlNoResult::build_request_with_str(
                 url,
-                sql: "ALTER TABLE air ADD TAG height",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
+                "ALTER TABLE air ADD TAG height",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("describe table after restart", Sql::build_request_with_str(
                 url,
-                sql: "DESC TABLE air",
-                resp: Ok(vec![
+                "DESC TABLE air",
+                Ok(vec![
                     "column_name,data_type,column_type,compression_codec",
                     "height,STRING,TAG,DEFAULT",
                     "pressure,DOUBLE,FIELD,DEFAULT",
@@ -256,13 +212,11 @@ fn case2() {
                     "temperature,DOUBLE,FIELD,DEFAULT",
                     "time,TIMESTAMP(NANOSECOND),TIME,DEFAULT",
                     "visibility,DOUBLE,FIELD,DEFAULT",
-                ]),
-                sorted: true,
-                regex: false,
-            },
-            auth: None,
-        },
-    ]);
+                ]), true, false,
+            ), None, None
+        ),
+    ];
+    executor.execute_steps(&steps);
 }
 
 #[test]
@@ -271,79 +225,62 @@ fn case3() {
     let url = "http://127.0.0.1:8902/api/v1/sql?tenant=cnosdb&db=public";
 
     let executor = E2eExecutor::new_singleton("restart_tests", "case_3", cluster_def::one_data(1));
-    executor.execute_steps(&[
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
+    let steps: Vec<StepPtr> = vec![
+        RequestStep::new_boxed("create database", SqlNoResult::build_request_with_str(
                 url,
-                sql: "CREATE DATABASE oceanic_station",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
+                "CREATE DATABASE oceanic_station",
+                Ok(()),
+            ), None, None,
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("show databases after restart", Sql::build_request_with_str(
                 url,
-                sql: "SHOW DATABASES",
-                resp: Ok(vec![
+                "SHOW DATABASES",
+                Ok(vec![
                     "cluster_schema",
                     "database_name",
                     "oceanic_station",
                     "public",
                     "usage_schema",
-                ]),
-                sorted: true,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
+                ]), true, false,
+            ), None, None,
+        ),
+        RequestStep::new_boxed("alter database", SqlNoResult::build_request_with_str(
                 url,
-                sql: "ALTER DATABASE oceanic_station SET VNODE_DURATION '1000d'",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
+                "ALTER DATABASE oceanic_station SET VNODE_DURATION '1000d'",
+                Ok(()),
+            ), None, None,
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("describe database after restart", Sql::build_request_with_str(
                 url,
-                sql: "DESC DATABASE oceanic_station",
-                resp: Ok(vec![
+                "DESC DATABASE oceanic_station",
+                Ok(vec![
                     "ttl,shard,vnode_duration,replica,precision,max_memcache_size,memcache_partitions,wal_max_file_size,wal_sync,strict_write,max_cache_readers",
                     "INF,1,2years 8months 25days 23h 31m 12s,1,NS,128 MiB,4,128 MiB,false,false,32"
-                ]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
+                ]), false, false,
+            ), None, None,
+        ),
+        RequestStep::new_boxed("drop database", SqlNoResult::build_request_with_str(
                 url,
-                sql: "DROP DATABASE oceanic_station",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
+                "DROP DATABASE oceanic_station",
+                Ok(()),
+            ), None, None,
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("show databases after restart", Sql::build_request_with_str(
                 url,
-                sql: "SHOW DATABASES",
-                resp: Ok(vec![
+                "SHOW DATABASES",
+                Ok(vec![
                     "cluster_schema",
                     "database_name",
                     "public",
                     "usage_schema",
-                ]),
-                sorted: true,
-                regex: false,
-            },
-            auth: None,
-        },
-    ]);
+                ]), true, false,
+            ), None, None,
+        ),
+    ];
+    executor.execute_steps(&steps);
 }
 
 #[test]
@@ -353,194 +290,145 @@ fn case4() {
     let url_test_ = "http://127.0.0.1:8902/api/v1/sql?tenant=test";
 
     let executor = E2eExecutor::new_singleton("restart_tests", "case_4", cluster_def::one_data(1));
-    executor.execute_steps(&[
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_cnosdb_public,
-                sql: "CREATE USER IF NOT EXISTS tester",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_cnosdb_public,
-                sql: "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
-                resp: Ok(vec![
+    let steps: Vec<StepPtr> = vec![
+        RequestStep::new_boxed("create user", SqlNoResult::build_request_with_str(
+                url_cnosdb_public,
+                "CREATE USER IF NOT EXISTS tester",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("select users", Sql::build_request_with_str(
+                url_cnosdb_public,
+                "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
+                Ok(vec![
                     "user_name,is_admin,user_options",
                     r#"tester,false,"{""hash_password"":""*****""}""#,
-                ]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_cnosdb_public,
-                sql: "alter user tester set granted_admin = true",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_cnosdb_public,
-                sql: "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
-                resp: Ok(vec![
+                ]), false, false,
+            ), None, None
+        ),
+        RequestStep::new_boxed("alter user set admin", SqlNoResult::build_request_with_str(
+                url_cnosdb_public,
+                "alter user tester set granted_admin = true",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("select user after restart", Sql::build_request_with_str(
+                url_cnosdb_public,
+                "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
+                Ok(vec![
                     "user_name,is_admin,user_options",
                     r#"tester,true,"{""hash_password"":""*****"",""granted_admin"":true}""#,
-                ]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_cnosdb_public,
-                sql: "alter user tester set granted_admin = false",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_cnosdb_public,
-                sql: "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
-                resp: Ok(vec![
+                ]), false, false
+            ), None, None
+        ),
+        RequestStep::new_boxed("alter user set not admin", SqlNoResult::build_request_with_str(
+                url_cnosdb_public,
+                "alter user tester set granted_admin = false",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("select user after restart", Sql::build_request_with_str(
+                url_cnosdb_public,
+                "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
+                Ok(vec![
                     "user_name,is_admin,user_options",
                     r#"tester,false,"{""hash_password"":""*****"",""granted_admin"":false}""#,
-                ]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_cnosdb_public,
-                sql: "ALTER USER tester SET COMMENT = 'bbb'",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_cnosdb_public,
-                sql: "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
-                resp: Ok(vec![
+                ]), false, false
+            ), None, None
+        ),
+        RequestStep::new_boxed("alter user set comment", SqlNoResult::build_request_with_str(
+                url_cnosdb_public,
+                "ALTER USER tester SET COMMENT = 'bbb'",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("select user after restart", Sql::build_request_with_str(
+                url_cnosdb_public,
+                "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
+                Ok(vec![
                     "user_name,is_admin,user_options",
                     r#"tester,false,"{""hash_password"":""*****"",""comment"":""bbb"",""granted_admin"":false}""#,
-                ]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_cnosdb_public,
-                sql: "DROP USER tester",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_cnosdb_public,
-                sql: "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
-                resp: Ok(vec!["user_name,is_admin,user_options"]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_cnosdb_public,
-                sql: "CREATE TENANT test",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_cnosdb_public,
-                sql: "SELECT * FROM cluster_schema.tenants WHERE tenant_name = 'test'",
-                resp: Ok(vec![
+                ]), false, false,
+            ), None, None
+        ),
+        RequestStep::new_boxed("drop user", SqlNoResult::build_request_with_str(
+                url_cnosdb_public,
+                "DROP USER tester",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("select user after restart", Sql::build_request_with_str(
+                url_cnosdb_public,
+                "SELECT * FROM cluster_schema.users WHERE user_name = 'tester'",
+                Ok(vec!["user_name,is_admin,user_options"]),
+                false, false,
+            ), None, None,
+        ),
+        RequestStep::new_boxed("create tenant", SqlNoResult::build_request_with_str(
+                url_cnosdb_public,
+                "CREATE TENANT test",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("select tenant after restart", Sql::build_request_with_str(
+                url_cnosdb_public,
+                "SELECT * FROM cluster_schema.tenants WHERE tenant_name = 'test'",
+                Ok(vec![
                     "tenant_name,tenant_options",
                     "test,\"{\"\"comment\"\":null,\"\"limiter_config\"\":null,\"\"drop_after\"\":null,\"\"tenant_is_hidden\"\":false}\""
-                ]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_cnosdb_public,
-                sql: "ALTER TENANT test SET COMMENT = 'abc'",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_cnosdb_public,
-                sql: "SELECT * FROM cluster_schema.tenants WHERE tenant_name = 'test'",
-                resp: Ok(vec![
+                ]),false, false
+            ), None, None,
+        ),
+        RequestStep::new_boxed("alter tenant set comment", SqlNoResult::build_request_with_str(
+                url_cnosdb_public,
+                "ALTER TENANT test SET COMMENT = 'abc'",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("select tenant after restart", Sql::build_request_with_str(
+                url_cnosdb_public,
+                "SELECT * FROM cluster_schema.tenants WHERE tenant_name = 'test'",
+                Ok(vec![
                     "tenant_name,tenant_options",
                     "test,\"{\"\"comment\"\":\"\"abc\"\",\"\"limiter_config\"\":null,\"\"drop_after\"\":null,\"\"tenant_is_hidden\"\":false}\""
-                ]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_test_,
-                sql: "CREATE DATABASE db1",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_cnosdb_public,
-                sql: "DROP TENANT test",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_cnosdb_public,
-                sql: "CREATE TENANT test",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_test_,
-                sql: "SHOW DATABASES",
-                resp: Ok(vec!["database_name"]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-    ]);
+                ]), false, false,
+            ), None, None
+        ),
+        RequestStep::new_boxed("create database", SqlNoResult::build_request_with_str(
+                url_test_,
+                "CREATE DATABASE db1",
+                Ok(()),
+            ), None, None
+        ),
+        RequestStep::new_boxed("drop tenant", SqlNoResult::build_request_with_str(
+                url_cnosdb_public,
+                "DROP TENANT test",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("create tenant", SqlNoResult::build_request_with_str(
+                url_cnosdb_public,
+                "CREATE TENANT test",
+                Ok(()),
+            ), None, None
+        ),
+        RequestStep::new_boxed("show databases", Sql::build_request_with_str(
+                url_test_,
+                "SHOW DATABASES",
+                Ok(vec!["database_name"]),
+                false, false,
+            ), None, None
+        ),
+    ];
+    executor.execute_steps(&steps);
 }
 
 #[test]
@@ -550,186 +438,148 @@ fn case5() {
     let url_test_ = "http://127.0.0.1:8902/api/v1/sql?tenant=test";
 
     let executor = E2eExecutor::new_singleton("restart_tests", "case_5", cluster_def::one_data(1));
-    executor.execute_steps(&[
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_cnosdb_public,
-                sql: "CREATE USER tester",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_cnosdb_public,
-                sql: "CREATE TENANT test",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_test_,
-                sql: "CREATE ROLE r1 INHERIT member",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_test_,
-                sql: "SELECT * FROM information_schema.roles WHERE role_name = 'r1'",
-                resp: Ok(vec!["role_name,role_type,inherit_role", "r1,custom,member"]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_test_,
-                sql: "ALTER TENANT test ADD USER tester AS r1",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_test_,
-                sql: "SELECT 1",
-                resp: Ok(vec!["Int64(1)", "1"]),
-                sorted: false,
-                regex: false,
-            },
-            auth: Some(CnosdbAuth {
+    let steps: Vec<StepPtr> = vec![
+        RequestStep::new_boxed("create user", SqlNoResult::build_request_with_str(
+                url_cnosdb_public,
+                "CREATE USER tester",
+                Ok(()),
+            ), None, None
+        ),
+        RequestStep::new_boxed("create tenant", SqlNoResult::build_request_with_str(
+                url_cnosdb_public,
+                "CREATE TENANT test",
+                Ok(()),
+            ), None, None
+        ),
+        RequestStep::new_boxed("create role", SqlNoResult::build_request_with_str(
+                url_test_,
+                "CREATE ROLE r1 INHERIT member",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("select role after restart", Sql::build_request_with_str(
+                url_test_,
+                "SELECT * FROM information_schema.roles WHERE role_name = 'r1'",
+                Ok(vec!["role_name,role_type,inherit_role", "r1,custom,member"]),
+                false, false
+            ), None, None
+        ),
+        RequestStep::new_boxed("alter tenant add user", SqlNoResult::build_request_with_str(
+                url_test_,
+                "ALTER TENANT test ADD USER tester AS r1",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("select 1", Sql::build_request_with_str(
+                url_test_,
+                "SELECT 1",
+                Ok(vec!["Int64(1)", "1"]),
+                false, false,
+            ),
+            Some(CnosdbAuth {
                 username: "tester".to_string(),
                 password: Some("".to_string()),
             }),
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_test_,
-                sql: "ALTER TENANT test REMOVE USER tester",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_test_,
-                sql: "SELECT 1",
-                resp: Err(E2eError::Api {
+            None
+        ),
+        RequestStep::new_boxed("alter tenant remove user", SqlNoResult::build_request_with_str(
+                url_test_,
+                "ALTER TENANT test REMOVE USER tester",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("select 1", Sql::build_request_with_str(
+                url_test_,
+                "SELECT 1",
+                StepResult::Err(E2eError::Api {
                     status: StatusCode::UNPROCESSABLE_ENTITY,
                     url: None,
                     req: None,
                     resp: Some(r#"{"error_code":"010016","error_message":"Auth error: The member tester of tenant test not found"}"#.to_string()),
                 }),
-                sorted: false,
-                regex: false,
-            },
-            auth: Some(CnosdbAuth {
+                false, false,
+            ),
+            Some(CnosdbAuth {
                 username: "tester".to_string(),
                 password: Some("".to_string()),
             }),
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_test_,
-                sql: "CREATE DATABASE db1",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_test_,
-                sql: "GRANT WRITE ON DATABASE db1 TO ROLE r1",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_test_,
-                sql: "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
-                resp: Ok(vec![
+            None,
+        ),
+        RequestStep::new_boxed("create database", SqlNoResult::build_request_with_str(
+                url_test_,
+                "CREATE DATABASE db1",
+                Ok(()),
+            ), None, None
+        ),
+        RequestStep::new_boxed("grant role", SqlNoResult::build_request_with_str(
+                url_test_,
+                "GRANT WRITE ON DATABASE db1 TO ROLE r1",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("select database_privilege", Sql::build_request_with_str(
+                url_test_,
+                "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
+                Ok(vec![
                     "tenant_name,database_name,privilege_type,role_name",
                     "test,db1,Write,r1",
                 ]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_test_,
-                sql: "REVOKE WRITE ON DATABASE db1 FROM r1",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_test_,
-                sql: "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
-                resp: Ok(vec!["tenant_name,database_name,privilege_type,role_name"]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_test_,
-                sql: "GRANT ALL ON DATABASE db1 TO ROLE r1",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_test_,
-                sql: "DROP ROLE r1",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::RestartDataNode(0),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_test_,
-                sql: "SELECT * FROM information_schema.roles WHERE role_name = 'r1'",
-                resp: Ok(vec!["role_name,role_type,inherit_role"]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_test_,
-                sql: "CREATE ROLE r1 INHERIT member",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_test_,
-                sql: "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
-                resp: Ok(vec!["tenant_name,database_name,privilege_type,role_name"]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-    ]);
+                false, false,
+            ), None, None,
+        ),
+        RequestStep::new_boxed("revoke write role", SqlNoResult::build_request_with_str(
+                url_test_,
+                "REVOKE WRITE ON DATABASE db1 FROM r1",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("select database_privilege", Sql::build_request_with_str(
+                url_test_,
+                "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
+                Ok(vec!["tenant_name,database_name,privilege_type,role_name"]),
+                false, false,
+            ), None, None
+        ),
+        RequestStep::new_boxed("grant role", SqlNoResult::build_request_with_str(
+                url_test_,
+                "GRANT ALL ON DATABASE db1 TO ROLE r1",
+                Ok(()),
+            ), None, None
+        ),
+        RequestStep::new_boxed("drop role", SqlNoResult::build_request_with_str(
+                url_test_,
+                "DROP ROLE r1",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_restart_data_node("restart", 0),
+        RequestStep::new_boxed("select role", Sql::build_request_with_str(
+                url_test_,
+                "SELECT * FROM information_schema.roles WHERE role_name = 'r1'",
+                Ok(vec!["role_name,role_type,inherit_role"]),
+                false, false,
+            ), None, None
+        ),
+        RequestStep::new_boxed("create role", SqlNoResult::build_request_with_str(
+                url_test_,
+                "CREATE ROLE r1 INHERIT member",
+                Ok(()),
+            ), None, None
+        ),
+        RequestStep::new_boxed("select database_privilege", Sql::build_request_with_str(
+                url_test_,
+                "SELECT * FROM information_schema.database_privileges WHERE role_name = 'r1'",
+                Ok(vec!["tenant_name,database_name,privilege_type,role_name"]),
+                false, false,
+            ), None, None
+        ),
+    ];
+    executor.execute_steps(&steps);
 }
 
 #[test]
@@ -742,69 +592,56 @@ fn case6() {
         "case_6",
         cluster_def::one_meta_three_data(),
     );
-    executor.execute_steps(&[
-        Step::Sleep(5),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_cnosdb_public,
-                sql: "create database db1 with replica 3",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::Sleep(1),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_cnosdb_db1,
-                sql: "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station))",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::Sleep(1),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Insert {
-                url: url_cnosdb_db1,
-                sql: "INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES(1666165200290401000, 'XiaoMaiDao', 56, 69, 77)",
-                resp: Ok(()),
-            },
-            auth: None,
-        },
-        Step::Sleep(1),
-        Step::StopDataNode(1),
-        Step::Sleep(60),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Ddl {
-                url: url_cnosdb_public,
-                sql: "drop database db1",
-                resp: Err(E2eError::Ignored), // Error is expected, but the error message is not checked.
-            },
-            auth: None,
-        },
-        Step::Sleep(1),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_cnosdb_public,
-                sql: "select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb-db1'",
-                resp: Ok(vec!["name,action,try_count,status", r"cnosdb-db1,DropDatabase,\d+,Successed"]),
-                sorted: false,
-                regex: true,
-            },
-            auth: None,
-        },
-        Step::StartDataNode(1),
-        Step::Sleep(30),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: url_cnosdb_public,
-                sql: "select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb-db1'",
-                resp: Ok(vec!["name,action,try_count,status", r"cnosdb-db1,DropDatabase,\d+,Successed"]),
-                sorted: false,
-                regex: true,
-            },
-            auth: None,
-        },
-    ]);
+    let steps: Vec<StepPtr> = vec![
+        ControlStep::new_boxed_sleep("sleep 5s", 5),
+        RequestStep::new_boxed("create database", SqlNoResult::build_request_with_str(
+                url_cnosdb_public,
+                "create database db1 with replica 3",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_sleep("sleep 1s", 1),
+        RequestStep::new_boxed("create table", SqlNoResult::build_request_with_str(
+                url_cnosdb_db1,
+                "CREATE TABLE air (visibility DOUBLE,temperature DOUBLE,pressure DOUBLE,TAGS(station))",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_sleep("sleep 1s", 1),
+        RequestStep::new_boxed("name", SqlNoResult::build_request_with_str(
+                url_cnosdb_db1,
+                "INSERT INTO air (TIME, station, visibility, temperature, pressure) VALUES(1666165200290401000, 'XiaoMaiDao', 56, 69, 77)",
+                Ok(()),
+            ), None, None
+        ),
+        ControlStep::new_boxed_sleep("sleep 1s", 1),
+        ControlStep::new_boxed_stop_data_node("stop data node 1", 1),
+        ControlStep::new_boxed_sleep("sleep 60s", 60),
+        RequestStep::new_boxed("name", SqlNoResult::build_request_with_str(
+                url_cnosdb_public,
+                "drop database db1",
+                Err(E2eError::Ignored), // Error is expected, but the error message is not checked.
+            ), None, None
+        ),
+        ControlStep::new_boxed_sleep("restart", 1),
+        RequestStep::new_boxed("select resource_status", Sql::build_request_with_str(
+                url_cnosdb_public,
+                "select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb-db1'",
+                Ok(vec!["name,action,try_count,status", r"cnosdb-db1,DropDatabase,\d+,Successed"]),
+                false, true,
+            ), None, None
+        ),
+        ControlStep::new_boxed_start_data_node("start data node 1", 1),
+        ControlStep::new_boxed_sleep("namsleep 30s", 30),
+        RequestStep::new_boxed("select resource_status", Sql::build_request_with_str(
+                url_cnosdb_public,
+                "select name,action,try_count,status from information_schema.resource_status where name = 'cnosdb-db1'",
+                Ok(vec!["name,action,try_count,status", r"cnosdb-db1,DropDatabase,\d+,Successed"]),
+                false, true,
+            ), None, None
+        ),
+    ];
+    executor.execute_steps(&steps);
 }
 
 #[test]
