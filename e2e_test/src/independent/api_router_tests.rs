@@ -3,7 +3,8 @@
 use reqwest::StatusCode;
 use serial_test::serial;
 
-use crate::case::{CnosdbRequest, E2eExecutor, Step};
+use crate::case::step::{ControlStep, LineProtocol, RequestStep, Sql, StepPtr, StepResult};
+use crate::case::E2eExecutor;
 use crate::{cluster_def, E2eError};
 
 #[test]
@@ -14,55 +15,64 @@ fn api_router() {
         "api_router",
         cluster_def::one_meta_two_data_separated(),
     );
-    executor.execute_steps(&[
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/write?db=public",
-                req: "api_router,ta=a fa=1 1",
-                resp: Err(E2eError::Api {
+    let steps: Vec<StepPtr> = vec![
+        RequestStep::new_boxed(
+            "write data to 8902(invalid node)",
+            LineProtocol::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/write?db=public",
+                "api_router,ta=a fa=1 1",
+                Err(E2eError::Api {
                     status: StatusCode::NOT_FOUND,
                     url: None,
                     req: None,
                     resp: None,
                 }),
-            },
-            auth: None,
-        },
-        Step::Sleep(3),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8912/api/v1/write?db=public",
-                req: "api_router,ta=a fa=1 1",
-                resp: Ok("".to_string()),
-            },
-            auth: None,
-        },
-        Step::Sleep(3),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: "http://127.0.0.1:8902/api/v1/sql?db=public",
-                sql: "select * from api_router",
-                resp: Err(E2eError::Api {
+            ),
+            None,
+            None,
+        ),
+        ControlStep::new_boxed_sleep("sleep 3s", 3),
+        RequestStep::new_boxed(
+            "write data to 8912",
+            LineProtocol::build_request_with_str(
+                "http://127.0.0.1:8912/api/v1/write?db=public",
+                "api_router,ta=a fa=1 1",
+                Ok(()),
+            ),
+            None,
+            None,
+        ),
+        ControlStep::new_boxed_sleep("sleep 3s", 3),
+        RequestStep::new_boxed(
+            "query data from 8902 (invalid node)",
+            Sql::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/sql?db=public",
+                "select * from api_router",
+                StepResult::Err(E2eError::Api {
                     status: StatusCode::NOT_FOUND,
                     url: None,
                     req: None,
                     resp: None,
                 }),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-        Step::Sleep(3),
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Query {
-                url: "http://127.0.0.1:8912/api/v1/sql?db=public",
-                sql: "select* from api_router",
-                resp: Ok(vec!["time,ta,fa", "1970-01-01T00:00:00.000000001,a,1.0"]),
-                sorted: false,
-                regex: false,
-            },
-            auth: None,
-        },
-    ]);
+                false,
+                false,
+            ),
+            None,
+            None,
+        ),
+        ControlStep::new_boxed_sleep("sleep 3s", 3),
+        RequestStep::new_boxed(
+            "query data from 8912",
+            Sql::build_request_with_str(
+                "http://127.0.0.1:8912/api/v1/sql?db=public",
+                "select * from api_router",
+                Ok(vec!["time,ta,fa", "1970-01-01T00:00:00.000000001,a,1.0"]),
+                false,
+                false,
+            ),
+            None,
+            None,
+        ),
+    ];
+    executor.execute_steps(&steps);
 }

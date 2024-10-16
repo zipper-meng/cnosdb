@@ -9,7 +9,8 @@ use http_protocol::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
 use reqwest::{Method, StatusCode};
 use serial_test::serial;
 
-use crate::case::{CnosdbRequest, E2eExecutor, Step};
+use crate::case::step::{EsBulk, RequestStep, StepPtr};
+use crate::case::E2eExecutor;
 use crate::utils::{
     build_data_node_config, copy_cnosdb_server_certificate, get_workspace_dir, kill_all,
     run_singleton, Client,
@@ -324,128 +325,152 @@ fn test_cli_connection() {
 fn es_api_test() {
     let executor =
         E2eExecutor::new_singleton("api_router_tests", "es_api_test", cluster_def::one_data(1));
-
-    executor.execute_steps(&[
-        Step::CnosdbRequest {
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/_bulk", 
-                req: r#"{"create":{}}
+    let steps: Vec<StepPtr> = vec![
+        RequestStep::new_boxed(
+            "_bulk 1",
+            EsBulk::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/es/_bulk",
+                r#"{"create":{}}
                 {"msg":"test"}"#,
-                resp: Err(E2eError::Api {
+                Err(E2eError::Api {
                     status: StatusCode::UNPROCESSABLE_ENTITY,
                     url: None,
                     req: None,
                     resp: Some(r#"{"error_code":"040016","error_message":"Error parsing log message: table param is None"}"#.to_string())
-                })
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest { // no time_column, no tag_columns
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/_bulk?table=test1", 
-                req: r#"{"create":{}}
+                }),
+            ),
+            None,
+            None,
+        ),
+        RequestStep::new_boxed(
+            "_bulk 2",
+            EsBulk::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test1",
+                r#"{"create":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
-                resp: Ok("".to_string()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest { // no time_column, one tag_columns
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/_bulk?table=test2&tag_columns=name", 
-                req: r#"{"create":{}}
+                Ok("".to_string())
+            ),
+            None,
+            None
+        ),
+        RequestStep::new_boxed(
+            "_bulk no time_column, one tag_columns",
+            EsBulk::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test2&tag_columns=name",
+                r#"{"create":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
-                resp: Ok("".to_string()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest { // no time_column, multi tag_columns
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/_bulk?table=test3&tag_columns=name,sex", 
-                req: r#"{"create":{}}
+                Ok("".to_string())
+            ),
+            None,
+            None
+        ),
+        RequestStep::new_boxed(
+            "_bulk no time_column, multi tag_columns",
+            EsBulk::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test3&tag_columns=name,sex",
+                r#"{"create":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
-                resp: Ok("".to_string()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest { // time_column, multi tag_columns
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/_bulk?table=test4&time_column=date&tag_columns=name,sex", 
-                req: r#"{"create":{}}
+                Ok("".to_string())
+            ),
+            None,
+            None
+        ),
+        RequestStep::new_boxed(
+            "_bulk time_column, multi tag_columns",
+            EsBulk::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test4&time_column=date&tag_columns=name,sex",
+                r#"{"create":{}}
                 {"date":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
-                resp: Ok("".to_string()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest { // no time, no tag_columns
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/_bulk?table=test5", 
-                req: r#"{"create":{}}
+                Ok("".to_string())
+            ),
+            None,
+            None
+        ),
+        RequestStep::new_boxed(
+            "_bulk no time, no tag_columns",
+            EsBulk::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test5",
+                r#"{"create":{}}
                 {"name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
-                resp: Ok("".to_string()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest { // no time, multi tag_columns
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/_bulk?table=test6&tag_columns=name,sex", 
-                req: r#"{"create":{}}
+                Ok("".to_string())
+            ),
+            None,
+            None
+        ),
+        RequestStep::new_boxed(
+            "_bulk no time, multi tag_columns",
+            EsBulk::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test6&tag_columns=name,sex",
+                r#"{"create":{}}
                 {"name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
-                resp: Ok("".to_string()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest { // nest json, multi tag_columns
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/_bulk?table=test7&tag_columns=name,age,is_student", 
-                req: r#"{"create":{}}
+                Ok("".to_string())
+            ),
+            None,
+            None
+        ),
+        RequestStep::new_boxed(
+            "_bulk nest json, multi tag_columns",
+            EsBulk::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test7&tag_columns=name,age,is_student",
+                r#"{"create":{}}
                 {"time": "2021-01-01T00:00:00Z","name": "John Doe","age": 43,"is_student": false,"address": {"street": "123 Main Street","city": "Springfield","state": "IL","zip": {"code": 62701}},"children": [{"name": "Jane Doe","age": 7,"is_student": {"grade": 2},"shoes": [{"brand": "Nike","size": 7},{"brand": "Adidas","size": 8}]},{"name": "Dave Doe","age": 12}]}"#,
-                resp: Ok("".to_string()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest { // create and index
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/_bulk?table=test8", 
-                req: r#"{"create":{}}
+                Ok("".to_string())
+            ),
+            None,
+            None
+        ),
+        RequestStep::new_boxed(
+            "_bulk create and index",
+            EsBulk::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test8",
+                r#"{"create":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
                 {"index":{}}
                 {"time":"2024-04-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
-                resp: Ok("".to_string()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest { // index and create
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/_bulk?table=test9", 
-                req: r#"{"index":{}}
+                Ok("".to_string())
+            ),
+            None,
+            None
+        ),
+        RequestStep::new_boxed(
+            "_bulk index and create",
+            EsBulk::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test9",
+                r#"{"index":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
                 {"create":{}}
                 {"time":"2024-04-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
-                resp: Ok("".to_string()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest { // create and create
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/_bulk?table=test10", 
-                req: r#"{"create":{}}
+                Ok("".to_string())
+            ),
+            None,
+            None
+        ),
+        RequestStep::new_boxed(
+            "_bulk create and create",
+            EsBulk::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test10",
+                r#"{"create":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
                 {"create":{}}
                 {"time":"2024-04-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
-                resp: Ok("".to_string()),
-            },
-            auth: None,
-        },
-        Step::CnosdbRequest { // index and index
-            req: CnosdbRequest::Write {
-                url: "http://127.0.0.1:8902/api/v1/es/_bulk?table=test11", 
-                req: r#"{"index":{}}
+                Ok("".to_string())
+            ),
+            None,
+            None
+        ),
+        RequestStep::new_boxed(
+            "_bulk index and index",
+            EsBulk::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test11",
+                r#"{"index":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
                 {"index":{}}
                 {"time":"2024-04-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
-                resp: Ok("".to_string()),
-            },
-            auth: None,
-        },
-    ])
+                Ok("".to_string())
+            ),
+            None,
+            None
+        ),
+    ];
+    executor.execute_steps(&steps);
 }
