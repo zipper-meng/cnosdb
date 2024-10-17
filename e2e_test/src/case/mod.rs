@@ -8,6 +8,7 @@ pub use executor::*;
 pub enum CaseFlowControl {
     Continue,
     Break,
+    Error(String),
 }
 
 #[derive(Debug)]

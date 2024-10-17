@@ -10,7 +10,7 @@ use reqwest::{Method, StatusCode};
 use serial_test::serial;
 
 use crate::case::step::{EsBulk, RequestStep, StepPtr};
-use crate::case::E2eExecutor;
+use crate::global::init_test;
 use crate::utils::{
     build_data_node_config, copy_cnosdb_server_certificate, get_workspace_dir, kill_all,
     run_singleton, Client,
@@ -321,15 +321,16 @@ fn test_cli_connection() {
 }
 
 #[test]
-#[serial]
 fn es_api_test() {
-    let executor =
-        E2eExecutor::new_singleton("api_router_tests", "es_api_test", cluster_def::one_data(1));
+    let mut ctx = init_test("http_api_tests", "es_api_test");
+    let executor = ctx.build_executor_for_singleton(cluster_def::one_data(1));
+    let http_addr = ctx.cluster_definition().unwrap().data_cluster_def[0].http_host_port;
+
     let steps: Vec<StepPtr> = vec![
         RequestStep::new_boxed(
             "_bulk 1",
             EsBulk::build_request_with_str(
-                "http://127.0.0.1:8902/api/v1/es/_bulk",
+                format!("http://{http_addr}/api/v1/es/_bulk"),
                 r#"{"create":{}}
                 {"msg":"test"}"#,
                 Err(E2eError::Api {
@@ -345,7 +346,7 @@ fn es_api_test() {
         RequestStep::new_boxed(
             "_bulk 2",
             EsBulk::build_request_with_str(
-                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test1",
+                format!("http://{http_addr}/api/v1/es/_bulk?table=test1"),
                 r#"{"create":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
                 Ok("".to_string())
@@ -356,7 +357,7 @@ fn es_api_test() {
         RequestStep::new_boxed(
             "_bulk no time_column, one tag_columns",
             EsBulk::build_request_with_str(
-                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test2&tag_columns=name",
+                format!("http://{http_addr}/api/v1/es/_bulk?table=test2&tag_columns=name"),
                 r#"{"create":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
                 Ok("".to_string())
@@ -367,7 +368,7 @@ fn es_api_test() {
         RequestStep::new_boxed(
             "_bulk no time_column, multi tag_columns",
             EsBulk::build_request_with_str(
-                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test3&tag_columns=name,sex",
+                format!("http://{http_addr}/api/v1/es/_bulk?table=test3&tag_columns=name,sex"),
                 r#"{"create":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
                 Ok("".to_string())
@@ -378,7 +379,7 @@ fn es_api_test() {
         RequestStep::new_boxed(
             "_bulk time_column, multi tag_columns",
             EsBulk::build_request_with_str(
-                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test4&time_column=date&tag_columns=name,sex",
+                format!("http://{http_addr}/api/v1/es/_bulk?table=test4&time_column=date&tag_columns=name,sex"),
                 r#"{"create":{}}
                 {"date":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
                 Ok("".to_string())
@@ -389,7 +390,7 @@ fn es_api_test() {
         RequestStep::new_boxed(
             "_bulk no time, no tag_columns",
             EsBulk::build_request_with_str(
-                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test5",
+                format!("http://{http_addr}/api/v1/es/_bulk?table=test5"),
                 r#"{"create":{}}
                 {"name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
                 Ok("".to_string())
@@ -400,7 +401,7 @@ fn es_api_test() {
         RequestStep::new_boxed(
             "_bulk no time, multi tag_columns",
             EsBulk::build_request_with_str(
-                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test6&tag_columns=name,sex",
+                format!("http://{http_addr}/api/v1/es/_bulk?table=test6&tag_columns=name,sex"),
                 r#"{"create":{}}
                 {"name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}"#,
                 Ok("".to_string())
@@ -411,7 +412,7 @@ fn es_api_test() {
         RequestStep::new_boxed(
             "_bulk nest json, multi tag_columns",
             EsBulk::build_request_with_str(
-                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test7&tag_columns=name,age,is_student",
+                format!("http://{http_addr}/api/v1/es/_bulk?table=test7&tag_columns=name,age,is_student"),
                 r#"{"create":{}}
                 {"time": "2021-01-01T00:00:00Z","name": "John Doe","age": 43,"is_student": false,"address": {"street": "123 Main Street","city": "Springfield","state": "IL","zip": {"code": 62701}},"children": [{"name": "Jane Doe","age": 7,"is_student": {"grade": 2},"shoes": [{"brand": "Nike","size": 7},{"brand": "Adidas","size": 8}]},{"name": "Dave Doe","age": 12}]}"#,
                 Ok("".to_string())
@@ -422,7 +423,7 @@ fn es_api_test() {
         RequestStep::new_boxed(
             "_bulk create and index",
             EsBulk::build_request_with_str(
-                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test8",
+                format!("http://{http_addr}/api/v1/es/_bulk?table=test8"),
                 r#"{"create":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
                 {"index":{}}
@@ -435,7 +436,7 @@ fn es_api_test() {
         RequestStep::new_boxed(
             "_bulk index and create",
             EsBulk::build_request_with_str(
-                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test9",
+                format!("http://{http_addr}/api/v1/es/_bulk?table=test9"),
                 r#"{"index":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
                 {"create":{}}
@@ -448,7 +449,7 @@ fn es_api_test() {
         RequestStep::new_boxed(
             "_bulk create and create",
             EsBulk::build_request_with_str(
-                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test10",
+                format!("http://{http_addr}/api/v1/es/_bulk?table=test10"),
                 r#"{"create":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
                 {"create":{}}
@@ -461,7 +462,7 @@ fn es_api_test() {
         RequestStep::new_boxed(
             "_bulk index and index",
             EsBulk::build_request_with_str(
-                "http://127.0.0.1:8902/api/v1/es/_bulk?table=test11",
+                format!("http://{http_addr}/api/v1/es/_bulk?table=test11"),
                 r#"{"index":{}}
                 {"time":"2024-03-27T02:51:11.687Z", "name":"asd", "sex": "man", "msg":"test", "int1":10, "int2":-10, "float1":10.5, "float2":-10.5, "flag":false}
                 {"index":{}}

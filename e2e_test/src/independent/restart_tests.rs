@@ -1,29 +1,29 @@
 #![cfg(test)]
 
 use std::fmt::Write;
-use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
 use rand::distributions::Alphanumeric;
 use rand::Rng;
 use reqwest::StatusCode;
-use serial_test::serial;
 
-use crate::case::step::{ControlStep, RequestStep, Sql, SqlNoResult, StepPtr, StepResult};
-use crate::case::{CnosdbAuth, E2eExecutor};
-use crate::cluster_def::CnosdbClusterDefinition;
-use crate::utils::{
-    kill_all, run_cluster_with_customized_configs, CnosdbDataTestHelper, CnosdbMetaTestHelper,
+use crate::case::step::{
+    ControlStep, FunctionStep, RequestStep, Sql, SqlNoResult, StepPtr, StepResult,
 };
+use crate::case::{CaseFlowControl, CnosdbAuth};
+use crate::cluster_def::CnosdbClusterDefinition;
+use crate::global::init_test;
 use crate::{check_response, cluster_def, E2eError};
 
 #[test]
-#[serial]
 fn case1() {
-    let url = "http://127.0.0.1:8902/api/v1/sql?tenant=cnosdb&db=public";
-
-    let executor = E2eExecutor::new_singleton("restart_tests", "case_1", cluster_def::one_data(1));
+    let mut ctx = init_test("restart_tests", "case_1");
+    let executor = ctx.build_executor_for_singleton(cluster_def::one_data(1));
+    let url_owned = format!(
+        "http://{}/api/v1/sql?tenant=cnosdb&db=public",
+        ctx.cluster_definition().unwrap().data_cluster_def[0].http_host_port
+    );
+    let url = url_owned.as_str();
     let steps: Vec<StepPtr> = vec![
         RequestStep::new_boxed("create table", SqlNoResult::build_request_with_str(
             url,
@@ -119,11 +119,16 @@ fn case1() {
 }
 
 #[test]
-#[serial]
 fn case2() {
-    let url = "http://127.0.0.1:8902/api/v1/sql?tenant=cnosdb&db=public";
+    let mut ctx = init_test("restart_tests", "case_2");
+    let executor = ctx.build_executor_for_singleton(cluster_def::one_data(1));
 
-    let executor = E2eExecutor::new_singleton("restart_tests", "case_2", cluster_def::one_data(1));
+    let url_owned = format!(
+        "http://{}/api/v1/sql?tenant=cnosdb&db=public",
+        ctx.cluster_definition().unwrap().data_cluster_def[0].http_host_port
+    );
+    let url = url_owned.as_str();
+
     let steps: Vec<StepPtr> = vec![
         RequestStep::new_boxed("create table", SqlNoResult::build_request_with_str(
                 url,
@@ -220,11 +225,16 @@ fn case2() {
 }
 
 #[test]
-#[serial]
 fn case3() {
-    let url = "http://127.0.0.1:8902/api/v1/sql?tenant=cnosdb&db=public";
+    let mut ctx = init_test("restart_tests", "case_3");
+    let executor = ctx.build_executor_for_singleton(cluster_def::one_data(1));
 
-    let executor = E2eExecutor::new_singleton("restart_tests", "case_3", cluster_def::one_data(1));
+    let url_owned = format!(
+        "http://{}/api/v1/sql?tenant=cnosdb&db=public",
+        ctx.cluster_definition().unwrap().data_cluster_def[0].http_host_port
+    );
+    let url = url_owned.as_str();
+
     let steps: Vec<StepPtr> = vec![
         RequestStep::new_boxed("create database", SqlNoResult::build_request_with_str(
                 url,
@@ -284,12 +294,17 @@ fn case3() {
 }
 
 #[test]
-#[serial]
 fn case4() {
-    let url_cnosdb_public = "http://127.0.0.1:8902/api/v1/sql?tenant=cnosdb&db=public";
-    let url_test_ = "http://127.0.0.1:8902/api/v1/sql?tenant=test";
+    let mut ctx = init_test("restart_tests", "case_4");
+    let executor = ctx.build_executor_for_singleton(cluster_def::one_data(1));
 
-    let executor = E2eExecutor::new_singleton("restart_tests", "case_4", cluster_def::one_data(1));
+    let http_service_addr = ctx.cluster_definition().unwrap().data_cluster_def[0].http_host_port;
+    let url_cnosdb_public_owned =
+        format!("http://{http_service_addr}/api/v1/sql?tenant=cnosdb&db=public");
+    let url_test_owned = format!("http://{http_service_addr}/api/v1/sql?tenant=test");
+    let url_cnosdb_public = url_cnosdb_public_owned.as_str();
+    let url_test_ = url_test_owned.as_str();
+
     let steps: Vec<StepPtr> = vec![
         RequestStep::new_boxed("create user", SqlNoResult::build_request_with_str(
                 url_cnosdb_public,
@@ -432,12 +447,17 @@ fn case4() {
 }
 
 #[test]
-#[serial]
 fn case5() {
-    let url_cnosdb_public = "http://127.0.0.1:8902/api/v1/sql?tenant=cnosdb&db=public";
-    let url_test_ = "http://127.0.0.1:8902/api/v1/sql?tenant=test";
+    let mut ctx = init_test("restart_tests", "case_5");
+    let executor = ctx.build_executor_for_singleton(cluster_def::one_data(1));
 
-    let executor = E2eExecutor::new_singleton("restart_tests", "case_5", cluster_def::one_data(1));
+    let http_service_addr = ctx.cluster_definition().unwrap().data_cluster_def[0].http_host_port;
+    let url_cnosdb_public_owned =
+        format!("http://{http_service_addr}/api/v1/sql?tenant=cnosdb&db=public");
+    let url_test_owned = format!("http://{http_service_addr}/api/v1/sql?tenant=test");
+    let url_cnosdb_public = url_cnosdb_public_owned.as_str();
+    let url_test_ = url_test_owned.as_str();
+
     let steps: Vec<StepPtr> = vec![
         RequestStep::new_boxed("create user", SqlNoResult::build_request_with_str(
                 url_cnosdb_public,
@@ -584,14 +604,15 @@ fn case5() {
 
 #[test]
 fn case6() {
-    let url_cnosdb_public = "http://127.0.0.1:8902/api/v1/sql?db=public";
-    let url_cnosdb_db1 = "http://127.0.0.1:8902/api/v1/sql?db=db1";
+    let mut ctx = init_test("restart_tests", "case_6");
+    let executor = ctx.build_executor_for_cluster(cluster_def::one_meta_three_data());
 
-    let executor = E2eExecutor::new_cluster(
-        "restart_tests",
-        "case_6",
-        cluster_def::one_meta_three_data(),
-    );
+    let http_service_addr = ctx.cluster_definition().unwrap().data_cluster_def[0].http_host_port;
+    let url_cnosdb_public_owned = format!("http://{http_service_addr}/api/v1/sql?db=public");
+    let url_cnosdb_db1_owned = format!("http://{http_service_addr}/api/v1/sql?db=db1");
+    let url_cnosdb_public = url_cnosdb_public_owned.as_str();
+    let url_cnosdb_db1 = url_cnosdb_db1_owned.as_str();
+
     let steps: Vec<StepPtr> = vec![
         ControlStep::new_boxed_sleep("sleep 5s", 5),
         RequestStep::new_boxed("create database", SqlNoResult::build_request_with_str(
@@ -645,111 +666,102 @@ fn case6() {
 }
 
 #[test]
+#[serial_test::serial]
 fn case8_count_after_restart_cluster() {
-    println!("Test begin case8 count after restart cluster");
+    let mut ctx = init_test("restart_tests", "case8");
 
-    let test_dir = PathBuf::from("/tmp/e2e_test/independent/restart/case8");
-    let _ = std::fs::remove_dir_all(&test_dir);
-    std::fs::create_dir_all(&test_dir).unwrap();
+    const CACHE_SIZE: usize = 1_048_576;
+    let executor = ctx.build_executor_for_cluster_with_customized_config(
+        CnosdbClusterDefinition::with_ids(&[1], &[1, 2]),
+        vec![],
+        vec![
+            Some(Box::new(|c| {
+                c.wal.max_file_size = CACHE_SIZE as u64;
+                c.cluster.raft_logs_to_keep = 5;
+                c.cluster.trigger_snapshot_interval = Duration::new(1, 0);
+                c.global.store_metrics = false;
+                c.cache.max_buffer_size = 2_097_152;
+            })),
+            Some(Box::new(|c| {
+                c.wal.max_file_size = CACHE_SIZE as u64;
+                c.cluster.raft_logs_to_keep = 5;
+                c.cluster.trigger_snapshot_interval = Duration::new(1, 0);
+                c.global.store_metrics = false;
+                c.cache.max_buffer_size = 2_097_152
+            })),
+        ],
+    );
 
-    kill_all();
+    let steps: Vec<StepPtr> = vec![
+        RequestStep::new_boxed(
+            "name",
+            SqlNoResult::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/sql?db=public",
+                "create database db1 with shard 4 replica 2",
+                Ok(()),
+            ),
+            None,
+            None,
+        ),
+        FunctionStep::new_boxed(
+            "name",
+            Box::new(move |context| {
+                let client = context.data().client.clone();
+                let mut buffer = String::with_capacity(CACHE_SIZE);
+                for i in 0..30000 {
+                    let random_number = rand::thread_rng().gen_range(1000..10000);
+                    let four_digit_float: f64 = rand::thread_rng().gen_range(0.0..1.0) * 10000.0;
+                    let random_string: String = rand::thread_rng()
+                        .sample_iter(&Alphanumeric)
+                        .take(300)
+                        .map(char::from)
+                        .collect();
+                    if let Err(e) = writeln!(
+                        &mut buffer,
+                        "tb1,t1=t1a,t2=t2a,t3=t3a f1={}i,f2={},f3=\"{}\" {}",
+                        random_number, four_digit_float, random_string, i
+                    ) {
+                        return CaseFlowControl::Error(e.to_string());
+                    }
+                    if buffer.len() < CACHE_SIZE {
+                        continue;
+                    }
+                    check_response!(
+                        client.post("http://127.0.0.1:8902/api/v1/write?db=db1", &buffer)
+                    );
+                    buffer.clear();
+                }
 
-    fn start_cluster(
-        test_dir: &PathBuf,
-        runtime: Arc<tokio::runtime::Runtime>,
-    ) -> (Option<CnosdbMetaTestHelper>, Option<CnosdbDataTestHelper>) {
-        run_cluster_with_customized_configs(
-            test_dir,
-            runtime,
-            &CnosdbClusterDefinition::with_ids(&[1], &[1, 2]),
-            true,
-            true,
-            vec![],
-            vec![
-                Some(Box::new(|c| {
-                    c.wal.max_file_size = 1_048_576;
-                    c.cluster.raft_logs_to_keep = 5;
-                    c.cluster.trigger_snapshot_interval = Duration::new(1, 0);
-                    c.global.store_metrics = false;
-                    c.cache.max_buffer_size = 2_097_152;
-                })),
-                Some(Box::new(|c| {
-                    c.wal.max_file_size = 1_048_576;
-                    c.cluster.raft_logs_to_keep = 5;
-                    c.cluster.trigger_snapshot_interval = Duration::new(1, 0);
-                    c.global.store_metrics = false;
-                    c.cache.max_buffer_size = 2_097_152
-                })),
-            ],
-        )
-    }
-
-    let runtime = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .worker_threads(4)
-        .build()
-        .unwrap();
-    let runtime = Arc::new(runtime);
-    {
-        let (_meta, data) = start_cluster(&test_dir, runtime.clone());
-        let data = data.unwrap();
-        let client = data.client.clone();
-        check_response!(client.post(
-            "http://127.0.0.1:8902/api/v1/sql?db=public",
-            "create database db1 with shard 4 replica 2",
-        ));
-
-        let mut buffer = String::new();
-        for i in 0..30000 {
-            let random_number = rand::thread_rng().gen_range(1000..10000);
-            let four_digit_float: f64 = rand::thread_rng().gen_range(0.0..1.0) * 10000.0;
-            let random_string: String = rand::thread_rng()
-                .sample_iter(&Alphanumeric)
-                .take(300)
-                .map(char::from)
-                .collect();
-            writeln!(
-                &mut buffer,
-                "tb1,t1=t1a,t2=t2a,t3=t3a f1={}i,f2={},f3=\"{}\" {}",
-                random_number, four_digit_float, random_string, i
-            )
-            .unwrap();
-            if buffer.len() < 1_048_576 {
-                continue;
-            }
-            check_response!(client.post("http://127.0.0.1:8902/api/v1/write?db=db1", &buffer,));
-            buffer.clear();
-        }
-
-        check_response!(client.post("http://127.0.0.1:8902/api/v1/write?db=db1", &buffer,));
-        buffer.clear();
-
-        let result = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=db1",
-                "select count(*) from tb1",
-            )
-            .unwrap();
-        assert_eq!(result.status(), StatusCode::OK);
-        assert_eq!(result.text().unwrap(), "COUNT(UInt8(1))\n30000\n");
-        kill_all();
-    }
-
-    {
-        let (_meta, data) = start_cluster(&test_dir, runtime.clone());
-        let client = data.as_ref().map(|d| d.client.clone()).unwrap();
-
-        let result = client
-            .post(
-                "http://127.0.0.1:8902/api/v1/sql?db=db1",
-                "select count(*) from tb1",
-            )
-            .unwrap();
-        assert_eq!(result.status(), StatusCode::OK);
-        assert_eq!(result.text().unwrap(), "COUNT(UInt8(1))\n30000\n");
-    }
-
-    kill_all();
-    let _ = std::fs::remove_dir_all(&test_dir);
-    println!("Test begin case8 count after restart cluster");
+                check_response!(client.post("http://127.0.0.1:8902/api/v1/write?db=db1", &buffer));
+                buffer.clear();
+                CaseFlowControl::Continue
+            }),
+        ),
+        RequestStep::new_boxed(
+            "name",
+            Sql::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/sql?db=public",
+                "create database db1 with shard 4 replica 2",
+                Ok(vec!["COUNT(UInt8(1))", "30000"]),
+                false,
+                false,
+            ),
+            None,
+            None,
+        ),
+        ControlStep::new_boxed_restart_cluster("name"),
+        RequestStep::new_boxed(
+            "name",
+            Sql::build_request_with_str(
+                "http://127.0.0.1:8902/api/v1/sql?db=public",
+                "create database db1 with shard 4 replica 2",
+                Ok(vec!["COUNT(UInt8(1))", "30000"]),
+                false,
+                false,
+            ),
+            None,
+            None,
+        ),
+    ];
+    executor.execute_steps(&steps);
 }

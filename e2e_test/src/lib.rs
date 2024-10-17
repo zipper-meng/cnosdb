@@ -1,7 +1,18 @@
+/// Common end-to-end test case executor, and some predefined test cases.
 mod case;
+
+/// CnosDB cluster definition, used to initialize CnosDB cluster.
 mod cluster_def;
+
+/// Test case context, used to store the state of the test cases.
+mod global;
+
+/// Independent test cases, CnosDB cluster is managed by the test case itself.
 mod independent;
+
+/// Test cases reliant on running CnosDB cluster.
 mod reliant;
+
 mod utils;
 
 /// Errors during e2e tests, some of the variants may contains optional fields to compare with expected errors.
