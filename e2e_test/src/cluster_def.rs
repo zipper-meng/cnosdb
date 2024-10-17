@@ -1,10 +1,13 @@
 #![allow(dead_code)]
 
+use std::net::SocketAddrV4;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use config::meta::Opt as MetaStoreConfig;
 use config::tskv::Config as CnosdbConfig;
+
+use crate::global::{E2eContext, LOOPBACK_IP};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CnosdbClusterDefinition {
@@ -59,7 +62,7 @@ fn data_id_to_opentsdb_service_port(id: u8) -> u16 {
 pub struct MetaNodeDefinition {
     pub id: u8,
     pub config_file_name: String,
-    pub host_port: String,
+    pub host_port: SocketAddrV4,
 }
 
 impl MetaNodeDefinition {
@@ -71,8 +74,13 @@ impl MetaNodeDefinition {
         Self {
             id,
             config_file_name: format!("config_{meta_port}.toml"),
-            host_port: format!("127.0.0.1:{meta_port}"),
+            host_port: SocketAddrV4::new(LOOPBACK_IP, meta_port),
         }
+    }
+
+    pub fn reset_ports(&mut self, ctx: &E2eContext) {
+        let host_port = ctx.next_addr(*self.host_port.ip()).unwrap();
+        self.host_port = host_port;
     }
 
     /// Returns $test_dir/meta/config/$config_file_name
@@ -83,20 +91,10 @@ impl MetaNodeDefinition {
             .join(&self.config_file_name)
     }
 
-    pub fn to_host_port(&self) -> (String, u16) {
-        match self.host_port.split_once(':') {
-            Some((host, port)) => (host.to_string(), port.parse::<u16>().unwrap()),
-            None => {
-                panic!("Cannot split host_port {} by ':'", self.host_port);
-            }
-        }
-    }
-
     pub fn update_config(&self, config: &mut MetaStoreConfig) {
         config.global.node_id = self.id as u64;
-        let (host, port) = self.to_host_port();
-        config.global.raft_node_host = host;
-        config.global.listen_port = port;
+        config.global.raft_node_host = self.host_port.ip().to_string();
+        config.global.listen_port = self.host_port.port();
         config.sys_config.system_database_replica = 1;
     }
 }
@@ -106,7 +104,7 @@ impl Default for MetaNodeDefinition {
         Self {
             id: 1,
             config_file_name: "config_8901.toml".to_string(),
-            host_port: "127.0.0.1:8901".to_string(),
+            host_port: SocketAddrV4::new(LOOPBACK_IP, 8901),
         }
     }
 }
@@ -153,9 +151,9 @@ pub struct DataNodeDefinition {
     pub id: u8,
     pub config_file_name: String,
     pub mode: DeploymentMode,
-    pub http_host_port: String,
+    pub http_host_port: SocketAddrV4,
     pub heartbeat_interval: Duration,
-    pub meta_host_ports: Vec<String>,
+    pub meta_host_ports: Vec<SocketAddrV4>,
     pub coord_service_port: Option<u16>,
     pub flight_service_port: Option<u16>,
     pub opentsdb_service_port: Option<u16>,
@@ -171,14 +169,14 @@ impl DataNodeDefinition {
         let (mode, meta_host_ports) = if meta_ids.is_empty() {
             (
                 DeploymentMode::Singleton,
-                vec![format!("127.0.0.1:{}", meta_id_to_port(id))],
+                vec![SocketAddrV4::new(LOOPBACK_IP, meta_id_to_port(id))],
             )
         } else {
             (
                 DeploymentMode::QueryTskv,
                 meta_ids
                     .iter()
-                    .map(|meta_id| format!("127.0.0.1:{}", meta_id_to_port(*meta_id)))
+                    .map(|meta_id| SocketAddrV4::new(LOOPBACK_IP, meta_id_to_port(*meta_id)))
                     .collect(),
             )
         };
@@ -186,13 +184,28 @@ impl DataNodeDefinition {
             id,
             config_file_name: format!("config_{data_http_port}.toml"),
             mode,
-            http_host_port: format!("127.0.0.1:{data_http_port}"),
+            http_host_port: SocketAddrV4::new(LOOPBACK_IP, data_http_port),
             meta_host_ports,
             coord_service_port: Some(data_id_to_coord_service_port(id)),
             flight_service_port: Some(data_id_to_flight_service_port(id)),
             opentsdb_service_port: Some(data_id_to_opentsdb_service_port(id)),
             heartbeat_interval: Duration::from_millis(100),
             grpc_enable_gzip: false,
+        }
+    }
+
+    pub fn reset_ports(&mut self, ctx: &E2eContext) {
+        let default_host = *self.http_host_port.ip();
+
+        self.http_host_port = ctx.next_addr(default_host).unwrap();
+        if let Some(p) = self.coord_service_port.as_mut() {
+            *p = ctx.next_addr(default_host).unwrap().port();
+        }
+        if let Some(p) = self.flight_service_port.as_mut() {
+            *p = ctx.next_addr(default_host).unwrap().port();
+        }
+        if let Some(p) = self.opentsdb_service_port.as_mut() {
+            *p = ctx.next_addr(default_host).unwrap().port();
         }
     }
 
@@ -204,21 +217,20 @@ impl DataNodeDefinition {
             .join(&self.config_file_name)
     }
 
-    pub fn to_host_port(&self) -> (String, u16) {
-        match self.http_host_port.split_once(':') {
-            Some((host, port)) => (host.to_string(), port.parse::<u16>().unwrap()),
-            None => {
-                panic!("Cannot split host_port {} by ':'", self.http_host_port);
-            }
-        }
+    /// Generate meta service address list, for `MetaConfig::service_addr`.
+    pub fn meta_service_addr(&self) -> Vec<String> {
+        self.meta_host_ports
+            .iter()
+            .map(|addr| addr.to_string())
+            .collect()
     }
 
     pub fn update_config(&self, config: &mut CnosdbConfig) {
         config.global.store_metrics = false;
         config.global.node_id = self.id as u64;
         config.deployment.mode = self.mode.to_string();
-        config.service.http_listen_port = Some(self.to_host_port().1);
-        config.meta.service_addr = self.meta_host_ports.clone();
+        config.service.http_listen_port = Some(self.http_host_port.port());
+        config.meta.service_addr = self.meta_service_addr();
         config.service.grpc_listen_port = self.coord_service_port;
         config.service.flight_rpc_listen_port = self.flight_service_port;
         config.service.tcp_listen_port = self.opentsdb_service_port;
@@ -233,8 +245,8 @@ impl Default for DataNodeDefinition {
             id: 1,
             config_file_name: "config_8902.toml".to_string(),
             mode: DeploymentMode::QueryTskv,
-            http_host_port: "127.0.0.1:8902".to_string(),
-            meta_host_ports: vec!["127.0.0.1:8901".to_string()],
+            http_host_port: SocketAddrV4::new(LOOPBACK_IP, 8902),
+            meta_host_ports: vec![SocketAddrV4::new(LOOPBACK_IP, 8901)],
             coord_service_port: Some(8903),
             flight_service_port: Some(8904),
             opentsdb_service_port: Some(8905),
@@ -287,12 +299,8 @@ fn test_cnosdb_cluster_definition_factory() {
     {
         // Test one_data()
         let id = 1_u8;
-        let data_http_port = 8902 + (id - 1) as u16 * 10;
         let data_node_def = DataNodeDefinition {
-            config_file_name: format!("config_{data_http_port}.toml"),
             mode: DeploymentMode::Singleton,
-            http_host_port: format!("127.0.0.1:{data_http_port}"),
-            meta_host_ports: vec!["127.0.0.1:8901".to_string()],
             ..Default::default()
         };
         assert_eq!(one_data(id), data_node_def);
@@ -300,46 +308,24 @@ fn test_cnosdb_cluster_definition_factory() {
     {
         // Test one_meta_one_data()
         let (meta_id, data_id) = (1_u8, 1_u8);
-        let meta_port = 8901 + (meta_id - 1) as u16 * 10;
-        let data_http_port = 8902 + (data_id - 1) as u16 * 10;
-        let meta_host_port = format!("127.0.0.1:{meta_port}");
         let cluster_def = CnosdbClusterDefinition {
-            meta_cluster_def: vec![MetaNodeDefinition {
-                id: 1,
-                config_file_name: format!("config_{meta_port}.toml"),
-                host_port: meta_host_port.clone(),
-            }],
-            data_cluster_def: vec![DataNodeDefinition {
-                id: 1,
-                config_file_name: format!("config_{data_http_port}.toml"),
-                mode: DeploymentMode::QueryTskv,
-                http_host_port: format!("127.0.0.1:{data_http_port}"),
-                meta_host_ports: vec![meta_host_port],
-                coord_service_port: Some(8903 + (data_id - 1) as u16 * 10),
-                flight_service_port: Some(8904 + (data_id - 1) as u16 * 10),
-                opentsdb_service_port: Some(8905 + (data_id - 1) as u16 * 10),
-                heartbeat_interval: Duration::from_millis(100),
-                grpc_enable_gzip: false,
-            }],
+            meta_cluster_def: vec![MetaNodeDefinition::default()],
+            data_cluster_def: vec![DataNodeDefinition::default()],
         };
         assert_eq!(one_meta_one_data(meta_id, data_id), cluster_def);
     }
     {
         // Test one_meta_two_data_bundled
         let cluster_def = CnosdbClusterDefinition {
-            meta_cluster_def: vec![MetaNodeDefinition {
-                id: 1,
-                config_file_name: "config_8901.toml".to_string(),
-                host_port: "127.0.0.1:8901".to_string(),
-            }],
+            meta_cluster_def: vec![MetaNodeDefinition::default()],
             data_cluster_def: vec![
                 DataNodeDefinition::default(),
                 DataNodeDefinition {
                     id: 2,
                     config_file_name: "config_8912.toml".to_string(),
                     mode: DeploymentMode::QueryTskv,
-                    http_host_port: "127.0.0.1:8912".to_string(),
-                    meta_host_ports: vec!["127.0.0.1:8901".to_string()],
+                    http_host_port: SocketAddrV4::new(LOOPBACK_IP, 8912),
+                    meta_host_ports: vec![SocketAddrV4::new(LOOPBACK_IP, 8901)],
                     coord_service_port: Some(8913),
                     flight_service_port: Some(8914),
                     opentsdb_service_port: Some(8915),

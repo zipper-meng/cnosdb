@@ -155,10 +155,10 @@ pub struct FunctionStep {
 }
 
 impl FunctionStep {
-    pub fn new_boxed(name: String, function: FnStepResult) -> Box<Self> {
+    pub fn new_boxed<S: ToString>(name: S, function: FnStepResult) -> Box<Self> {
         Box::new(Self {
             id: AtomicUsize::new(0),
-            name,
+            name: name.to_string(),
             function,
         })
     }
@@ -193,7 +193,8 @@ pub struct LogStep {
 }
 
 impl LogStep {
-    pub fn new_boxed(msg: String) -> Box<Self> {
+    pub fn new_boxed<S: ToString>(msg: S) -> Box<Self> {
+        let msg = msg.to_string();
         Box::new(Self {
             inner: FunctionStep::new_boxed(
                 "Log".to_string(),

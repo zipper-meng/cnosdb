@@ -3,6 +3,7 @@
 use core::panic;
 use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
+use std::net::SocketAddrV4;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
@@ -489,7 +490,7 @@ impl CnosdbMetaTestHelper {
         let proc = self.execute(&node_def);
         self.sub_processes.insert(node_def.config_file_name, proc);
 
-        self.wait_startup(&self.meta_node_definitions[0].host_port)
+        self.wait_startup(self.meta_node_definitions[0].host_port)
             .join()
             .unwrap();
 
@@ -525,7 +526,7 @@ impl CnosdbMetaTestHelper {
             let proc = self.execute(meta_node_def);
             self.sub_processes
                 .insert(meta_node_def.config_file_name.clone(), proc);
-            wait_startup_threads.push(self.wait_startup(&meta_node_def.host_port));
+            wait_startup_threads.push(self.wait_startup(meta_node_def.host_port));
         }
         thread::sleep(Duration::from_secs(3));
         for jh in wait_startup_threads {
@@ -564,9 +565,8 @@ impl CnosdbMetaTestHelper {
     }
 
     /// Wait cnosdb-meta startup by checking ping api in loop
-    pub fn wait_startup(&self, host: &str) -> thread::JoinHandle<()> {
-        let host = host.to_owned();
-        let test_api = format!("http://{host}/debug");
+    pub fn wait_startup(&self, addr: SocketAddrV4) -> thread::JoinHandle<()> {
+        let test_api = format!("http://{addr}/debug");
         let startup_time = std::time::Instant::now();
         let client = self.client.clone();
         thread::spawn(move || {
@@ -584,7 +584,7 @@ impl CnosdbMetaTestHelper {
                 }
                 counter += 1;
                 if counter == 30 {
-                    panic!("Test case failed, waiting too long for {host} to startup");
+                    panic!("Test case failed, waiting too long for {addr} to startup");
                 }
             }
         })
@@ -688,8 +688,8 @@ impl CnosdbDataTestHelper {
                 (proc, data_node_def.mode),
             );
 
-            let jh = self.wait_startup(&data_node_def.http_host_port);
-            wait_startup_threads.push((jh, data_node_def.http_host_port.clone()));
+            let jh = self.wait_startup(data_node_def.http_host_port);
+            wait_startup_threads.push((jh, data_node_def.http_host_port));
         }
         thread::sleep(Duration::from_secs(5));
         for (jh, addr) in wait_startup_threads {
@@ -700,10 +700,9 @@ impl CnosdbDataTestHelper {
     }
 
     /// Wait cnosdb startup by checking ping api in loop
-    pub fn wait_startup(&self, host_port: &str) -> thread::JoinHandle<()> {
-        let host = host_port.to_owned();
+    pub fn wait_startup(&self, addr: SocketAddrV4) -> thread::JoinHandle<()> {
         let ping_api = format!(
-            "{}://{host}/api/v1/ping",
+            "{}://{addr}/api/v1/ping",
             if self.enable_tls { "https" } else { "http" }
         );
         let startup_time = std::time::Instant::now();
@@ -723,7 +722,7 @@ impl CnosdbDataTestHelper {
                 }
                 counter += 1;
                 if counter == 30 {
-                    panic!("Test case failed, waiting too long for {host} to startup");
+                    panic!("Test case failed, waiting too long for {addr} to startup");
                 }
             }
         })
@@ -740,7 +739,7 @@ impl CnosdbDataTestHelper {
         self.sub_processes
             .insert(node_def.config_file_name.clone(), (new_proc, node_def.mode));
 
-        let jh = self.wait_startup(&node_def.http_host_port);
+        let jh = self.wait_startup(node_def.http_host_port);
         jh.join().unwrap();
     }
 
@@ -770,7 +769,7 @@ impl CnosdbDataTestHelper {
             node_def.config_file_name.to_string(),
             (new_proc, node_def.mode),
         );
-        let jh = self.wait_startup(&node_def.http_host_port);
+        let jh = self.wait_startup(node_def.http_host_port);
         jh.join().unwrap();
     }
 
@@ -838,9 +837,9 @@ pub fn run_cluster(
 /// - generate_meta_config: If true, regenerate meta node config files.
 /// - generate_data_config: If true, regenerate data node config files.
 /// - regenerate_update_meta_config: If generate_meta_config is true, and the `ith` optional closure is Some(Fn),
-///   alter the default config of the `ith` meta node by the Fn.
+///   alter the default config of the `ith` meta node by the Fn. (Do not change service ports.)
 /// - regenerate_update_meta_config: If generate_data_config is true, and the `ith` optional closure is Some(Fn),
-///   alter the default config of the `ith` data node by the Fn.
+///   alter the default config of the `ith` data node by the Fn. (Do not change service ports.)
 pub fn run_cluster_with_customized_configs(
     test_dir: impl AsRef<Path>,
     runtime: Arc<Runtime>,

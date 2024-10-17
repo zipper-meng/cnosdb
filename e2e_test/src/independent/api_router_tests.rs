@@ -1,25 +1,24 @@
 #![cfg(test)]
 
 use reqwest::StatusCode;
-use serial_test::serial;
 
 use crate::case::step::{ControlStep, LineProtocol, RequestStep, Sql, StepPtr, StepResult};
-use crate::case::E2eExecutor;
+use crate::global::init_test;
 use crate::{cluster_def, E2eError};
 
 #[test]
-#[serial]
 fn api_router() {
-    let executor = E2eExecutor::new_cluster(
-        "api_router_tests",
-        "api_router",
-        cluster_def::one_meta_two_data_separated(),
-    );
+    let mut ctx = init_test("api_router_tests", "api_router");
+    let executor = ctx.build_executor_for_cluster(cluster_def::one_meta_two_data_separated());
+    let cluster_definition = ctx.cluster_definition().unwrap();
+    let data_1_addr = cluster_definition.data_cluster_def[0].http_host_port;
+    let data_2_addr = cluster_definition.data_cluster_def[0].http_host_port;
+
     let steps: Vec<StepPtr> = vec![
         RequestStep::new_boxed(
-            "write data to 8902(invalid node)",
+            "write data to data-1(tskv node)",
             LineProtocol::build_request_with_str(
-                "http://127.0.0.1:8902/api/v1/write?db=public",
+                format!("http://{data_1_addr}/api/v1/write?db=public"),
                 "api_router,ta=a fa=1 1",
                 Err(E2eError::Api {
                     status: StatusCode::NOT_FOUND,
@@ -33,9 +32,9 @@ fn api_router() {
         ),
         ControlStep::new_boxed_sleep("sleep 3s", 3),
         RequestStep::new_boxed(
-            "write data to 8912",
+            "write data to data-2(query node)",
             LineProtocol::build_request_with_str(
-                "http://127.0.0.1:8912/api/v1/write?db=public",
+                format!("http://{data_2_addr}/api/v1/write?db=public"),
                 "api_router,ta=a fa=1 1",
                 Ok(()),
             ),
@@ -44,9 +43,9 @@ fn api_router() {
         ),
         ControlStep::new_boxed_sleep("sleep 3s", 3),
         RequestStep::new_boxed(
-            "query data from 8902 (invalid node)",
+            "query data from data-1(tskv node)",
             Sql::build_request_with_str(
-                "http://127.0.0.1:8902/api/v1/sql?db=public",
+                format!("http://{data_1_addr}/api/v1/sql?db=public"),
                 "select * from api_router",
                 StepResult::Err(E2eError::Api {
                     status: StatusCode::NOT_FOUND,
@@ -62,9 +61,9 @@ fn api_router() {
         ),
         ControlStep::new_boxed_sleep("sleep 3s", 3),
         RequestStep::new_boxed(
-            "query data from 8912",
+            "query data from data-2(query node)",
             Sql::build_request_with_str(
-                "http://127.0.0.1:8912/api/v1/sql?db=public",
+                format!("http://{data_2_addr}/api/v1/sql?db=public"),
                 "select * from api_router",
                 Ok(vec!["time,ta,fa", "1970-01-01T00:00:00.000000001,a,1.0"]),
                 false,

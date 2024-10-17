@@ -7,9 +7,11 @@ use tokio::runtime::Runtime;
 
 use super::step::Step;
 use super::CaseFlowControl;
-use crate::cluster_def::{CnosdbClusterDefinition, DataNodeDefinition};
+use crate::cluster_def::CnosdbClusterDefinition;
+use crate::global::E2eContext;
 use crate::utils::{
     kill_all, run_cluster, run_singleton, Client, CnosdbDataTestHelper, CnosdbMetaTestHelper,
+    FnMutCnosdbConfig, FnMutMetaStoreConfig,
 };
 
 const WAIT_BEFORE_RESTART_SECONDS: u64 = 1;
@@ -17,56 +19,49 @@ const WAIT_BEFORE_RESTART_SECONDS: u64 = 1;
 // TODO(zipper): This module also needs test.
 
 pub struct E2eExecutor {
-    case_group: String,
-    case_name: String,
+    case_group: Arc<String>,
+    case_name: Arc<String>,
     runtime: Arc<Runtime>,
-    cluster_definition: CnosdbClusterDefinition,
+    cluster_definition: Arc<CnosdbClusterDefinition>,
+    update_meta_config_fn: Vec<Option<FnMutMetaStoreConfig>>,
+    update_data_config_fn: Vec<Option<FnMutCnosdbConfig>>,
 
     test_dir: PathBuf,
     is_singleton: bool,
 }
 
 impl E2eExecutor {
-    pub fn new_cluster(
-        case_group: &str,
-        case_name: &str,
-        cluster_definition: CnosdbClusterDefinition,
-    ) -> Self {
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .worker_threads(4)
-            .build()
-            .unwrap();
-        let runtime = Arc::new(runtime);
+    pub fn new_cluster(context: &E2eContext) -> Self {
+        Self::new_cluster_with_customized_config(context, vec![], vec![])
+    }
 
-        let test_dir = PathBuf::from(format!("/tmp/e2e_test/{case_group}/{case_name}"));
+    pub fn new_cluster_with_customized_config(
+        context: &E2eContext,
+        update_meta_config_fn: Vec<Option<FnMutMetaStoreConfig>>,
+        update_data_config_fn: Vec<Option<FnMutCnosdbConfig>>,
+    ) -> Self {
+        let case_group = context.case_group();
+        let case_name = context.case_name();
+        let runtime = context.runtime();
+        let cluster_definition = context
+            .cluster_definition()
+            .expect("E2eContext must have set cluster definition");
+
+        let test_dir = PathBuf::from(format!("/tmp/e2e_test/{case_group}/{case_name}",));
         let is_singleton = cluster_definition.meta_cluster_def.is_empty()
             && cluster_definition.data_cluster_def.len() == 1;
 
         Self {
-            case_group: case_group.to_string(),
-            case_name: case_name.to_string(),
+            case_group,
+            case_name,
             runtime,
             cluster_definition,
+            update_meta_config_fn,
+            update_data_config_fn,
 
             test_dir,
             is_singleton,
         }
-    }
-
-    pub fn new_singleton(
-        case_group: &str,
-        case_name: &str,
-        data_node_def: DataNodeDefinition,
-    ) -> Self {
-        Self::new_cluster(
-            case_group,
-            case_name,
-            CnosdbClusterDefinition {
-                meta_cluster_def: vec![],
-                data_cluster_def: vec![data_node_def],
-            },
-        )
     }
 
     fn install_singleton(&self) -> CnosdbDataTestHelper {
@@ -120,6 +115,9 @@ impl E2eExecutor {
             match step.execute(&mut context) {
                 CaseFlowControl::Continue => continue,
                 CaseFlowControl::Break => break,
+                CaseFlowControl::Error(err) => {
+                    panic!("Test failed: {}.{}: {err}", self.case_group, self.case_name);
+                }
             }
         }
 
@@ -128,10 +126,10 @@ impl E2eExecutor {
 }
 
 pub struct CaseContext {
-    case_group: String,
-    case_name: String,
+    case_group: Arc<String>,
+    case_name: Arc<String>,
     runtime: Arc<Runtime>,
-    cluster_definition: CnosdbClusterDefinition,
+    cluster_definition: Arc<CnosdbClusterDefinition>,
 
     test_dir: PathBuf,
     meta: Option<CnosdbMetaTestHelper>,
@@ -143,11 +141,11 @@ pub struct CaseContext {
 
 impl CaseContext {
     pub fn case_group(&self) -> &str {
-        &self.case_group
+        self.case_group.as_str()
     }
 
     pub fn case_name(&self) -> &str {
-        &self.case_name
+        self.case_name.as_str()
     }
 
     pub fn runtime(&self) -> Arc<Runtime> {
