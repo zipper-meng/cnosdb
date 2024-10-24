@@ -12,7 +12,7 @@ use crate::case::step::{
 };
 use crate::case::{CaseFlowControl, CnosdbAuth};
 use crate::cluster_def::CnosdbClusterDefinition;
-use crate::global::init_test;
+use crate::utils::global::init_test;
 use crate::{check_response, cluster_def, E2eError};
 
 #[test]

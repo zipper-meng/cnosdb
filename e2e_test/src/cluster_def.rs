@@ -7,7 +7,7 @@ use std::time::Duration;
 use config::meta::Opt as MetaStoreConfig;
 use config::tskv::Config as CnosdbConfig;
 
-use crate::global::{E2eContext, LOOPBACK_IP};
+use crate::utils::global::{E2eContext, LOOPBACK_IP};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CnosdbClusterDefinition {
@@ -79,7 +79,9 @@ impl MetaNodeDefinition {
     }
 
     pub fn reset_ports(&mut self, ctx: &E2eContext) {
-        let host_port = ctx.next_addr(*self.host_port.ip()).unwrap();
+        let host_port = ctx
+            .next_addr(*self.host_port.ip())
+            .expect("get a valid port");
         self.host_port = host_port;
     }
 
@@ -151,13 +153,25 @@ pub struct DataNodeDefinition {
     pub id: u8,
     pub config_file_name: String,
     pub mode: DeploymentMode,
-    pub http_host_port: SocketAddrV4,
-    pub heartbeat_interval: Duration,
+
+    /// Meta services address.
     pub meta_host_ports: Vec<SocketAddrV4>,
+
+    /// HTTP service listen port, default 8902.
+    pub http_host_port: SocketAddrV4,
+    /// GRPC service listen port, default 8903.
     pub coord_service_port: Option<u16>,
-    pub flight_service_port: Option<u16>,
-    pub opentsdb_service_port: Option<u16>,
     pub grpc_enable_gzip: bool,
+    /// ArrowFlight service listen port, default 8904.
+    pub flight_service_port: Option<u16>,
+    /// TCP service listen port, default 8905.
+    pub opentsdb_service_port: Option<u16>,
+
+    /// Heartbeat interval of the Raft replication algorithm.
+    pub heartbeat_interval: Duration,
+
+    ///
+    pub enable_tls: bool,
 }
 
 impl DataNodeDefinition {
@@ -184,28 +198,38 @@ impl DataNodeDefinition {
             id,
             config_file_name: format!("config_{data_http_port}.toml"),
             mode,
-            http_host_port: SocketAddrV4::new(LOOPBACK_IP, data_http_port),
             meta_host_ports,
+            http_host_port: SocketAddrV4::new(LOOPBACK_IP, data_http_port),
             coord_service_port: Some(data_id_to_coord_service_port(id)),
+            grpc_enable_gzip: false,
             flight_service_port: Some(data_id_to_flight_service_port(id)),
             opentsdb_service_port: Some(data_id_to_opentsdb_service_port(id)),
             heartbeat_interval: Duration::from_millis(100),
-            grpc_enable_gzip: false,
+            enable_tls: false,
         }
     }
 
     pub fn reset_ports(&mut self, ctx: &E2eContext) {
         let default_host = *self.http_host_port.ip();
 
-        self.http_host_port = ctx.next_addr(default_host).unwrap();
+        self.http_host_port = ctx.next_addr(default_host).expect("get a valid port");
         if let Some(p) = self.coord_service_port.as_mut() {
-            *p = ctx.next_addr(default_host).unwrap().port();
+            *p = ctx
+                .next_addr(default_host)
+                .expect("get a valid port")
+                .port();
         }
         if let Some(p) = self.flight_service_port.as_mut() {
-            *p = ctx.next_addr(default_host).unwrap().port();
+            *p = ctx
+                .next_addr(default_host)
+                .expect("get a valid port")
+                .port();
         }
         if let Some(p) = self.opentsdb_service_port.as_mut() {
-            *p = ctx.next_addr(default_host).unwrap().port();
+            *p = ctx
+                .next_addr(default_host)
+                .expect("get a valid port")
+                .port();
         }
     }
 
@@ -229,13 +253,13 @@ impl DataNodeDefinition {
         config.global.store_metrics = false;
         config.global.node_id = self.id as u64;
         config.deployment.mode = self.mode.to_string();
-        config.service.http_listen_port = Some(self.http_host_port.port());
         config.meta.service_addr = self.meta_service_addr();
+        config.service.http_listen_port = Some(self.http_host_port.port());
         config.service.grpc_listen_port = self.coord_service_port;
+        config.service.grpc_enable_gzip = self.grpc_enable_gzip;
         config.service.flight_rpc_listen_port = self.flight_service_port;
         config.service.tcp_listen_port = self.opentsdb_service_port;
         config.cluster.heartbeat_interval = self.heartbeat_interval;
-        config.service.grpc_enable_gzip = self.grpc_enable_gzip;
     }
 }
 
@@ -245,13 +269,14 @@ impl Default for DataNodeDefinition {
             id: 1,
             config_file_name: "config_8902.toml".to_string(),
             mode: DeploymentMode::QueryTskv,
-            http_host_port: SocketAddrV4::new(LOOPBACK_IP, 8902),
             meta_host_ports: vec![SocketAddrV4::new(LOOPBACK_IP, 8901)],
+            http_host_port: SocketAddrV4::new(LOOPBACK_IP, 8902),
             coord_service_port: Some(8903),
+            grpc_enable_gzip: false,
             flight_service_port: Some(8904),
             opentsdb_service_port: Some(8905),
             heartbeat_interval: Duration::from_millis(100),
-            grpc_enable_gzip: false,
+            enable_tls: false,
         }
     }
 }
@@ -324,13 +349,14 @@ fn test_cnosdb_cluster_definition_factory() {
                     id: 2,
                     config_file_name: "config_8912.toml".to_string(),
                     mode: DeploymentMode::QueryTskv,
-                    http_host_port: SocketAddrV4::new(LOOPBACK_IP, 8912),
                     meta_host_ports: vec![SocketAddrV4::new(LOOPBACK_IP, 8901)],
+                    http_host_port: SocketAddrV4::new(LOOPBACK_IP, 8912),
                     coord_service_port: Some(8913),
+                    grpc_enable_gzip: false,
                     flight_service_port: Some(8914),
                     opentsdb_service_port: Some(8915),
                     heartbeat_interval: Duration::from_millis(100),
-                    grpc_enable_gzip: false,
+                    enable_tls: false,
                 },
             ],
         };

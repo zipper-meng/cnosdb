@@ -10,7 +10,7 @@ use reqwest::{Method, StatusCode};
 use serial_test::serial;
 
 use crate::case::step::{EsBulk, RequestStep, StepPtr};
-use crate::global::init_test;
+use crate::utils::global::init_test;
 use crate::utils::{
     build_data_node_config, copy_cnosdb_server_certificate, get_workspace_dir, kill_all,
     run_singleton, Client,

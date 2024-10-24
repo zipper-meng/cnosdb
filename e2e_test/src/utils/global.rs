@@ -15,8 +15,8 @@ use crate::utils::{FnMutCnosdbConfig, FnMutMetaStoreConfig};
 
 pub const LOOPBACK_IP: Ipv4Addr = Ipv4Addr::new(127, 0, 0, 1);
 pub const WILDCARD_IP: Ipv4Addr = Ipv4Addr::new(0_u8, 0_u8, 0_u8, 0_u8);
-pub const MIN_PORT: u16 = 1024;
-pub const MAX_PORT: u16 = 65535;
+pub const MIN_PORT: u16 = 17000;
+pub const MAX_PORT: u16 = 18000;
 
 pub fn init_test(case_group: &str, case_name: &str) -> E2eContext {
     static mut GLOBAL_CONTEXT: Option<Arc<E2eGlobalContext>> = None;

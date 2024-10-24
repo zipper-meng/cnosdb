@@ -8,7 +8,7 @@ use tokio::runtime::Runtime;
 use super::step::Step;
 use super::CaseFlowControl;
 use crate::cluster_def::CnosdbClusterDefinition;
-use crate::global::E2eContext;
+use crate::utils::global::E2eContext;
 use crate::utils::{
     kill_all, run_cluster, run_singleton, Client, CnosdbDataTestHelper, CnosdbMetaTestHelper,
     FnMutCnosdbConfig, FnMutMetaStoreConfig,
@@ -72,8 +72,8 @@ impl E2eExecutor {
 
         run_singleton(
             &self.test_dir,
+            self.runtime.clone(),
             &self.cluster_definition.data_cluster_def[0],
-            false,
             true,
         )
     }

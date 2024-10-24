@@ -4,9 +4,6 @@ mod case;
 /// CnosDB cluster definition, used to initialize CnosDB cluster.
 mod cluster_def;
 
-/// Test case context, used to store the state of the test cases.
-mod global;
-
 /// Independent test cases, CnosDB cluster is managed by the test case itself.
 mod independent;
 

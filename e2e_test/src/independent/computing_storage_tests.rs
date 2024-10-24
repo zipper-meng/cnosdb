@@ -4,7 +4,7 @@ use reqwest::StatusCode;
 use serial_test::serial;
 
 use crate::case::step::{ControlStep, LineProtocol, RequestStep, Sql, StepPtr, StepResult};
-use crate::global::init_test;
+use crate::utils::global::init_test;
 use crate::{cluster_def, E2eError};
 
 //auto test about issue 669 799 842
