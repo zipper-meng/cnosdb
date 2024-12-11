@@ -43,13 +43,13 @@ jobs:
 #      shell: bash
 #      run: |
 #        curl -sL
-    - name: Set up cargo-zigbuild
-      shell: bash
-      run: |
-        curl -o zig.tar.xz -sL https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz
-        sudo tar -xf zig.tar.xz -C /opt
-        echo "/opt/zig-linux-x86_64-0.13.0" >> $GITHUB_PATH
-        cargo install cargo-zigbuild
+#    - name: Set up cargo-zigbuild
+#      shell: bash
+#      run: |
+#        curl -o zig.tar.xz -sL https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz
+#        sudo tar -xf zig.tar.xz -C /opt
+#        echo "/opt/zig-linux-x86_64-0.13.0" >> $GITHUB_PATH
+#        cargo install cargo-zigbuild
 #    - uses: actions/checkout@v3
 #    - name: Install dependencies
 #      shell: bash
@@ -71,8 +71,8 @@ jobs:
       uses: manyuanrong/setup-ossutil@v3.0
       with:
         endpoint: "oss-cn-beijing.aliyuncs.com"
-        access-key-id: ${{ secrets.PACKAGING_OSS_ACCESS_KEY }}
-        access-key-secret: ${{ secrets.PACKAGING_OSS_ACCESS_KEY_SECRET }}
+        access-key-id: "1"
+        access-key-secret: "2"
     - name: Print ossutil information
       shell: bash
       run: |
