@@ -26,17 +26,19 @@ jobs:
           - x86_64-unknown-linux-gnu
     runs-on: ubuntu-latest
     steps:
-    - name: Print Linux Distribution-Specific Information
+    - name: Print LSB (linux standard base) information
       run: |
         lsb_release -a
-#    - name: Get tag
-#      id: get-tag
-#      run: |
-#        if [[ "${{ github.event_name }}" = "workflow_dispatch" ]]; then
-#          echo "TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
-#        else
-#          echo "TAG=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-#        fi
+    - name: Get tag
+      id: get-tag
+      run: |
+        if [[ "${{ github.event_name }}" = "workflow_dispatch" ]]; then
+          echo "On workflow-dispatch, tag = ${{ github.event.inputs.tag }}"
+          echo "TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "On push-tag, tag = ${{ github.ref_name }}"
+          echo "TAG=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+        fi
 #    - name: Set up repo-maintainer-tools
 #      shell: bash
 #      run: |
