@@ -43,13 +43,13 @@ jobs:
 #      shell: bash
 #      run: |
 #        curl -sL
-#    - name: Set up cargo-zigbuild
-#      shell: bash
-#      run: |
-#        curl -o zig.tar.xz -sL https://ziglang.org/download/0.11.0/zig-linux-x86_64-0.11.0.tar.xz
-#        sudo tar -xf zig.tar.xz -C /opt
-#        echo "/opt/zig-linux-x86_64-0.11.0" >> $GITHUB_PATH
-#        cargo install cargo-zigbuild
+    - name: Set up cargo-zigbuild
+      shell: bash
+      run: |
+        curl -o zig.tar.xz -sL https://ziglang.org/download/0.13.0/zig-linux-x86_64-0.13.0.tar.xz
+        sudo tar -xf zig.tar.xz -C /opt
+        echo "/opt/zig-linux-x86_64-0.13.0" >> $GITHUB_PATH
+        cargo install cargo-zigbuild
 #    - uses: actions/checkout@v3
 #    - name: Install dependencies
 #      shell: bash
@@ -67,12 +67,17 @@ jobs:
 #      run: |
 #        bash -x ./packages/build_package.sh -n cnosdb -v ${{ steps.get-tag.outputs.TAG }} -b release -t ${{ matrix.target }}
 #        bash -x ./packages/build_package.sh -n cnosdb-meta -v ${{ steps.get-tag.outputs.TAG }} -b release -t ${{ matrix.target }}
-#    - name: Setup Ossutil
-#      uses: manyuanrong/setup-ossutil@v3.0
-#      with:
-#        endpoint: "oss-cn-beijing.aliyuncs.com"
-#        access-key-id: ${{ secrets.PACKAGING_OSS_ACCESS_KEY }}
-#        access-key-secret: ${{ secrets.PACKAGING_OSS_ACCESS_KEY_SECRET }}
+    - name: Setup Ossutil
+      uses: manyuanrong/setup-ossutil@v3.0
+      with:
+        endpoint: "oss-cn-beijing.aliyuncs.com"
+        access-key-id: ${{ secrets.PACKAGING_OSS_ACCESS_KEY }}
+        access-key-secret: ${{ secrets.PACKAGING_OSS_ACCESS_KEY_SECRET }}
+    - name: Print ossutil information
+      shell: bash
+      run: |
+        ossutil --version
+        ossutil --help
 #    - name: Upload to Oss
 #      shell: bash
 #      run: |
