@@ -22,7 +22,7 @@ jobs:
     strategy:
       matrix:
         target:
-          - aarch64-unknown-linux-gnu
+#          - aarch64-unknown-linux-gnu
           - x86_64-unknown-linux-gnu
     runs-on: ubuntu-latest
     steps:
@@ -39,10 +39,19 @@ jobs:
           echo "On push-tag, tag = ${{ github.ref_name }}"
           echo "TAG=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
         fi
-#    - name: Set up repo-maintainer-tools
-#      shell: bash
-#      run: |
-#        curl -sL
+    - name: Set up repo-maintainer-tools
+      shell: bash
+      run: |
+        apt update
+        apt install -y createrepo
+    - name: Set up ossfs
+      shell: bash
+      run: |
+        curl -sL https://gosspublic.alicdn.com/ossfs/ossfs_1.91.4_ubuntu22.04_amd64.deb
+        apt install -y gdebi-core
+        gdebi ossfs_1.91.4_ubuntu22.04_amd64.deb
+        ossfs --version
+        ossfs --help
 #    - name: Set up cargo-zigbuild
 #      shell: bash
 #      run: |
@@ -67,17 +76,17 @@ jobs:
 #      run: |
 #        bash -x ./packages/build_package.sh -n cnosdb -v ${{ steps.get-tag.outputs.TAG }} -b release -t ${{ matrix.target }}
 #        bash -x ./packages/build_package.sh -n cnosdb-meta -v ${{ steps.get-tag.outputs.TAG }} -b release -t ${{ matrix.target }}
-    - name: Setup Ossutil
-      uses: manyuanrong/setup-ossutil@v3.0
-      with:
-        endpoint: "oss-cn-beijing.aliyuncs.com"
-        access-key-id: "1"
-        access-key-secret: "2"
-    - name: Print ossutil information
-      shell: bash
-      run: |
-        ossutil --version
-        ossutil --help
+#    - name: Setup Ossutil
+#      uses: manyuanrong/setup-ossutil@v3.0
+#      with:
+#        endpoint: "oss-cn-beijing.aliyuncs.com"
+#        access-key-id: ${{ secrets.PACKAGING_OSS_ACCESS_KEY }}
+#        access-key-secret: ${{ secrets.PACKAGING_OSS_ACCESS_KEY_SECRET }}
+#    - name: Print ossutil information
+#      shell: bash
+#      run: |
+#        ossutil --version
+#        ossutil --help
 #    - name: Upload to Oss
 #      shell: bash
 #      run: |
