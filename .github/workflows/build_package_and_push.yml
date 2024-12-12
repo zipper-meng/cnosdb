@@ -42,13 +42,13 @@ jobs:
     - name: Set up repo-maintainer-tools
       shell: bash
       run: |
-        apt update
-        apt install -y createrepo
+        sudo apt update
+        sudo apt install -y createrepo
     - name: Set up ossfs
       shell: bash
       run: |
         curl -sL https://gosspublic.alicdn.com/ossfs/ossfs_1.91.4_ubuntu22.04_amd64.deb
-        apt install -y gdebi-core
+        sudo apt install -y gdebi-core
         gdebi ossfs_1.91.4_ubuntu22.04_amd64.deb
         ossfs --version
         ossfs --help
