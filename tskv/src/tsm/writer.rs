@@ -101,7 +101,6 @@ impl TsmVersion {
 pub type WriteTsmResult<T, E = WriteTsmError> = std::result::Result<T, E>;
 
 #[derive(Snafu, Debug)]
-#[snafu(visibility(pub))]
 pub enum WriteTsmError {
     #[snafu(display("IO error: {source}"))]
     WriteIO { source: std::io::Error },
@@ -259,6 +258,9 @@ impl TsmWriter {
         self.finished
     }
 
+    /// Return path of the TSM file.
+    /// If the writer is finished(called `finish()`), return the final path,
+    /// otherwise return the tmp path.
     pub fn path(&self) -> PathBuf {
         if self.finished {
             self.final_path.clone()

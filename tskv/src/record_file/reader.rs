@@ -151,18 +151,19 @@ impl Reader {
 
         // Hash record data
         hasher.update(&data);
+        let calc_crc = hasher.finalize();
         // check crc32 number
-        if hasher.finalize() != data_crc {
+        if calc_crc != data_crc {
             trace::error!("Data crc check failed at {origin_pos} for {data_size} bytes",);
             self.set_pos(origin_pos + 1).await?;
             return self.read_record().await;
         }
 
         Ok(Record {
-            pos: origin_pos.to_u64().unwrap(),
             data_type,
             data_version,
             data,
+            pos: origin_pos.to_u64().expect("too big for u64"),
         })
     }
 
@@ -260,6 +261,10 @@ impl Reader {
 
     pub fn len(&self) -> u64 {
         self.file.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.file.is_empty()
     }
 }
 

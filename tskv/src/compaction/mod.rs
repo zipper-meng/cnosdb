@@ -142,11 +142,20 @@ pub async fn run_compaction_job(
     request: CompactReq,
     ctx: Arc<GlobalContext>,
 ) -> crate::Result<Option<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)>> {
-    if request.in_level == 0 {
+    let key = models::oid::UuidGenerator::default().next_id();
+    let start = std::time::Instant::now();
+    trace::info!("compaction begin: {key}, task: {}", request.compact_task);
+    let ret = if request.in_level == 0 {
         compact::run_delta_compaction_job(request, ctx).await
     } else {
         compact::run_compaction_job(request, ctx).await
-    }
+    };
+    trace::info!(
+        "compaction end: {key}, cost: {} ms",
+        start.elapsed().as_millis()
+    );
+
+    ret
 }
 
 mod metric {
@@ -262,14 +271,34 @@ mod metric {
         }
 
         fn flush_metric(&mut self, metric: &str, force_flush: bool) {
-            let idx = self.metric_name_map.get(metric).unwrap();
-            let instant = self.instant_list.get_mut(*idx).unwrap();
-            let unit = self.metric_time_unit_list.get(*idx).unwrap();
-            let (cost_buf, max_buf_size) = self.cost_buf_list.get_mut(*idx).unwrap();
-            let (first_avg, cost_avg) = self.cost_avg_list.get_mut(*idx).unwrap();
-            let (total_cost_min, total_cost_max) =
-                self.cost_total_min_max_list.get_mut(*idx).unwrap();
-            let (cost_min, cost_max) = self.cost_min_max_list.get_mut(*idx).unwrap();
+            let idx = match self.metric_name_map.get(metric) {
+                Some(idx) => *idx,
+                None => return,
+            };
+            let instant = match self.instant_list.get_mut(idx) {
+                Some(instant) => instant,
+                None => return,
+            };
+            let unit = match self.metric_time_unit_list.get(idx) {
+                Some(unit) => unit,
+                None => return,
+            };
+            let (cost_buf, max_buf_size) = match self.cost_buf_list.get_mut(idx) {
+                Some(buf) => buf,
+                None => return,
+            };
+            let (first_avg, cost_avg) = match self.cost_avg_list.get_mut(idx) {
+                Some(avg) => avg,
+                None => return,
+            };
+            let (total_cost_min, total_cost_max) = match self.cost_total_min_max_list.get_mut(idx) {
+                Some(total_cost) => total_cost,
+                None => return,
+            };
+            let (cost_min, cost_max) = match self.cost_min_max_list.get_mut(idx) {
+                Some(cost) => cost,
+                None => return,
+            };
 
             let cost_t = unit.parse_duration(instant.elapsed());
             *total_cost_min = total_cost_min.min(cost_t);
@@ -335,9 +364,18 @@ mod metric {
             for (metric, idx) in self.metric_name_map.clone() {
                 self.flush_metric(&metric, true);
 
-                let unit = self.metric_time_unit_list.get(idx).unwrap();
-                let (_, cost_avg) = self.cost_avg_list.get_mut(idx).unwrap();
-                let (cost_min, cost_max) = self.cost_total_min_max_list.get_mut(idx).unwrap();
+                let unit = match self.metric_time_unit_list.get(idx) {
+                    Some(unit) => unit,
+                    None => return,
+                };
+                let (_, cost_avg) = match self.cost_avg_list.get_mut(idx) {
+                    Some(cost_avg) => cost_avg,
+                    None => return,
+                };
+                let (cost_min, cost_max) = match self.cost_total_min_max_list.get_mut(idx) {
+                    Some(cost_range) => cost_range,
+                    None => return,
+                };
                 trace::info!(
                     "final_{metric},compaction={},unit={unit} avg={cost_avg:.2},min={cost_min},max={cost_max} {timestamp}",
                     self.compact_task
@@ -346,7 +384,10 @@ mod metric {
         }
 
         fn begin(&mut self, metric: &str) {
-            let idx = self.metric_name_map.get(metric).unwrap();
+            let idx = match self.metric_name_map.get(metric) {
+                Some(idx) => idx,
+                None => return,
+            };
             self.instant_list[*idx] = std::time::Instant::now();
         }
 

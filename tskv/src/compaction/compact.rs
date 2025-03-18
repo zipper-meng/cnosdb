@@ -42,7 +42,7 @@ pub async fn run_compaction_job(
     }
     let compact_task = request.compact_task;
 
-    // ALl tsm-files that can be deleted after compaction.
+    // All tsm-files that can be deleted after compaction.
     let mut tsm_file_metas_will_delete: Vec<CompactMeta> = Vec::new();
     // Buffers all tsm-files and it's indexes for this compaction
     let mut tsm_readers = Vec::new();
@@ -117,7 +117,7 @@ pub async fn run_delta_compaction_job(
     // Level 0 files that can be deleted after compaction.
     version_edit.del_files = l0_file_metas_will_delete;
     if let Some(f) = level_file {
-        // Lvel 1-4 file that can be deleted after compaction.
+        // Level 1-4 file that can be deleted after compaction.
         version_edit.del_files.push(f.as_ref().into());
     }
     // Level 0 files that partly deleted after compaction.
@@ -230,11 +230,14 @@ async fn compact_files(
         compact_metrics.finish(metric::WRITE_BLOCK);
     }
 
-    let (version_edit, file_metas) = writer_wrapper.close().await?;
+    writer_wrapper.close().await?;
 
     compact_metrics.finish_all();
 
-    Ok((version_edit, file_metas))
+    Ok((
+        writer_wrapper.version_edit.clone(),
+        writer_wrapper.file_metas.clone(),
+    ))
 }
 
 pub struct CompactState {
@@ -444,6 +447,7 @@ impl CompactState {
         // Sort by field_id, min_ts and max_ts.
         blk_metas.sort();
 
+        // Create blk_meta_groups, each group contains one blk_meta.
         let mut blk_meta_groups: Vec<CompactingBlockMetaGroup> =
             Vec::with_capacity(blk_metas.len());
         for blk_meta in blk_metas {
@@ -564,6 +568,7 @@ impl std::fmt::Display for CompactingBlockMeta {
     }
 }
 
+/// A group of CompactingBlockMeta of a field, will be merged into one or many larger block(s).
 #[derive(Clone)]
 pub struct CompactingBlockMetaGroup {
     field_id: FieldId,
@@ -971,8 +976,9 @@ impl TsmCache {
         out_time_ranges: &Option<Arc<TimeRanges>>,
     ) -> ReadTsmResult<Option<&[u8]>> {
         trace::trace!(
-            "Filling cache from file:{} for block_neta: field:{},off:{},len:{}, begin to find scale of cached data.",
+            "Filling cache from file:{} for block_meta: file:{},field:{},off:{},len:{}, begin to find scale of cached data.",
             tsm_reader.file_id(),
+            block_meta.file_id(),
             block_meta.field_id(),
             block_meta.offset(),
             block_meta.size(),
@@ -981,39 +987,45 @@ impl TsmCache {
         let block_meta_off = block_meta.offset();
         let block_meta_len = block_meta.size();
 
-        let mut load_off_start = 0_u64;
-        let mut load_len = 0_u64;
-        let mut found_curr_field = false;
+        let mut load_off_start = 0_u64; // Offset of block data to be loaded.
+        let mut load_len = 0_u64; // Length of block data to be loaded.
+        let mut found_curr_field = false; // Has found the IndexMeta of the field_id.
         'idx_iter: while let Some(idx) = self.index_iter.peek() {
+            // Iterator all block-metas from the index-iterator, filter with time-ranges.
             let blk_meta_iter = match out_time_ranges {
                 Some(time_ranges) => idx.block_iterator_opt(time_ranges.clone()),
                 None => idx.block_iterator(),
             };
             for blk in blk_meta_iter {
                 if !found_curr_field {
-                    if blk.field_id() == blk.field_id() {
+                    // Compare the field_id of BlockMeta read from file with the given BlockMeta.
+                    if blk.field_id() == block_meta.field_id() {
+                        // Found the IndexMeta of the field_id.
                         found_curr_field = true;
                     } else {
-                        // All of this IndexMeta has been already consumed.
+                        // Skip the IndexMeta of other field_id.
                         self.index_iter.next();
                         continue 'idx_iter;
                     }
                 }
                 let blk_off = blk.offset();
                 if blk_off < block_meta_off {
+                    // Skip the BlockMeta if the offset is less than the BlockMeta.
                     continue;
                 }
                 let blk_len = blk.size();
                 if load_len + blk_len > self.capacity as u64 {
-                    // Cache is full, stop loading next BlockMeta, nether next IndeMeta.
-                    trace::trace!(
+                    // Cache is full, stop loading next BlockMeta, nether next IndexMeta.
+                    trace::debug!(
                         "Cache(file:{}) is full({load_len} + {blk_len}> {} at offset: {load_off_start}",
                         tsm_reader.file_id(), self.capacity,
                     );
                     break 'idx_iter;
                 }
 
+                // TSM file has magic number as header so blk_off should be greater than 0.
                 if load_off_start == 0 {
+                    // Set the offset of the first block as load_off_start.
                     load_off_start = blk_off;
                 }
                 load_len = blk_off + blk_len - load_off_start;
@@ -1034,7 +1046,7 @@ impl TsmCache {
             return Ok(None);
         }
         self.tsm_off = load_off_start;
-        trace::trace!(
+        trace::debug!(
             "Filling cache from file:{} for block_meta: file:{},field:{},off:{},len:{}, cache_scale: off:{},len:{}",
             tsm_reader.file_id(),
             block_meta.file_id(),
@@ -1044,11 +1056,25 @@ impl TsmCache {
             load_off_start,
             load_len
         );
+
+        // load:   |<- ->|<- load_off_start(tsm_off), load_len ------------------------->|
+        // return: |<- ->|<- block_meta_off, block_meta_len ->|<- ---------------------->|
         self.data = tsm_reader
             .get_raw_data(load_off_start, load_len as usize)
             .await?;
 
         let cache_off = (block_meta_off - self.tsm_off) as usize;
+        if cache_off + block_meta_len as usize > self.data.len() {
+            trace::error!("Cache load off&len calculation error, file:{},field:{},off:{},len:{}, cache: off:{},len:{}",
+                tsm_reader.file_id(),
+                block_meta.field_id(),
+                block_meta.offset(),
+                block_meta.size(),
+                self.tsm_off,
+                self.data.len(),
+            );
+            return Ok(None);
+        }
         Ok(Some(
             &self.data[cache_off..cache_off + block_meta_len as usize],
         ))
@@ -1300,8 +1326,8 @@ impl WriterWrapper {
         })
     }
 
-    pub async fn close(mut self) -> Result<(VersionEdit, HashMap<ColumnFileId, Arc<BloomFilter>>)> {
-        if let Some(mut tsm_writer) = self.tsm_writer {
+    pub async fn close(&mut self) -> Result<()> {
+        if let Some(mut tsm_writer) = self.tsm_writer.take() {
             tsm_writer
                 .write_index()
                 .await
@@ -1333,7 +1359,7 @@ impl WriterWrapper {
             self.file_metas.insert(file_id, Arc::new(bloom_filter));
         }
 
-        Ok((self.version_edit, self.file_metas))
+        Ok(())
     }
 
     pub async fn writer(&mut self) -> Result<&mut TsmWriter> {
@@ -1416,6 +1442,25 @@ impl WriterWrapper {
             Err(WriteTsmError::MaxFileSizeExceed { write_size, .. }) => {
                 self.tsm_writer_full = true;
                 Ok(write_size)
+            }
+        }
+    }
+}
+
+impl Drop for WriterWrapper {
+    fn drop(&mut self) {
+        // If tsm writer is not finished while dropping the writer wrapper,
+        // remove the temporary TSM file.
+        // TODO(zipper): may this destructor logic be moved to the TsmWriter?
+        if let Some(tsm_writer) = &self.tsm_writer {
+            if !tsm_writer.finished() {
+                let tmp_path = tsm_writer.path();
+                trace::info!(
+                    "Compaction({}): Compaction failed, removing temporary TSM file: '{}'",
+                    self.compact_task,
+                    tmp_path.display(),
+                );
+                let _ = std::fs::remove_file(tmp_path);
             }
         }
     }

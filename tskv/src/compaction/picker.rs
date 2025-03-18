@@ -173,9 +173,12 @@ impl LevelCompactionPicker {
             //     * Self::level_weight_remaining_size(lvl.level);
             // let level_score = 10e6 * (level_file_num_weight / level_remaining_size_weight);
 
-            let level_score: f64 = (lvl.files.len() - compacting_files) as f64
+            let mut level_score: f64 = (lvl.files.len() - compacting_files) as f64
                 * Self::level_weight_file_num(lvl.level);
-
+            // Replace NaN with a meaningful value to sort scores.
+            if level_score.is_nan() {
+                level_score = f64::MIN;
+            }
             level_scores.push((lvl.level, lvl.cur_size, compacting_files, 0.0, level_score));
         }
 
