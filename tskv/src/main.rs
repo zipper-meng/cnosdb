@@ -1,109 +1,179 @@
 use std::env;
+use std::path::{Path, PathBuf};
+use std::process::exit;
 
-const ARG_PRINT: &str = "print"; // To print something
-const ARG_REPAIR: &str = "repair"; // To repair something
-const ARG_TSM: &str = "--tsm"; // To print a .tsm file
-const ARG_TOMBSTONE: &str = "--tombstone"; // To print a .tsm file with tombsotne
-const ARG_SUMMARY: &str = "--summary"; // To print a summary file
-const ARG_WAL: &str = "--wal"; // To print a wal file
-const ARG_INDEX: &str = "--index"; // To print a wal file
+use tskv::tsm::{TsmReader, TsmTombstone};
 
-/// # Example
-/// tskv print [--tsm <tsm_path>] [--tombstone]
-/// tskv print [--summary <summary_path>]
-/// tskv print [--wal <wal_path>]
-/// tskv repair [--index <file_name>]
-/// - --tsm <tsm_path> print statistics for .tsm file at <tsm_path> .
-/// - --tombstone also print tombstone for every field_id in .tsm file.
+enum CheckingObject {
+    Storage,
+    Wal,
+}
+
 #[tokio::main]
 async fn main() {
     let mut args = env::args().peekable();
-
-    let mut show_tsm = false;
-    let mut tsm_path: Option<String> = None;
-    let mut show_tombstone = false;
-
-    let mut show_summary = false;
-    let mut summary_path: Option<String> = None;
-
-    let mut show_wal = false;
-    let mut wal_path: Option<String> = None;
-
-    let mut repair_index = false;
-    let mut index_file: Option<String> = None;
-
-    while let Some(arg) = args.peek() {
-        // --print [--tsm <path>]
-        if arg.as_str() == ARG_PRINT {
-            while let Some(print_arg) = args.next() {
-                match print_arg.as_str() {
-                    ARG_TSM => {
-                        show_tsm = true;
-                        tsm_path = args.next();
-                        if tsm_path.is_none() {
-                            println!("Invalid arguments: --tsm <tsm_path>");
+    let _ = args.next();
+    if let Some(arg) = args.next() {
+        if arg.as_str() == "check" {
+            if let Some(arg) = args.next() {
+                let checking_object = match arg.as_str() {
+                    "storage" => CheckingObject::Storage,
+                    "wal" => CheckingObject::Wal,
+                    _ => {
+                        eprintln!("[E] Unknown arguments: check {arg}");
+                        exit(1)
+                    }
+                };
+                if let Some(path) = args.next() {
+                    match std::fs::canonicalize(&path) {
+                        Ok(p) => {
+                            if !p.is_dir() {
+                                eprintln!("[E] Target path is not a directory");
+                                exit(1);
+                            }
+                            check(checking_object, &p).await;
+                            return;
                         }
-                    }
-                    ARG_TOMBSTONE => {
-                        show_tombstone = true;
-                    }
-                    ARG_SUMMARY => {
-                        show_summary = true;
-                        summary_path = args.next();
-                        if summary_path.is_none() {
-                            println!("Invalid arguments: --summary <summary_path>")
+                        Err(e) => {
+                            eprintln!("[E] Cannot detect target directory: {e}");
+                            exit(1)
                         }
-                    }
-                    ARG_WAL => {
-                        show_wal = true;
-                        wal_path = args.next();
-                        if wal_path.is_none() {
-                            println!("Invalid arguments: --wal <wal_path>")
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        } else if arg.as_str() == ARG_REPAIR {
-            while let Some(repair_arg) = args.next() {
-                if repair_arg.as_str() == ARG_INDEX {
-                    repair_index = true;
-                    index_file = args.next();
-                    if index_file.is_none() {
-                        println!("Invalid arguments: --index <index file>");
                     }
                 }
             }
         }
-        args.next();
     }
+    eprintln!(
+        "[E] Unknown arguments: {}",
+        env::args().collect::<Vec<String>>().join(" ")
+    );
+    exit(1);
+}
 
-    if show_tsm {
-        if let Some(p) = tsm_path {
-            println!("TSM Path: {}, ShowTombstone: {}", p, show_tombstone);
-            tskv::print_tsm_statistics(p, show_tombstone).await;
+async fn check<P: AsRef<Path>>(checking_object: CheckingObject, path: P) {
+    let path = path.as_ref();
+    match checking_object {
+        CheckingObject::Storage => check_storage(path).await,
+        CheckingObject::Wal => check_wal(path).await,
+    }
+}
+
+async fn check_storage(path: &Path) {
+    let summary_path = path.join("summary");
+    check_summary(&summary_path).await;
+
+    let databases_dir = path.join("data");
+
+    println!("Checking databases dir: {databases_dir:?}");
+    match databases_dir.read_dir() {
+        Ok(read_databases_dir) => {
+            for read_databases_result in read_databases_dir {
+                match read_databases_result {
+                    Ok(database_dir) => {
+                        let database_dir = database_dir.path();
+
+                        println!(" Checking database dir: {database_dir:?}");
+                        match database_dir.read_dir() {
+                            Ok(read_vnode_dir) => {
+                                for read_vnodes_result in read_vnode_dir {
+                                    match read_vnodes_result {
+                                        Ok(vnode_dir) => {
+                                            let vnode_dir = vnode_dir.path();
+
+                                            println!("  Checking vnode dir: {vnode_dir:?}");
+                                            check_tsm_dir(&vnode_dir.join("delta")).await;
+                                            check_tsm_dir(&vnode_dir.join("tsm")).await;
+                                        }
+                                        Err(e) => {
+                                            eprintln!("[E] Failed to read '{database_dir:?}: {e}");
+                                            exit(1);
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                eprintln!("[E] Failed to read '{database_dir:?}: {e}");
+                                exit(1);
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[E] Failed to read '{databases_dir:?}: {e}");
+                        exit(1);
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[E] Failed to read '{databases_dir:?}': {e}");
+            exit(1);
         }
     }
+}
 
-    if show_summary {
-        if let Some(p) = summary_path {
-            println!("Summary Path: {}", p);
-            tskv::print_summary_statistics(p).await;
+async fn check_summary(path: &PathBuf) {
+    println!("Checking summary file '{path:?}");
+    println!("Skipped checking summary file");
+}
+
+async fn check_tsm_dir(path: &PathBuf) {
+    if !path.exists() {
+        return;
+    }
+    println!("   Checking tsm dir '{path:?}");
+    match path.read_dir() {
+        Ok(read_tsm_dir) => {
+            for read_tsm_result in read_tsm_dir {
+                match read_tsm_result {
+                    Ok(tsm_file) => {
+                        let tsm_file = tsm_file.path();
+                        if let Some(ext) = tsm_file.extension() {
+                            if ext == "tsm" || ext == "delta" {
+                                check_tsm(&tsm_file).await;
+                            } else if ext == "tombstone" {
+                                check_tombstone(&tsm_file).await;
+                            }
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!("[E] Failed to read '{path:?}: {e}");
+                        exit(1);
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("[E] Failed to read '{path:?}': {e}");
+            exit(1);
         }
     }
+}
 
-    if show_wal {
-        if let Some(p) = wal_path {
-            println!("Wal Path: {}", p);
-            tskv::print_wal_statistics(p).await;
+async fn check_tsm(path: &PathBuf) {
+    print!("    Checking tsm file '{path:?} ...");
+    match TsmReader::open(path).await {
+        Ok(_t) => {
+            println!(" OK");
+        }
+        Err(e) => {
+            println!(" FAIL: {e}");
         }
     }
+}
 
-    if repair_index {
-        if let Some(name) = index_file {
-            println!("repair index: {}", name);
-            let result = tskv::index::binlog::repair_index_file(&name).await;
-            println!("repair index result: {:?}", result);
+async fn check_tombstone(path: &PathBuf) {
+    print!("    Checking tsm-tombstone file '{path:?} ...");
+    match TsmTombstone::open(&path, 0).await {
+        Ok(_t) => {
+            println!(" OK");
+        }
+        Err(e) => {
+            println!(" FAIL: {e}");
         }
     }
+}
+
+async fn check_wal(path: &Path) {
+    println!("Checking wal file '{path:?}");
+    println!("  Skipped checking wal file");
 }
