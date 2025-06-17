@@ -40,7 +40,7 @@ mod kvcore;
 mod memcache;
 // TODO supposedly private
 pub mod reader;
-mod record_file;
+pub mod record_file;
 mod schema;
 mod summary;
 mod tseries_family;
