@@ -21,35 +21,50 @@ const MAX_CONCURRENT_VNODE_SCAN_TASKS: usize = 4;
 #[tokio::main]
 async fn main() {
     let mut args = env::args().peekable();
-    let _ = args.next();
+    let cmd = args.next().unwrap_or_else(|| "cnosdb-tskv".to_string());
     if let Some(arg) = args.next() {
-        if arg.as_str() == "check" {
-            if let Some(arg) = args.next() {
-                let checking_object = match arg.as_str() {
-                    "storage" => CheckingObject::Storage,
-                    "wal" => CheckingObject::Wal,
-                    _ => {
-                        eprintln!("[E] Unknown arguments: check {arg}");
-                        exit(1)
-                    }
-                };
-                if let Some(path) = args.next() {
-                    match std::fs::canonicalize(&path) {
-                        Ok(p) => {
-                            if !p.is_dir() {
-                                eprintln!("[E] Target path is not a directory");
-                                exit(1);
-                            }
-                            check(checking_object, &p).await;
+        match arg.as_str() {
+            "-h" | "--help" | "help" => {
+                println!(
+                    "Usage (check storage directory):\n    {cmd} check storage <storage.path>"
+                );
+                println!("Usage (check wal directory):\n    {cmd} check wal <wal.path>");
+                return;
+            }
+            "check" => {
+                if let Some(arg) = args.next() {
+                    let checking_object = match arg.as_str() {
+                        "-h" | "--help" | "help" => {
+                            println!("Usage (check storage directory):\n    {cmd} check storage <storage.path>");
+                            println!("Usage (check wal directory):\n    {cmd} check storage <storage.path>");
                             return;
                         }
-                        Err(e) => {
-                            eprintln!("[E] Cannot detect target directory: {e}");
+                        "storage" => CheckingObject::Storage,
+                        "wal" => CheckingObject::Wal,
+                        _ => {
+                            eprintln!("[E] Unknown arguments: check {arg}");
                             exit(1)
+                        }
+                    };
+                    if let Some(path) = args.next() {
+                        match std::fs::canonicalize(&path) {
+                            Ok(p) => {
+                                if !p.is_dir() {
+                                    eprintln!("[E] Target path is not a directory");
+                                    exit(1);
+                                }
+                                check(checking_object, &p).await;
+                                return;
+                            }
+                            Err(e) => {
+                                eprintln!("[E] Cannot detect target directory: {e}");
+                                exit(1)
+                            }
                         }
                     }
                 }
             }
+            _other => {}
         }
     }
     eprintln!(

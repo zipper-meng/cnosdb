@@ -3,6 +3,12 @@ name = "tskv"
 version.workspace = true
 edition.workspace = true
 
+[lib]
+
+[[bin]]
+name = "cnosdb-tskv"
+path = "src/main.rs"
+
 [dependencies]
 config = { path = "../config" }
 error_code = { path = "../common/error_code" }
