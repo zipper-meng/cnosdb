@@ -4,7 +4,7 @@ use std::process::exit;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
-use tokio::sync::{Mutex, Semaphore};
+use tokio::sync::{Mutex, OwnedSemaphorePermit, Semaphore};
 use tokio::task::JoinHandle;
 use tskv::file_system::file_manager;
 use tskv::index::binlog::BinlogReader;
@@ -143,6 +143,11 @@ impl StorageContext {
             }
         }
     }
+
+    pub async fn push_error<P: AsRef<Path>, S: std::fmt::Display>(&self, p: P, msg: S) {
+        let error = format!("'{:?}': {msg}", p.as_ref());
+        self.errors.lock().await.push(error);
+    }
 }
 
 // struct DirectoryChecker {
@@ -213,7 +218,6 @@ async fn check_storage_dir(path: &Path) {
     let databases_dir = path.join("data");
     println!("Into databases dir: {databases_dir:?}");
     const DB_INDENT: usize = 1;
-    const VNODE_INDENT: usize = 2;
 
     match databases_dir.read_dir() {
         Ok(read_databases_dir) => {
@@ -221,62 +225,16 @@ async fn check_storage_dir(path: &Path) {
                 match read_databases_result {
                     Ok(database_dir) => {
                         let database_dir = database_dir.path();
-                        println!("{:DB_INDENT$}Into database dir: {database_dir:?}", "");
-
-                        let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_VNODE_SCAN_TASKS));
-                        let mut tasks = vec![];
-                        match database_dir.read_dir() {
-                            Ok(read_vnode_dir) => {
-                                for read_vnodes_result in read_vnode_dir {
-                                    match read_vnodes_result {
-                                        Ok(vnode_dir) => {
-                                            let vnode_dir = vnode_dir.path();
-                                            match check_vnode_dir(
-                                                &vnode_dir,
-                                                ctx.clone(),
-                                                semaphore.clone(),
-                                                VNODE_INDENT,
-                                            )
-                                            .await
-                                            {
-                                                Ok(jh) => tasks.push(jh),
-                                                Err(_) => {
-                                                    ctx.print().await;
-                                                    exit(1);
-                                                }
-                                            }
-                                        }
-                                        Err(e) => {
-                                            eprintln!("{:VNODE_INDENT$}[E] Failed to read '{database_dir:?}: {e}", "");
-                                        }
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                eprintln!(
-                                    "{:DB_INDENT$}[E] Failed to open '{database_dir:?}: {e}",
-                                    ""
-                                );
-                                ctx.print().await;
-                                exit(1);
-                            }
-                        }
-                        for t in tasks {
-                            let _ = t.await;
-                        }
+                        check_database_dir(&database_dir, ctx.clone(), DB_INDENT).await;
                     }
                     Err(e) => {
                         eprintln!("[E] Failed to read '{databases_dir:?}: {e}");
-                        ctx.print().await;
-                        exit(1);
                     }
                 }
             }
         }
         Err(e) => {
             eprintln!("[E] Failed to open '{databases_dir:?}': {e}");
-            ctx.print().await;
-            exit(1);
         }
     }
 
@@ -286,6 +244,7 @@ async fn check_storage_dir(path: &Path) {
 async fn check_summary_file(path: &PathBuf, ctx: Arc<StorageContext>, indent: usize) {
     println!("{:indent$}Checking summary file '{path:?}", "");
     let new_indent = indent + 1;
+
     match record_file::Reader::open(path).await {
         Ok(mut r) => {
             ctx.summary_num.fetch_add(1, Ordering::SeqCst);
@@ -308,10 +267,8 @@ async fn check_summary_file(path: &PathBuf, ctx: Arc<StorageContext>, indent: us
                             "{:new_indent$}[E] Invalid summary file '{path:?}: [{next_pos}..), {e}",
                             ""
                         );
-                        ctx.errors
-                            .lock()
-                            .await
-                            .push(format!("'{path:?}': [{next_pos}..), {e}"));
+                        ctx.push_error(path, format!("[{next_pos}..), {e}")).await;
+                        break;
                     }
                 }
             }
@@ -321,46 +278,82 @@ async fn check_summary_file(path: &PathBuf, ctx: Arc<StorageContext>, indent: us
                 "{:new_indent$}[E] Failed to open summary file '{path:?}: {e}",
                 ""
             );
-            ctx.errors.lock().await.push(format!("'{path:?}': {e}"));
+            ctx.push_error(path, format!("open file, {e}")).await;
         }
+    }
+}
+
+async fn check_database_dir(path: &PathBuf, ctx: Arc<StorageContext>, indent: usize) {
+    if !path.exists() {
+        return;
+    }
+    println!("{:indent$}Into database dir: {path:?}", "");
+    let new_indent = indent + 1;
+
+    let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_VNODE_SCAN_TASKS));
+    let mut tasks = vec![];
+    match path.read_dir() {
+        Ok(read_vnode_dir) => {
+            for read_vnodes_result in read_vnode_dir {
+                match read_vnodes_result {
+                    Ok(vnode_dir) => {
+                        let vnode_dir = vnode_dir.path();
+                        let permit = match semaphore.clone().acquire_owned().await {
+                            Ok(s) => s,
+                            Err(_) => {
+                                eprintln!(
+                                    "{:new_indent$}[E] Failed to acquire semaphore because it was closed",
+                                    ""
+                                );
+                                return;
+                            }
+                        };
+                        tasks.push(
+                            check_vnode_dir(&vnode_dir, ctx.clone(), permit, new_indent).await,
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("{:new_indent$}[E] Failed to read '{path:?}: {e}", "");
+                    }
+                }
+            }
+        }
+        Err(e) => {
+            eprintln!("{:new_indent$}[E] Failed to open '{path:?}: {e}", "");
+        }
+    }
+    for t in tasks {
+        let _ = t.await;
     }
 }
 
 async fn check_vnode_dir(
     path: &PathBuf,
     ctx: Arc<StorageContext>,
-    semaphore: Arc<Semaphore>,
+    permit: OwnedSemaphorePermit,
     indent: usize,
-) -> Result<JoinHandle<()>, ()> {
+) -> JoinHandle<()> {
     println!("{:indent$}Into vnode dir: {path:?}", "");
     let new_indent = indent + 1;
-    let semaphore_permit = match semaphore.acquire_owned().await {
-        Ok(s) => s,
-        Err(_) => {
-            eprintln!(
-                "{:new_indent$}[E] Failed to acquire semaphore because it was closed",
-                ""
-            );
-            return Err(());
-        }
-    };
+
     let delta_path = path.join("delta");
     let tsm_path = path.join("tsm");
     let index_path = path.join("index");
-    Ok(tokio::spawn(async move {
-        let _ = check_tsm_dir(&delta_path, ctx.clone(), new_indent).await;
-        let _ = check_tsm_dir(&tsm_path, ctx.clone(), new_indent).await;
-        let _ = check_index_dir(&index_path, ctx.clone(), new_indent).await;
-        drop(semaphore_permit);
-    }))
+    tokio::spawn(async move {
+        check_tsm_dir(&delta_path, ctx.clone(), new_indent).await;
+        check_tsm_dir(&tsm_path, ctx.clone(), new_indent).await;
+        check_index_dir(&index_path, ctx.clone(), new_indent).await;
+        drop(permit);
+    })
 }
 
-async fn check_tsm_dir(path: &PathBuf, ctx: Arc<StorageContext>, indent: usize) -> Result<(), ()> {
+async fn check_tsm_dir(path: &PathBuf, ctx: Arc<StorageContext>, indent: usize) {
     if !path.exists() {
-        return Ok(());
+        return;
     }
     println!("{:indent$}Into tsm dir '{path:?}", "");
     let new_indent = indent + 1;
+
     match path.read_dir() {
         Ok(read_tsm_dir) => {
             for read_tsm_result in read_tsm_dir {
@@ -377,15 +370,12 @@ async fn check_tsm_dir(path: &PathBuf, ctx: Arc<StorageContext>, indent: usize) 
                     }
                     Err(e) => {
                         eprintln!("{:new_indent$}[E] Failed to read '{path:?}: {e}", "");
-                        return Err(());
                     }
                 }
             }
-            Ok(())
         }
         Err(e) => {
             eprintln!("{:new_indent$}[E] Failed to open '{path:?}': {e}", "");
-            Err(())
         }
     }
 }
@@ -405,7 +395,7 @@ async fn check_tsm_file(path: &PathBuf, ctx: Arc<StorageContext>, indent: usize)
         }
         Err(e) => {
             println!("{:new_indent$}Invalid tsm file '{path:?}: {e}", "");
-            ctx.errors.lock().await.push(format!("'{path:?}': {e}"));
+            ctx.push_error(path, e).await;
         }
     }
 }
@@ -425,21 +415,18 @@ async fn check_delta_file(path: &PathBuf, ctx: Arc<StorageContext>, indent: usiz
         }
         Err(e) => {
             eprintln!("{:new_indent$}[E] Invalid delta file '{path:?}: {e}", "");
-            ctx.errors.lock().await.push(format!("'{path:?}': {e}"));
+            ctx.push_error(path, e).await;
         }
     }
 }
 
-async fn check_index_dir(
-    path: &PathBuf,
-    ctx: Arc<StorageContext>,
-    indent: usize,
-) -> Result<(), ()> {
+async fn check_index_dir(path: &PathBuf, ctx: Arc<StorageContext>, indent: usize) {
     if !path.exists() {
-        return Err(());
+        return;
     }
     println!("{:indent$}Into index dir '{path:?}", "");
     let new_indent = indent + 1;
+
     match path.read_dir() {
         Ok(read_index_dir) => {
             for read_index_result in read_index_dir {
@@ -454,16 +441,12 @@ async fn check_index_dir(
                     }
                     Err(e) => {
                         eprintln!("{:new_indent$}[E] Failed to read '{path:?}: {e}", "");
-                        ctx.print().await;
-                        return Err(());
                     }
                 }
             }
-            Ok(())
         }
         Err(e) => {
             eprintln!("{:new_indent$}[E] Failed to open '{path:?}': {e}", "");
-            Err(())
         }
     }
 }
@@ -471,6 +454,7 @@ async fn check_index_dir(
 async fn check_index_binlog_file(path: &PathBuf, ctx: Arc<StorageContext>, indent: usize) {
     println!("{:indent$}Checking index-binlog file '{path:?}", "");
     let new_indent = indent + 1;
+
     match file_manager::open_file(path).await {
         Ok(f) => match BinlogReader::new(0, f.into()).await {
             Ok(mut t) => {
@@ -490,7 +474,7 @@ async fn check_index_binlog_file(path: &PathBuf, ctx: Arc<StorageContext>, inden
                                 "{:new_indent$}[E] Invalid index-binlog file block: '{path:?}: {e}",
                                 ""
                             );
-                            ctx.errors.lock().await.push(format!("'{path:?}': {e}"));
+                            ctx.push_error(path, e).await;
                             break;
                         }
                     }
@@ -501,7 +485,7 @@ async fn check_index_binlog_file(path: &PathBuf, ctx: Arc<StorageContext>, inden
                     "{:new_indent$}[E] Invalid index-binlog file '{path:?}: {e}",
                     ""
                 );
-                ctx.errors.lock().await.push(format!("'{path:?}': {e}"));
+                ctx.push_error(path, e).await;
             }
         },
         Err(e) => {
@@ -509,7 +493,7 @@ async fn check_index_binlog_file(path: &PathBuf, ctx: Arc<StorageContext>, inden
                 "{:new_indent$}[W] Cannot open index-binlog file '{path:?}': {e}",
                 ""
             );
-            ctx.errors.lock().await.push(format!("'{path:?}': {e}"));
+            ctx.push_error(path, e).await;
         }
     }
 }
@@ -536,8 +520,6 @@ async fn check_wal_dir(path: &Path) {
                     }
                     Err(e) => {
                         eprintln!(" [E] Failed to read '{path:?}: {e}");
-                        ctx.print().await;
-                        exit(1)
                     }
                 }
             }
@@ -546,6 +528,8 @@ async fn check_wal_dir(path: &Path) {
             eprintln!(" [E] Failed to open '{path:?}': {e}");
         }
     }
+
+    ctx.print().await;
 }
 
 async fn check_wal_file(path: &Path, ctx: Arc<StorageContext>, indent: usize) {
@@ -577,6 +561,7 @@ async fn check_wal_file(path: &Path, ctx: Arc<StorageContext>, indent: usize) {
                             .lock()
                             .await
                             .push(format!("'{path:?}': [{next_pos}..), {e}"));
+                        break;
                     }
                 }
             }
