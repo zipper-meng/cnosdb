@@ -204,7 +204,7 @@ impl StorageContext {
 
 async fn check_storage_dir(path: &Path) {
     if !path.exists() {
-        eprintln!("[W] Storage path '{path:?}' not exists");
+        eprintln!("[W] Storage path {path:?} not exists");
         return;
     }
 
@@ -242,7 +242,7 @@ async fn check_storage_dir(path: &Path) {
 }
 
 async fn check_summary_file(path: &PathBuf, ctx: Arc<StorageContext>, indent: usize) {
-    println!("{:indent$}Checking summary file '{path:?}", "");
+    println!("{:indent$}Checking summary file {path:?}", "");
     let new_indent = indent + 1;
 
     match record_file::Reader::open(path).await {
@@ -250,7 +250,7 @@ async fn check_summary_file(path: &PathBuf, ctx: Arc<StorageContext>, indent: us
             ctx.summary_num.fetch_add(1, Ordering::SeqCst);
             if let Err(e) = StorageContext::fetch_add_file_len(path, ctx.summary_bytes.clone()) {
                 eprintln!(
-                    "{:new_indent$}[W] Cannot get metadata of summary file '{path:?}': {e}",
+                    "{:new_indent$}[W] Cannot get metadata of summary file {path:?}: {e}",
                     ""
                 );
             }
@@ -264,7 +264,7 @@ async fn check_summary_file(path: &PathBuf, ctx: Arc<StorageContext>, indent: us
                     Err(tskv::Error::Eof) => break,
                     Err(e) => {
                         eprintln!(
-                            "{:new_indent$}[E] Invalid summary file '{path:?}: [{next_pos}..), {e}",
+                            "{:new_indent$}[E] Invalid summary file {path:?}: [{next_pos}..), {e}",
                             ""
                         );
                         ctx.push_error(path, format!("[{next_pos}..), {e}")).await;
@@ -275,7 +275,7 @@ async fn check_summary_file(path: &PathBuf, ctx: Arc<StorageContext>, indent: us
         }
         Err(e) => {
             eprintln!(
-                "{:new_indent$}[E] Failed to open summary file '{path:?}: {e}",
+                "{:new_indent$}[E] Failed to open summary file {path:?}: {e}",
                 ""
             );
             ctx.push_error(path, format!("open file, {e}")).await;
@@ -313,13 +313,13 @@ async fn check_database_dir(path: &PathBuf, ctx: Arc<StorageContext>, indent: us
                         );
                     }
                     Err(e) => {
-                        eprintln!("{:new_indent$}[E] Failed to read '{path:?}: {e}", "");
+                        eprintln!("{:new_indent$}[E] Failed to read {path:?}: {e}", "");
                     }
                 }
             }
         }
         Err(e) => {
-            eprintln!("{:new_indent$}[E] Failed to open '{path:?}: {e}", "");
+            eprintln!("{:new_indent$}[E] Failed to open {path:?}: {e}", "");
         }
     }
     for t in tasks {
@@ -351,7 +351,7 @@ async fn check_tsm_dir(path: &PathBuf, ctx: Arc<StorageContext>, indent: usize) 
     if !path.exists() {
         return;
     }
-    println!("{:indent$}Into tsm dir '{path:?}", "");
+    println!("{:indent$}Into tsm dir {path:?}", "");
     let new_indent = indent + 1;
 
     match path.read_dir() {
@@ -369,52 +369,52 @@ async fn check_tsm_dir(path: &PathBuf, ctx: Arc<StorageContext>, indent: usize) 
                         }
                     }
                     Err(e) => {
-                        eprintln!("{:new_indent$}[E] Failed to read '{path:?}: {e}", "");
+                        eprintln!("{:new_indent$}[E] Failed to read {path:?}: {e}", "");
                     }
                 }
             }
         }
         Err(e) => {
-            eprintln!("{:new_indent$}[E] Failed to open '{path:?}': {e}", "");
+            eprintln!("{:new_indent$}[E] Failed to open {path:?}: {e}", "");
         }
     }
 }
 
 async fn check_tsm_file(path: &PathBuf, ctx: Arc<StorageContext>, indent: usize) {
-    println!("{:indent$}Checking tsm file '{path:?}", "");
+    println!("{:indent$}Checking tsm file {path:?}", "");
     let new_indent = indent + 1;
     match TsmReader::open(path).await {
         Ok(_t) => {
             ctx.tsm_num.fetch_add(1, Ordering::SeqCst);
             if let Err(e) = StorageContext::fetch_add_file_len(path, ctx.tsm_bytes.clone()) {
                 eprintln!(
-                    "{:new_indent$}[W] Cannot get metadata of tsm file '{path:?}': {e}",
+                    "{:new_indent$}[W] Cannot get metadata of tsm file {path:?}: {e}",
                     ""
                 );
             }
         }
         Err(e) => {
-            println!("{:new_indent$}Invalid tsm file '{path:?}: {e}", "");
+            println!("{:new_indent$}Invalid tsm file {path:?}: {e}", "");
             ctx.push_error(path, e).await;
         }
     }
 }
 
 async fn check_delta_file(path: &PathBuf, ctx: Arc<StorageContext>, indent: usize) {
-    println!("{:indent$}Checking delta file '{path:?}", "");
+    println!("{:indent$}Checking delta file {path:?}", "");
     let new_indent = indent + 1;
     match TsmReader::open(path).await {
         Ok(_t) => {
             ctx.delta_num.fetch_add(1, Ordering::SeqCst);
             if let Err(e) = StorageContext::fetch_add_file_len(path, ctx.delta_bytes.clone()) {
                 eprintln!(
-                    "{:new_indent$}[W] Cannot get metadata of delta file '{path:?}': {e}",
+                    "{:new_indent$}[W] Cannot get metadata of delta file {path:?}: {e}",
                     ""
                 );
             }
         }
         Err(e) => {
-            eprintln!("{:new_indent$}[E] Invalid delta file '{path:?}: {e}", "");
+            eprintln!("{:new_indent$}[E] Invalid delta file {path:?}: {e}", "");
             ctx.push_error(path, e).await;
         }
     }
@@ -424,7 +424,7 @@ async fn check_index_dir(path: &PathBuf, ctx: Arc<StorageContext>, indent: usize
     if !path.exists() {
         return;
     }
-    println!("{:indent$}Into index dir '{path:?}", "");
+    println!("{:indent$}Into index dir {path:?}", "");
     let new_indent = indent + 1;
 
     match path.read_dir() {
@@ -440,19 +440,19 @@ async fn check_index_dir(path: &PathBuf, ctx: Arc<StorageContext>, indent: usize
                         }
                     }
                     Err(e) => {
-                        eprintln!("{:new_indent$}[E] Failed to read '{path:?}: {e}", "");
+                        eprintln!("{:new_indent$}[E] Failed to read {path:?}: {e}", "");
                     }
                 }
             }
         }
         Err(e) => {
-            eprintln!("{:new_indent$}[E] Failed to open '{path:?}': {e}", "");
+            eprintln!("{:new_indent$}[E] Failed to open {path:?}: {e}", "");
         }
     }
 }
 
 async fn check_index_binlog_file(path: &PathBuf, ctx: Arc<StorageContext>, indent: usize) {
-    println!("{:indent$}Checking index-binlog file '{path:?}", "");
+    println!("{:indent$}Checking index-binlog file {path:?}", "");
     let new_indent = indent + 1;
 
     match file_manager::open_file(path).await {
@@ -460,7 +460,7 @@ async fn check_index_binlog_file(path: &PathBuf, ctx: Arc<StorageContext>, inden
             Ok(mut t) => {
                 ctx.index_num.fetch_add(1, Ordering::SeqCst);
                 if let Err(e) = StorageContext::fetch_add_file_len(path, ctx.index_bytes.clone()) {
-                    eprintln!("{:new_indent$}[W] Cannot get metadata of index-binlog file '{path:?}': {e}", "");
+                    eprintln!("{:new_indent$}[W] Cannot get metadata of index-binlog file {path:?}: {e}", "");
                 }
 
                 loop {
@@ -471,7 +471,7 @@ async fn check_index_binlog_file(path: &PathBuf, ctx: Arc<StorageContext>, inden
                         }
                         Err(e) => {
                             eprintln!(
-                                "{:new_indent$}[E] Invalid index-binlog file block: '{path:?}: {e}",
+                                "{:new_indent$}[E] Invalid index-binlog file block: {path:?}: {e}",
                                 ""
                             );
                             ctx.push_error(path, e).await;
@@ -482,7 +482,7 @@ async fn check_index_binlog_file(path: &PathBuf, ctx: Arc<StorageContext>, inden
             }
             Err(e) => {
                 eprintln!(
-                    "{:new_indent$}[E] Invalid index-binlog file '{path:?}: {e}",
+                    "{:new_indent$}[E] Invalid index-binlog file {path:?}: {e}",
                     ""
                 );
                 ctx.push_error(path, e).await;
@@ -490,7 +490,7 @@ async fn check_index_binlog_file(path: &PathBuf, ctx: Arc<StorageContext>, inden
         },
         Err(e) => {
             eprintln!(
-                "{:new_indent$}[W] Cannot open index-binlog file '{path:?}': {e}",
+                "{:new_indent$}[W] Cannot open index-binlog file {path:?}: {e}",
                 ""
             );
             ctx.push_error(path, e).await;
@@ -500,7 +500,7 @@ async fn check_index_binlog_file(path: &PathBuf, ctx: Arc<StorageContext>, inden
 
 async fn check_wal_dir(path: &Path) {
     if !path.exists() {
-        eprintln!("[W] WAL path '{path:?}' not exists");
+        eprintln!("[W] WAL path {path:?} not exists");
         return;
     }
 
@@ -519,13 +519,13 @@ async fn check_wal_dir(path: &Path) {
                         }
                     }
                     Err(e) => {
-                        eprintln!(" [E] Failed to read '{path:?}: {e}");
+                        eprintln!(" [E] Failed to read {path:?}: {e}");
                     }
                 }
             }
         }
         Err(e) => {
-            eprintln!(" [E] Failed to open '{path:?}': {e}");
+            eprintln!(" [E] Failed to open {path:?}: {e}");
         }
     }
 
@@ -533,14 +533,14 @@ async fn check_wal_dir(path: &Path) {
 }
 
 async fn check_wal_file(path: &Path, ctx: Arc<StorageContext>, indent: usize) {
-    println!("{:indent$}Checking wal file '{path:?}", "");
+    println!("{:indent$}Checking wal file {path:?}", "");
     let new_indent = indent + 1;
     match record_file::Reader::open(path).await {
         Ok(mut r) => {
             ctx.wal_num.fetch_add(1, Ordering::SeqCst);
             if let Err(e) = StorageContext::fetch_add_file_len(path, ctx.wal_bytes.clone()) {
                 eprintln!(
-                    "{:new_indent$}[W] Cannot get metadata of wal file '{path:?}': {e}",
+                    "{:new_indent$}[W] Cannot get metadata of wal file {path:?}: {e}",
                     ""
                 );
             }
@@ -554,13 +554,13 @@ async fn check_wal_file(path: &Path, ctx: Arc<StorageContext>, indent: usize) {
                     Err(tskv::Error::Eof) => break,
                     Err(e) => {
                         eprintln!(
-                            "{:new_indent$}[E] Invalid wal file '{path:?}: [{next_pos}..), {e}",
+                            "{:new_indent$}[E] Invalid wal file {path:?}: [{next_pos}..), {e}",
                             ""
                         );
                         ctx.errors
                             .lock()
                             .await
-                            .push(format!("'{path:?}': [{next_pos}..), {e}"));
+                            .push(format!("{path:?}: [{next_pos}..), {e}"));
                         break;
                     }
                 }
@@ -568,12 +568,10 @@ async fn check_wal_file(path: &Path, ctx: Arc<StorageContext>, indent: usize) {
         }
         Err(e) => {
             eprintln!(
-                "{:new_indent$}[E] Failed to open wal file '{path:?}: {e}",
+                "{:new_indent$}[E] Failed to open wal file {path:?}: {e}",
                 ""
             );
-            ctx.errors.lock().await.push(format!("'{path:?}': {e}"));
+            ctx.errors.lock().await.push(format!("{path:?}: {e}"));
         }
     }
-
-    ctx.print().await;
 }
