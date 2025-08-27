@@ -33,14 +33,9 @@ pub fn install_crash_handler() {
         use backtrace::Backtrace;
         let name = std::thread::current()
             .name()
-            .map(|n| format!(" for thread \"{}\"", n))
+            .map(|n| format!(" for thread \"{n}\""))
             .unwrap_or_else(|| "".to_owned());
-        eprintln!(
-            "Signal {}, Stack trace{}\n{:?}",
-            sig,
-            name,
-            Backtrace::new()
-        );
+        eprintln!("Signal {sig}, Stack trace{name}\n{:?}", Backtrace::new());
         abort();
     }
 

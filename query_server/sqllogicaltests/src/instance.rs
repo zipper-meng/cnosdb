@@ -300,7 +300,7 @@ impl CnosdbClient {
             if let Some(tkt) = &ep.ticket {
                 let stream = client.do_get(tkt.clone()).await?;
                 let new_batches = stream.try_collect::<Vec<_>>().await.map_err(|err| {
-                    ArrowError::IpcError(format!("Cannot collect flight data: {:#?}", err))
+                    ArrowError::IpcError(format!("Cannot collect flight data: {err:#?}"))
                 })?;
                 batches.extend(new_batches);
             };

@@ -3,7 +3,7 @@ use std::process::Command;
 fn main() {
     if let Ok(output) = Command::new("sh").arg("-c").arg("pwd").output() {
         if let Ok(pwd) = String::from_utf8(output.stdout) {
-            println!("pwd: {}", pwd);
+            println!("pwd: {pwd}");
         }
     }
 

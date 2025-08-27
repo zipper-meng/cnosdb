@@ -43,7 +43,7 @@ impl LimiterManager {
             self.factories
                 .get(&limiter_type)
                 .ok_or_else(|| MetaError::LimiterCreate {
-                    msg: format!("couldn't found factory of {:?}", limiter_type),
+                    msg: format!("couldn't found factory of {limiter_type:?}"),
                 })?;
         let limiter = factory.create_limiter(config).await?;
         self.insert_limiter(key, limiter.clone());

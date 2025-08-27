@@ -580,7 +580,7 @@ mod test {
         for i in 0..1024 * 4 {
             let mut entry = RaftEntry::default();
             entry.log_id.index = i;
-            entry.payload = EntryPayload::Normal(format!("{}_{}", str_1k, i).as_bytes().to_vec());
+            entry.payload = EntryPayload::Normal(format!("{str_1k}_{i}").as_bytes().to_vec());
             storage.append(&[entry]).await.unwrap();
         }
 
@@ -609,7 +609,7 @@ mod test {
         let mut storage = RaftEntryStorage::new(wal);
 
         let wal_files = LocalFileSystem::list_file_names(&wal_dir);
-        println!("----------------- files: {:?}", wal_files);
+        println!("----------------- files: {wal_files:?}");
         for file_name in wal_files {
             let wal_id = file_utils::get_wal_file_id(&file_name).unwrap();
             let reader = storage.inner.wal.wal_reader(wal_id).await.unwrap();
@@ -653,7 +653,7 @@ mod test {
         for i in 0..10 {
             let mut entry = RaftEntry::default();
             entry.log_id.index = i;
-            entry.payload = EntryPayload::Normal(format!("payload_{}", i).as_bytes().to_vec());
+            entry.payload = EntryPayload::Normal(format!("payload_{i}").as_bytes().to_vec());
             storage.append(&[entry]).await.unwrap();
         }
         for i in 0..12 {
@@ -679,7 +679,7 @@ mod test {
         for i in 8..10 {
             let mut entry = RaftEntry::default();
             entry.log_id.index = i;
-            entry.payload = EntryPayload::Normal(format!("payload_{}", i).as_bytes().to_vec());
+            entry.payload = EntryPayload::Normal(format!("payload_{i}").as_bytes().to_vec());
             storage.append(&[entry]).await.unwrap();
         }
 

@@ -180,11 +180,11 @@ impl SampleAccumulator {
     /// Sample the input data
     fn sample_data(&self, arr: ArrayRef, sample_n: usize) -> DFResult<ArrayRef> {
         if arr.len() <= sample_n {
-            trace::trace!("The size of data {} is less than the number of samples {}, use the original data directly", arr.len(), sample_n);
+            trace::trace!("The size of data {} is less than the number of samples {sample_n}, use the original data directly", arr.len());
             // use arr directly
             Ok(arr)
         } else {
-            trace::trace!("Take {} samples", sample_n);
+            trace::trace!("Take {sample_n} samples");
             // random sampling
             let indices = UInt32Array::from(generate_unique_random_numbers(
                 sample_n as u32,
@@ -232,7 +232,7 @@ impl SampleAccumulator {
     fn try_compact_state(&self, sample_n: usize) -> DFResult<Option<IntermediateSampleState>> {
         let num_rows = self.states.iter().map(|(e, _)| e.len()).sum::<usize>();
         if num_rows > sample_n * 10 {
-            trace::trace!("Merge existing data: {}", num_rows);
+            trace::trace!("Merge existing data: {num_rows}");
             // compact
             Ok(Some(self.sample_state()?))
         } else {
@@ -249,7 +249,7 @@ impl SampleAccumulator {
     }
 
     fn update_batch_inner(&mut self, arr: ArrayRef, sample_n: usize) -> DFResult<()> {
-        trace::trace!("update_batch_inner: {:?}, sample_n: {}", arr, sample_n);
+        trace::trace!("update_batch_inner: {arr:?}, sample_n: {sample_n}");
         // sample
         let sampled_arr = self.sample_data(arr, sample_n)?;
 

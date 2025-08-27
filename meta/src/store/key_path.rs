@@ -31,18 +31,18 @@ pub struct KeyPath {}
 
 impl KeyPath {
     pub fn cluster_prefix(cluster: &str) -> String {
-        format!("/{}/", cluster)
+        format!("/{cluster}/")
     }
 
     pub fn users(cluster: &str) -> String {
-        format!("/{}/users", cluster)
+        format!("/{cluster}/users")
     }
 
     pub fn user(cluster: &str, user: &str) -> String {
-        format!("/{}/users/{}", cluster, user)
+        format!("/{cluster}/users/{user}")
     }
     pub fn incr_id(cluster: &str) -> String {
-        format!("/{}/auto_incr_id", cluster)
+        format!("/{cluster}/auto_incr_id")
     }
 
     pub fn version() -> String {
@@ -58,23 +58,23 @@ impl KeyPath {
     }
 
     pub fn data_nodes(cluster: &str) -> String {
-        format!("/{}/data_nodes", cluster)
+        format!("/{cluster}/data_nodes")
     }
 
     pub fn data_node_id(cluster: &str, id: u64) -> String {
-        format!("/{}/data_nodes/{}", cluster, id)
+        format!("/{cluster}/data_nodes/{id}")
     }
 
     pub fn data_nodes_metrics(cluster: &str) -> String {
-        format!("/{}/data_nodes_metrics", cluster)
+        format!("/{cluster}/data_nodes_metrics")
     }
 
     pub fn data_node_metrics(cluster: &str, id: u64) -> String {
-        format!("/{}/data_nodes_metrics/{}", cluster, id)
+        format!("/{cluster}/data_nodes_metrics/{id}")
     }
 
     pub fn tenant_dbs(cluster: &str, tenant: &str) -> String {
-        format!("/{}/tenants/{}/dbs", cluster, tenant)
+        format!("/{cluster}/tenants/{tenant}/dbs")
     }
 
     // pub fn tenant_version(cluster: &str, tenant: &str) -> String {
@@ -82,50 +82,47 @@ impl KeyPath {
     // }
 
     pub fn tenant_db_name(cluster: &str, tenant: &str, db: &str) -> String {
-        format!("/{}/tenants/{}/dbs/{}", cluster, tenant, db)
+        format!("/{cluster}/tenants/{tenant}/dbs/{db}")
     }
 
     pub fn tenant_db_buckets(cluster: &str, tenant: &str, db: &str) -> String {
-        format!("/{}/tenants/{}/dbs/{}/buckets", cluster, tenant, db)
+        format!("/{cluster}/tenants/{tenant}/dbs/{db}/buckets")
     }
 
     pub fn tenant_bucket_id(cluster: &str, tenant: &str, db: &str, id: u32) -> String {
-        format!("/{}/tenants/{}/dbs/{}/buckets/{}", cluster, tenant, db, id)
+        format!("/{cluster}/tenants/{tenant}/dbs/{db}/buckets/{id}")
     }
 
     pub fn tenant_schemas(cluster: &str, tenant: &str, db: &str) -> String {
-        format!("/{}/tenants/{}/dbs/{}/schemas", cluster, tenant, db)
+        format!("/{cluster}/tenants/{tenant}/dbs/{db}/schemas")
     }
 
     pub fn tenant_schema_name(cluster: &str, tenant: &str, db: &str, name: &str) -> String {
-        format!(
-            "/{}/tenants/{}/dbs/{}/schemas/{}",
-            cluster, tenant, db, name
-        )
+        format!("/{cluster}/tenants/{tenant}/dbs/{db}/schemas/{name}")
     }
 
     pub fn tenants(cluster: &str) -> String {
-        format!("/{}/tenants/", cluster)
+        format!("/{cluster}/tenants/")
     }
 
     pub fn tenant(cluster: &str, name: &str) -> String {
-        format!("/{}/tenants/{}", cluster, name)
+        format!("/{cluster}/tenants/{name}")
     }
 
     pub fn role(cluster: &str, tenant_name: &str, role_name: &str) -> String {
-        format!("/{}/tenants/{}/roles/{}", cluster, tenant_name, role_name)
+        format!("/{cluster}/tenants/{tenant_name}/roles/{role_name}")
     }
 
     pub fn roles(cluster: &str, tenant_name: &str) -> String {
-        format!("/{}/tenants/{}/roles", cluster, tenant_name)
+        format!("/{cluster}/tenants/{tenant_name}/roles")
     }
 
     pub fn member(cluster: &str, tenant_name: &str, user_id: &Oid) -> String {
-        format!("/{}/tenants/{}/members/{}", cluster, tenant_name, user_id)
+        format!("/{cluster}/tenants/{tenant_name}/members/{user_id}")
     }
 
     pub fn members(cluster: &str, tenant_name: &str) -> String {
-        format!("/{}/tenants/{}/members", cluster, tenant_name)
+        format!("/{cluster}/tenants/{tenant_name}/members")
     }
 
     pub fn limiter(cluster: &str, tenant_name: &str) -> String {
@@ -133,18 +130,18 @@ impl KeyPath {
     }
 
     pub fn resourceinfos(cluster: &str, name: &str) -> String {
-        format!("/{}/resourceinfos/{}", cluster, name)
+        format!("/{cluster}/resourceinfos/{name}")
     }
 
     pub fn resourceinfosmark(cluster: &str) -> String {
-        format!("/{}/resourceinfosmark", cluster)
+        format!("/{cluster}/resourceinfosmark")
     }
 
     pub fn query(cluster: &str, query_id: u64) -> String {
-        format!("/{}/queries/{}", cluster, query_id)
+        format!("/{cluster}/queries/{query_id}")
     }
 
     pub fn queries(cluster: &str) -> String {
-        format!("/{}/queries", cluster)
+        format!("/{cluster}/queries")
     }
 }

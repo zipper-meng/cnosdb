@@ -28,7 +28,7 @@ impl DDLDefinitionTask for RecoverTenantTask {
             ref if_exist,
         } = self.stmt;
 
-        debug!("Recover tenant {}", tenant_name);
+        debug!("Recover tenant {tenant_name}");
 
         let meta = query_state_machine.meta.clone();
         let tenant_meta = meta

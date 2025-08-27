@@ -178,7 +178,7 @@ impl StateMachine {
         let data = self.backup()?;
         let mut rsp = "****** ------------------------------------- ******\n".to_string();
         for (key, val) in data.map.iter() {
-            rsp = rsp + &format!("* {}: {}\n", key, val);
+            rsp = rsp + &format!("* {key}: {val}\n");
         }
         rsp += "****** ------------------------------------- ******\n";
 
@@ -235,9 +235,7 @@ impl StateMachine {
         writer.commit()?;
 
         debug!(
-            "METADATA WRITE(ver: {}): {} :{}",
-            version,
-            key,
+            "METADATA WRITE(ver: {version}): {key} :{}",
             if val.contains("password") {
                 "*****"
             } else {
@@ -266,7 +264,7 @@ impl StateMachine {
             .put(&mut writer, &KeyPath::version(), &version.to_string())?;
         writer.commit()?;
 
-        info!("METADATA REMOVE(ver: {}): {}", version, key);
+        info!("METADATA REMOVE(ver: {version}): {key}");
         let log = EntryLog {
             tye: ENTRY_LOG_TYPE_DEL,
             ver: version,
@@ -588,15 +586,15 @@ impl StateMachine {
             .map(|desc| (format!("{}", desc.id()), desc))
             .collect();
 
-        trace::trace!("members of path {}: {:?}", path, members);
-        trace::trace!("all users: {:?}", users);
+        trace::trace!("members of path {path}: {members:?}");
+        trace::trace!("all users: {users:?}");
 
         let members: HashMap<String, TenantRoleIdentifier> = members
             .into_iter()
             .filter_map(|(id, role)| users.get(&id).map(|e| (e.name().to_string(), role)))
             .collect();
 
-        debug!("returned members of path {}: {:?}", path, members);
+        debug!("returned members of path {path}: {members:?}");
 
         Ok(members)
     }
@@ -1686,7 +1684,7 @@ async fn ping_servers(list: &[NodeInfo]) -> Vec<NodeInfo> {
     let results = futures::future::join_all(requests).await;
     for (node, result) in list.iter().zip(results.iter()) {
         if let Err(err) = result {
-            warn!("ping server {:?} failed: {}", node, err);
+            warn!("ping server {node:?} failed: {err}");
         } else {
             alive_nodes.push(node.clone());
         }
@@ -1763,7 +1761,7 @@ mod test {
             value: "xxxxxxxv".to_string(),
         };
         let data = serde_json::to_string(&command).unwrap();
-        println!("{}", data);
+        println!("{data}");
 
         let cmd = Command::Test1(Command1 {
             id: 100,
@@ -1774,13 +1772,13 @@ mod test {
         print!("\n1 === {}=== \n", String::from_utf8(str).unwrap());
 
         let str = serde_json::to_string(&cmd).unwrap();
-        print!("\n2 === {}=== \n", str);
+        print!("\n2 === {str}=== \n");
 
         let tup = ("test1".to_string(), "test2".to_string());
         let str = serde_json::to_string(&tup).unwrap();
-        print!("\n3 === {}=== \n", str);
+        print!("\n3 === {str}=== \n");
 
         let str = serde_json::to_string(&"xxx".to_string()).unwrap();
-        print!("\n4 === {}=== \n", str);
+        print!("\n4 === {str}=== \n");
     }
 }

@@ -63,11 +63,3 @@ tikv-jemallocator = { workspace = true }
 [features]
 default = []
 backtrace = ["async-backtrace"]
-
-[[example]]
-name = "flight_sql_server"
-path = "examples/flight_sql_server.rs"
-
-[[example]]
-name = "flight_rpc_server"
-path = "examples/flight_rpc_server.rs"

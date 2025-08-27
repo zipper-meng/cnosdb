@@ -63,10 +63,7 @@ impl BatchReader for SeriesReader {
                 .parse::<ColumnId>()
                 .map_err(|err| {
                     TagSnafu {
-                        reason: format!(
-                            "Convert tag {key:?} to column id failed, because: {}",
-                            err
-                        ),
+                        reason: format!("Convert tag {key:?} to column id failed, because: {err}"),
                     }
                     .build()
                 })?;

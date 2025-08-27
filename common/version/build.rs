@@ -32,7 +32,7 @@ fn main() {
         // Get the GIT_HASH from environment variable 'CNOSDB_GIT_HASH'
         // when using Github CI to build.
         if let Ok(git_hash) = std::env::var("CNOSDB_GIT_HASH") {
-            println!("cargo:rustc-env=GIT_HASH={}", git_hash);
+            println!("cargo:rustc-env=GIT_HASH={git_hash}");
             rustc_env_git_hash = true;
         }
     }

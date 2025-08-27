@@ -139,6 +139,6 @@ impl DatabaseManagerSystem for DatabaseManagerSystemMock {
     }
 
     fn cancel(&self, query_id: &QueryId) {
-        println!("DatabaseManagerSystemMock::cancel({:?})", query_id);
+        println!("DatabaseManagerSystemMock::cancel({query_id:?})");
     }
 }

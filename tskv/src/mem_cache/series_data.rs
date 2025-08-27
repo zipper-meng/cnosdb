@@ -402,7 +402,7 @@ mod test {
         // list.insert(Tuple { a: 4, b: 11 });
 
         for it in list.iter() {
-            println!("------ {:?}", it);
+            println!("------ {it:?}");
         }
     }
 
@@ -418,7 +418,7 @@ mod test {
         pq.push(Tuple { a: 4, b: 11 });
 
         while let Some(it) = pq.pop() {
-            println!("------ {:?}", it);
+            println!("------ {it:?}");
         }
     }
 
@@ -443,7 +443,7 @@ mod test {
             }
         }
         let elapsed = start.elapsed();
-        println!("---------- {:?}", elapsed);
+        println!("---------- {elapsed:?}");
 
         //---------------多次分配，分配时用默认值填充----------------------------
         let start = std::time::Instant::now();
@@ -454,7 +454,7 @@ mod test {
             };
         }
         let elapsed = start.elapsed();
-        println!("---------- {:?}", elapsed);
+        println!("---------- {elapsed:?}");
 
         //---------------一次分配，通过clone方式构造----------------------------
         let start = std::time::Instant::now();
@@ -466,7 +466,7 @@ mod test {
             let _res = result.clone();
         }
         let elapsed = start.elapsed();
-        println!("---------- {:?}", elapsed);
+        println!("---------- {elapsed:?}");
     }
 
     #[test]
@@ -484,7 +484,7 @@ mod test {
             let _tmp = it.next();
         }
         let elapsed = start.elapsed();
-        println!("---------- {:?}", elapsed);
+        println!("---------- {elapsed:?}");
 
         //-----------------通过下标访问--------------------------
         let start = std::time::Instant::now();
@@ -492,6 +492,6 @@ mod test {
             let _tmp = result.fields[0];
         }
         let elapsed = start.elapsed();
-        println!("---------- {:?}", elapsed);
+        println!("---------- {elapsed:?}");
     }
 }

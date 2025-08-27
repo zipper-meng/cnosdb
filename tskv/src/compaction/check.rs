@@ -78,7 +78,7 @@ impl std::fmt::Display for TimeRangeHashTreeNode {
             self.min_ts, self.max_ts
         )?;
         for v in self.hash {
-            f.write_fmt(format_args!("{:x}", v))?;
+            f.write_fmt(format_args!("{v:x}"))?;
         }
         write!(f, "\" }}")
     }
@@ -113,7 +113,7 @@ pub(crate) async fn vnode_checksum(_vnode: Arc<RwLock<TseriesFamily>>) -> TskvRe
     //     ],
     // )
     // .map_err(|err| Error::CommonError {
-    //     reason: format!("get checksum fail, {}", err),
+    //     reason: format!("get checksum fail, {err}"),
     // })
     Err(TskvError::Unimplemented {
         msg: "checksum unimplemented".to_string(),
@@ -159,7 +159,7 @@ pub(crate) async fn vnode_checksum(_vnode: Arc<RwLock<TseriesFamily>>) -> TskvRe
 //         ],
 //     )
 //     .map_err(|err| Error::CommonError {
-//         reason: format!("get checksum fail, {}", err),
+//         reason: format!("get checksum fail, {err}"),
 //     })
 // }
 
@@ -199,7 +199,7 @@ pub(crate) async fn vnode_checksum(_vnode: Arc<RwLock<TseriesFamily>>) -> TskvRe
 //     }
 //     vnode_hash_tree_node.push(filed_hash_tree_node);
 // }
-// trace::trace!("VnodeHashTree({vnode_id}): {}", vnode_hash_tree_node);
+// trace::trace!("VnodeHashTree({vnode_id}): {vnode_hash_tree_node}");
 //
 // Ok(vnode_hash_tree_node)
 // }

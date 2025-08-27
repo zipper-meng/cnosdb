@@ -777,8 +777,7 @@ fn case8_count_after_restart_cluster() {
                         .collect();
                     if let Err(e) = writeln!(
                         &mut buffer,
-                        "tb1,t1=t1a,t2=t2a,t3=t3a f1={}i,f2={},f3=\"{}\" {}",
-                        random_number, four_digit_float, random_string, i
+                        "tb1,t1=t1a,t2=t2a,t3=t3a f1={random_number}i,f2={four_digit_float},f3=\"{random_string}\" {i}",
                     ) {
                         return CaseFlowControl::Error(e.to_string());
                     }

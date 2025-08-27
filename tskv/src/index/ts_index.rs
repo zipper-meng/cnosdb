@@ -727,7 +727,7 @@ mod test {
                 assert_eq!(series_key.to_string(), last_key.to_string());
 
                 max_sid = max_sid.max(sid[0].0);
-                println!("test_index#1: series {i} - '{series_key}' - id: {:?}", sid);
+                println!("test_index#1: series {i} - '{series_key}' - id: {sid:?}");
                 series_keys_sids.push(sid[0].0);
             }
 
@@ -807,7 +807,7 @@ mod test {
                 tokio::time::sleep(Duration::from_millis(100)).await;
                 let last_key = ts_index.get_series_key(sid[0].0).await.unwrap().unwrap();
                 assert_eq!(series_key.to_string(), last_key.to_string());
-                println!("test_index#2: series {i} - '{series_key}' - id: {:?}", sid);
+                println!("test_index#2: series {i} - '{series_key}' - id: {sid:?}");
 
                 assert!(sid[0].0 > prev_max_sid);
                 max_sid = max_sid.max(sid[0].0);
@@ -839,7 +839,7 @@ mod test {
             tokio::time::sleep(Duration::from_millis(100)).await;
             let last_key = ts_index.get_series_key(sid[0].0).await.unwrap().unwrap();
             assert_eq!(series_key.to_string(), last_key.to_string());
-            println!("test_index#3: series {i} - '{series_key}' - id: {:?}", sid);
+            println!("test_index#3: series {i} - '{series_key}' - id: {sid:?}");
 
             assert!(sid[0].0 > prev_max_sid);
         }

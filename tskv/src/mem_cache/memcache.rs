@@ -97,7 +97,7 @@ impl MemCache {
             partions.push(RwLock::new(HashMap::new()));
         }
         let res =
-            RwLock::new(MemoryConsumer::new(format!("memcache-{}-{}", tf_id, seq)).register(pool));
+            RwLock::new(MemoryConsumer::new(format!("memcache-{tf_id}-{seq}")).register(pool));
         Self {
             tf_id,
             file_id,

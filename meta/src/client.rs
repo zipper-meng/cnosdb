@@ -235,7 +235,7 @@ impl MetaHttpClient {
     where
         Req: Serialize + 'static,
     {
-        let url = format!("http://{}/{}", self.leader.read(), uri);
+        let url = format!("http://{}/{uri}", self.leader.read());
 
         let resp = self
             .inner
@@ -256,7 +256,7 @@ impl MetaHttpClient {
             Err(MetaError::ChangeLeader { new_leader: data })
         } else {
             Err(MetaError::MetaClientErr {
-                msg: format!("httpcode: {}, response:{}", resp_code, data),
+                msg: format!("httpcode: {resp_code}, response:{data}"),
             })
         }
     }
@@ -304,12 +304,12 @@ mod test {
         let resp = client.post(write_url).json(&req).send().await.unwrap();
 
         let data = resp.text().await.unwrap();
-        println!("{}", data);
+        println!("{data}");
 
         let req = command::ReadCommand::DataNodes(cluster.clone());
         let resp = client.post(read_url).json(&req).send().await.unwrap();
         let data = resp.text().await.unwrap();
-        println!("{}", data);
+        println!("{data}");
     }
 
     #[tokio::test]
@@ -328,7 +328,7 @@ mod test {
 
         let req = command::WriteCommand::AddDataNode(cluster.clone(), node);
         let rsp = client.write::<()>(&req).await;
-        println!("=== add data: {:?}", rsp);
+        println!("=== add data: {rsp:?}");
         thread::sleep(time::Duration::from_secs(3));
 
         let req = command::ReadCommand::DataNodes(cluster.clone());
@@ -351,7 +351,7 @@ mod test {
         let client = MetaHttpClient::new("127.0.0.1:8901", Arc::new(MetricsRegister::default()));
         loop {
             let watch_data = client.watch::<command::WatchData>(&request).await.unwrap();
-            println!("{:?}", watch_data);
+            println!("{watch_data:?}");
 
             if !watch_data.entry_logs.is_empty() {
                 println!("{}", watch_data.entry_logs[0].val)

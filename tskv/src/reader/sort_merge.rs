@@ -54,7 +54,7 @@ pub fn sort_merge(
     }
 
     Err(crate::error::TskvError::Unimplemented {
-        msg: format!("Not implement batch merge for {}", data_type),
+        msg: format!("Not implement batch merge for {data_type}"),
     })
 }
 

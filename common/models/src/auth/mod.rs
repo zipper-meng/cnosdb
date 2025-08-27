@@ -16,16 +16,16 @@ pub type AuthResult<T> = std::result::Result<T, AuthError>;
 
 #[derive(Debug, Snafu)]
 pub enum AuthError {
-    #[snafu(display("Generate id, error: {}", error))]
+    #[snafu(display("Generate id, error: {error}"))]
     IdGenerate { error: String },
 
-    #[snafu(display("Rsa error: {}", source))]
+    #[snafu(display("Rsa error: {source}"))]
     Rsa { source: ErrorStack },
 
     #[snafu(display("Password not set"))]
     PasswordNotSet,
 
-    #[snafu(display("Access denied for user '{}' (using {}) {}", user_name, auth_type, err))]
+    #[snafu(display("Access denied for user '{user_name}' (using {auth_type}) {err}"))]
     AccessDenied {
         user_name: String,
         auth_type: String,
@@ -53,29 +53,28 @@ pub enum AuthError {
     #[snafu(display("The privilege already exists in the role"))]
     PrivilegeAlreadyExists,
 
-    #[snafu(display("The privilege {:?} of {} not found in the role", privilege, db))]
+    #[snafu(display("The privilege {privilege:?} of {db} not found in the role"))]
     PrivilegeNotFound {
         db: String,
         privilege: DatabasePrivilege,
         role: String,
     },
 
-    #[snafu(display("The user {} already exists", user))]
+    #[snafu(display("The user {user} already exists"))]
     UserAlreadyExists { user: String },
 
-    #[snafu(display("The user {} not found", user))]
+    #[snafu(display("The user {user} not found"))]
     UserNotFound { user: String },
 
-    #[snafu(display("{}", err))]
+    #[snafu(display("{err}"))]
     Metadata { err: String },
 
-    #[snafu(display("Bcrypt Error:{}", source))]
+    #[snafu(display("Bcrypt Error: {source}"))]
     Bcrypt { source: BcryptError },
 
     #[snafu(display(
-        "Internal error: {}. This was likely caused by a bug in Cnosdb's \
+        "Internal error: {err}. This was likely caused by a bug in Cnosdb's \
     code and we would welcome that you file an bug report in our issue tracker",
-        err
     ))]
     Internal {
         err: String,

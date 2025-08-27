@@ -194,8 +194,7 @@ pub fn f64_vec_to_numeric_arr(values: Vec<f64>, data_type: &DataType) -> DFResul
             values.iter().map(|&x| x as u64).collect::<Vec<_>>(),
         ))),
         _ => Err(datafusion::error::DataFusionError::Execution(format!(
-            "values cannot be converted to data_type: {:?}",
-            data_type
+            "values cannot be converted to data_type: {data_type:?}"
         ))),
     }
 }
@@ -212,8 +211,7 @@ pub fn i64ns_vec_to_timestamp_arr(values: Vec<i64>, data_type: &DataType) -> DFR
             TimestampNanosecondArray::from_iter_values(values.iter().copied()),
         )),
         _ => Err(datafusion::error::DataFusionError::Execution(format!(
-            "values cannot be converted to data_type: {:?}",
-            data_type
+            "values cannot be converted to data_type: {data_type:?}"
         ))),
     }
 }

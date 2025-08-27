@@ -59,7 +59,7 @@ pub enum Error {
     #[snafu(display("invalid log syntax: {content}"))]
     InvaildSyntax { content: String },
 
-    #[snafu(display("{}", content))]
+    #[snafu(display("{content}"))]
     Common { content: String },
 
     #[snafu(display("invalid time format"))]
@@ -78,7 +78,7 @@ pub fn flatten_json(name: String, input: serde_json::Value) -> BTreeMap<String, 
                     if name.is_empty() {
                         output.insert(k2, v2);
                     } else {
-                        output.insert(format!("{}.{}", name, k2), v2);
+                        output.insert(format!("{name}.{k2}"), v2);
                     }
                 }
             }
@@ -91,7 +91,7 @@ pub fn flatten_json(name: String, input: serde_json::Value) -> BTreeMap<String, 
                     if name.is_empty() {
                         output.insert(k, v);
                     } else {
-                        output.insert(format!("{}.{}", name, k), v);
+                        output.insert(format!("{name}.{k}"), v);
                     }
                 }
             }
@@ -125,12 +125,12 @@ pub fn parse_json_to_eslog(mut json_chunk: Vec<&str>) -> Result<Vec<JsonProtocol
     while i < n {
         let command: Command =
             serde_json::from_str(json_chunk[i]).map_err(|e| Error::InvaildSyntax {
-                content: format!("parse_json_to_eslog, serde_json to Command error: {}", e),
+                content: format!("parse_json_to_eslog, serde_json to Command error: {e}"),
             })?;
         let fields = flatten_json(
             String::new(),
             serde_json::from_str(json_chunk[i + 1]).map_err(|e| Error::InvaildSyntax {
-                content: format!("parse_json_to_eslog, serde_json error: {}", e),
+                content: format!("parse_json_to_eslog, serde_json error: {e}"),
             })?,
         );
 
@@ -149,7 +149,7 @@ pub fn parse_json_to_ndjsonlog(json_chunk: Vec<&str>) -> Result<Vec<JsonProtocol
         let fields = flatten_json(
             String::new(),
             serde_json::from_str(line).map_err(|e| Error::InvaildSyntax {
-                content: format!("parse_json_to_ndjsonlog error: {}", e),
+                content: format!("parse_json_to_ndjsonlog error: {e}"),
             })?,
         );
 
@@ -166,7 +166,7 @@ pub fn parse_json_to_lokilog(json_chunk: Vec<&str>) -> Result<Vec<JsonProtocol>>
         let fields = flatten_json(
             String::new(),
             serde_json::from_str(line).map_err(|e| Error::InvaildSyntax {
-                content: format!("parse_json_to_lokilog error: {}", e),
+                content: format!("parse_json_to_lokilog error: {e}"),
             })?,
         );
 
@@ -188,7 +188,7 @@ pub fn parse_protobuf_to_lokilog(req: Bytes) -> Result<Vec<JsonProtocol>> {
     let buf = Bytes::from(buf);
 
     let push_request = logproto::PushRequest::decode(buf).map_err(|e| Error::InvaildSyntax {
-        content: format!("parse_protobuf_to_lokilog error: {}", e),
+        content: format!("parse_protobuf_to_lokilog error: {e}"),
     })?;
 
     let mut logs = Vec::new();
@@ -218,7 +218,7 @@ pub fn parse_protobuf_to_lokilog(req: Bytes) -> Result<Vec<JsonProtocol>> {
 pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
     let export_trace_req =
         ExportTraceServiceRequest::decode(req).map_err(|e| Error::InvaildSyntax {
-            content: format!("parse_protobuf_to_otlptrace error: {}", e),
+            content: format!("parse_protobuf_to_otlptrace error: {e}"),
         })?;
 
     let mut logs = Vec::new();
@@ -244,8 +244,8 @@ pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
                         Some(Value::BoolValue(bool_value)) => bool_value.to_string(), // 布尔类型转换为字符串
                         Some(Value::IntValue(int_value)) => int_value.to_string(), // 整数类型转换为字符串
                         Some(Value::DoubleValue(double_value)) => double_value.to_string(), // 浮点数类型转换为字符串
-                        Some(_) => format!("{:?}", value).to_lowercase(), // 任何类型都直接用 Debug trait 转换成字符串
-                        None => "".to_string(), // 如果没有值，返回空字符串
+                        Some(_) => format!("{value:?}").to_lowercase(), // 任何类型都直接用 Debug trait 转换成字符串
+                        None => "".to_string(),                         // 如果没有值，返回空字符串
                     };
                     fields.insert(
                         prefix.join("") + "attributes/" + &attribute.key, // 拼接 key
@@ -282,7 +282,7 @@ pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
                             Some(Value::BoolValue(bool_value)) => bool_value.to_string(), // 布尔类型转换为字符串
                             Some(Value::IntValue(int_value)) => int_value.to_string(), // 整数类型转换为字符串
                             Some(Value::DoubleValue(double_value)) => double_value.to_string(), // 浮点数类型转换为字符串
-                            Some(_) => format!("{:?}", value).to_lowercase(), // 任何类型都直接用 Debug trait 转换成字符串
+                            Some(_) => format!("{value:?}").to_lowercase(), // 任何类型都直接用 Debug trait 转换成字符串
                             None => "".to_string(), // 如果没有值，返回空字符串
                         };
 
@@ -309,7 +309,7 @@ pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
                     serde_json::Value::String(
                         span.trace_id
                             .iter()
-                            .fold(String::new(), |acc, byte| acc + &format!("{:02x}", byte)),
+                            .fold(String::new(), |acc, byte| acc + &format!("{byte:02x}")),
                     ),
                 );
                 fields.insert(
@@ -317,7 +317,7 @@ pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
                     serde_json::Value::String(
                         span.span_id
                             .iter()
-                            .fold(String::new(), |acc, byte| acc + &format!("{:02x}", byte)),
+                            .fold(String::new(), |acc, byte| acc + &format!("{byte:02x}")),
                     ),
                 );
                 fields.insert(
@@ -329,7 +329,7 @@ pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
                     serde_json::Value::String(
                         span.parent_span_id
                             .iter()
-                            .fold(String::new(), |acc, byte| acc + &format!("{:02x}", byte)),
+                            .fold(String::new(), |acc, byte| acc + &format!("{byte:02x}")),
                     ),
                 );
                 fields.insert(
@@ -359,7 +359,7 @@ pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
                             Some(Value::BoolValue(bool_value)) => bool_value.to_string(), // 布尔类型转换为字符串
                             Some(Value::IntValue(int_value)) => int_value.to_string(), // 整数类型转换为字符串
                             Some(Value::DoubleValue(double_value)) => double_value.to_string(), // 浮点数类型转换为字符串
-                            Some(_) => format!("{:?}", value).to_lowercase(), // 任何类型都直接用 Debug trait 转换成字符串
+                            Some(_) => format!("{value:?}").to_lowercase(), // 任何类型都直接用 Debug trait 转换成字符串
                             None => "".to_string(), // 如果没有值，返回空字符串
                         };
 
@@ -374,7 +374,7 @@ pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
                     serde_json::Value::Number(span.dropped_attributes_count.into()),
                 );
                 for (i, event) in span.events.into_iter().enumerate() {
-                    prefix.push(format!("Event_{}/", i));
+                    prefix.push(format!("Event_{i}/"));
                     fields.insert(
                         prefix.join("") + "time_unix_nano",
                         serde_json::Value::Number(event.time_unix_nano.into()),
@@ -390,7 +390,7 @@ pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
                                 Some(Value::BoolValue(bool_value)) => bool_value.to_string(), // 布尔类型转换为字符串
                                 Some(Value::IntValue(int_value)) => int_value.to_string(), // 整数类型转换为字符串
                                 Some(Value::DoubleValue(double_value)) => double_value.to_string(), // 浮点数类型转换为字符串
-                                Some(_) => format!("{:?}", value).to_lowercase(), // 任何类型都直接用 Debug trait 转换成字符串
+                                Some(_) => format!("{value:?}").to_lowercase(), // 任何类型都直接用 Debug trait 转换成字符串
                                 None => "".to_string(), // 如果没有值，返回空字符串
                             };
 
@@ -411,13 +411,13 @@ pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
                     serde_json::Value::Number(span.dropped_events_count.into()),
                 );
                 for (i, link) in span.links.into_iter().enumerate() {
-                    prefix.push(format!("Link_{}/", i));
+                    prefix.push(format!("Link_{i}/"));
                     fields.insert(
                         prefix.join("") + "trace_id",
                         serde_json::Value::String(
                             link.trace_id
                                 .iter()
-                                .fold(String::new(), |acc, byte| acc + &format!("{:02x}", byte)),
+                                .fold(String::new(), |acc, byte| acc + &format!("{byte:02x}")),
                         ),
                     );
                     fields.insert(
@@ -425,7 +425,7 @@ pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
                         serde_json::Value::String(
                             link.span_id
                                 .iter()
-                                .fold(String::new(), |acc, byte| acc + &format!("{:02x}", byte)),
+                                .fold(String::new(), |acc, byte| acc + &format!("{byte:02x}")),
                         ),
                     );
                     fields.insert(
@@ -439,7 +439,7 @@ pub fn parse_protobuf_to_otlptrace(req: Bytes) -> Result<Vec<JsonProtocol>> {
                                 Some(Value::BoolValue(bool_value)) => bool_value.to_string(), // 布尔类型转换为字符串
                                 Some(Value::IntValue(int_value)) => int_value.to_string(), // 整数类型转换为字符串
                                 Some(Value::DoubleValue(double_value)) => double_value.to_string(), // 浮点数类型转换为字符串
-                                Some(_) => format!("{:?}", value).to_lowercase(), // 任何类型都直接用 Debug trait 转换成字符串
+                                Some(_) => format!("{value:?}").to_lowercase(), // 任何类型都直接用 Debug trait 转换成字符串
                                 None => "".to_string(), // 如果没有值，返回空字符串
                             };
 
@@ -543,7 +543,7 @@ pub fn parse_to_line<'a>(
                 serde_json::Value::String(field) => FieldValue::Str(field.as_bytes().to_owned()),
                 _ => {
                     return Err(Error::Common {
-                        content: format!("unsupported field type: {}", value),
+                        content: format!("unsupported field type: {value}"),
                     });
                 }
             };

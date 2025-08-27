@@ -237,7 +237,7 @@ impl LogStep {
             inner: FunctionStep::new_boxed(
                 "Log".to_string(),
                 Box::new(move |_| {
-                    println!("LOG: {}", msg);
+                    println!("LOG: {msg}");
                     CaseFlowControl::Continue
                 }),
             ),

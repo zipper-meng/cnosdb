@@ -29,7 +29,7 @@ pub enum CoordinatorError {
         source: ReplicationError,
     },
 
-    #[snafu(display("Meta request error: {}", msg))]
+    #[snafu(display("Meta request error: {msg}"))]
     #[error_code(code = 1)]
     MetaRequest {
         msg: String,
@@ -38,7 +38,7 @@ pub enum CoordinatorError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Io error: {}", source))]
+    #[snafu(display("Io error: {source}"))]
     #[error_code(code = 2)]
     Io {
         source: io::Error,
@@ -55,7 +55,7 @@ pub enum CoordinatorError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Fails to send to channel: {}", msg))]
+    #[snafu(display("Fails to send to channel: {msg}"))]
     #[error_code(code = 4)]
     ChannelSend {
         msg: String,
@@ -64,7 +64,7 @@ pub enum CoordinatorError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Fails to recv from channel: {}", msg))]
+    #[snafu(display("Fails to recv from channel: {msg}"))]
     #[error_code(code = 5)]
     ChannelRecv {
         msg: String,
@@ -73,7 +73,7 @@ pub enum CoordinatorError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Write vnode error: {}", msg))]
+    #[snafu(display("Write vnode error: {msg}"))]
     #[error_code(code = 6)]
     WriteVnode {
         msg: String,
@@ -82,7 +82,7 @@ pub enum CoordinatorError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Error from models: {}", source))]
+    #[snafu(display("Error from models: {source}"))]
     #[error_code(code = 7)]
     Model {
         source: models::ModelError,
@@ -91,13 +91,13 @@ pub enum CoordinatorError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Not found tenant: {}", name))]
+    #[snafu(display("Not found tenant: {name}"))]
     #[error_code(code = 9)]
     TenantNotFound {
         name: String,
     },
 
-    #[snafu(display("Invalid flatbuffers: {}", source))]
+    #[snafu(display("Invalid flatbuffers: {source}"))]
     #[error_code(code = 10)]
     InvalidFlatbuffer {
         #[snafu(source(from(flatbuffers::InvalidFlatbuffer, Box::new)))]
@@ -107,7 +107,7 @@ pub enum CoordinatorError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Unknow coordinator command: {}", cmd))]
+    #[snafu(display("Unknow coordinator command: {cmd}"))]
     #[error_code(code = 11)]
     UnKnownCoordCmd {
         cmd: u32,
@@ -132,7 +132,7 @@ pub enum CoordinatorError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("{}", msg))]
+    #[snafu(display("{msg}"))]
     #[error_code(code = 14)]
     CommonError {
         msg: String,
@@ -141,31 +141,31 @@ pub enum CoordinatorError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Vnode not found: {}", id))]
+    #[snafu(display("Vnode not found: {id}"))]
     #[error_code(code = 15)]
     VnodeNotFound {
         id: u32,
     },
 
-    #[snafu(display("pre-execution failed: {}", error))]
+    #[snafu(display("pre-execution failed: {error}"))]
     #[error_code(code = 16)]
     PreExecution {
         error: String,
     },
 
-    #[snafu(display("Not found column: {}", name))]
+    #[snafu(display("Not found column: {name}"))]
     #[error_code(code = 17)]
     ColumnNotFound {
         name: String,
     },
 
-    #[snafu(display("kv instance not found: node_id:{}", node_id))]
+    #[snafu(display("kv instance not found: node_id:{node_id}"))]
     #[error_code(code = 18)]
     KvInstanceNotFound {
         node_id: u64,
     },
 
-    #[snafu(display("grpc client request error: {}", msg))]
+    #[snafu(display("grpc client request error: {msg}"))]
     #[error_code(code = 19)]
     GRPCRequest {
         msg: String,
@@ -174,7 +174,7 @@ pub enum CoordinatorError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("flatbuffer point miss field : {}", msg))]
+    #[snafu(display("flatbuffer point miss field : {msg}"))]
     #[error_code(code = 20)]
     Points {
         msg: String,
@@ -183,19 +183,19 @@ pub enum CoordinatorError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("{}", source))]
+    #[snafu(display("{source}"))]
     #[error_code(code = 21)]
     ProtoPoints {
         source: PointsError,
     },
 
-    #[snafu(display("ReplicationSet not found: {}", id))]
+    #[snafu(display("ReplicationSet not found: {id}"))]
     #[error_code(code = 22)]
     ReplicationSetNotFound {
         id: u32,
     },
 
-    #[snafu(display("Not enough valid replica of ReplicationSet({})", id))]
+    #[snafu(display("Not enough valid replica of ReplicationSet({id})"))]
     #[error_code(code = 23)]
     NoValidReplica {
         id: u32,
@@ -223,7 +223,7 @@ pub enum CoordinatorError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("The Operation Can only Exec in Leader {:?}", replica))]
+    #[snafu(display("The Operation Can only Exec in Leader {replica:?}"))]
     #[error_code(code = 26)]
     LeaderIsWrong {
         replica: ReplicationSet,
@@ -232,7 +232,7 @@ pub enum CoordinatorError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Write to Raft Node Wrong ({})", msg))]
+    #[snafu(display("Write to Raft Node Wrong ({msg})"))]
     #[error_code(code = 27)]
     RaftWriteError {
         msg: String,
@@ -241,7 +241,7 @@ pub enum CoordinatorError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Raft Group has Error ({})", msg))]
+    #[snafu(display("Raft Group has Error ({msg})"))]
     #[error_code(code = 28)]
     RaftGroupError {
         msg: String,
@@ -256,7 +256,7 @@ pub enum CoordinatorError {
         leader_vnode_id: u32,
     },
 
-    #[snafu(display("Raft Node({}) not Found in Replica ({})", vnode_id, replica_id))]
+    #[snafu(display("Raft Node({vnode_id}) not Found in Replica ({replica_id})"))]
     #[error_code(code = 30)]
     RaftNodeNotFound {
         vnode_id: VnodeId,
@@ -299,7 +299,7 @@ pub enum CoordinatorError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Arrow error: {}", source))]
+    #[snafu(display("Arrow error: {source}"))]
     #[error_code(code = 35)]
     ArrowError {
         source: ArrowError,
@@ -316,7 +316,7 @@ pub enum CoordinatorError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Replica Set({}) just only on replica can't remove", replica_id))]
+    #[snafu(display("Replica Set({replica_id}) just only on replica can't remove"))]
     #[error_code(code = 37)]
     ReplicaCannotRemove {
         replica_id: ReplicationSetId,
@@ -353,12 +353,12 @@ impl From<tonic::Status> for CoordinatorError {
     fn from(status: tonic::Status) -> Self {
         match status.code() {
             tonic::Code::Internal => GRPCRequestSnafu {
-                msg: format!("status code: {}, message; {}", status.code(), status),
+                msg: format!("status code: {}, message; {status}", status.code()),
             }
             .build(),
 
             _ => PreExecutionSnafu {
-                error: format!("{}", status),
+                error: format!("{status}"),
             }
             .build(),
         }
@@ -396,7 +396,7 @@ pub fn encode_grpc_response(
             } = err
             {
                 tonic::Response::new(protos::kv_service::BatchBytesResponse {
-                    data: format!("{}-{}", replica_id, new_leader).into(),
+                    data: format!("{replica_id}-{new_leader}").into(),
                     code: FORWARD_TO_LEADER_CODE,
                 })
             } else {

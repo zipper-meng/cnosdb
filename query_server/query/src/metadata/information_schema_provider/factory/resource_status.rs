@@ -80,10 +80,11 @@ impl TableProvider for InformationSchemaResourceStatusTable {
     ) -> DFResult<Arc<dyn ExecutionPlan>> {
         let mut builder = InformationSchemaResourceStatusBuilder::default();
 
-        if let Ok(resourceinfos) =
-            self.metadata.read_resourceinfos().await.map_err(|e| {
-                DataFusionError::Internal(format!("Failed to read resourceinfo: {}", e))
-            })
+        if let Ok(resourceinfos) = self
+            .metadata
+            .read_resourceinfos()
+            .await
+            .map_err(|e| DataFusionError::Internal(format!("Failed to read resourceinfo: {e}")))
         {
             //resourceinfos.retain(|resourceinfo| resourceinfo.names().get(0).unwrap() == tenant_name);
             for resourceinfo in resourceinfos {

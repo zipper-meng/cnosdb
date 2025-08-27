@@ -95,7 +95,7 @@ mod tests {
             h.write(b"WorldHello".as_slice());
             h.number()
         };
-        println!("{} == {} != {} == {}", a, b, c, d);
+        println!("{a} == {b} != {c} == {d}");
         assert_eq!(a, b);
         assert_ne!(a, c);
         assert_eq!(c, d);

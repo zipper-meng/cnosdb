@@ -34,7 +34,7 @@ pub enum TskvError {
         msg: String,
     },
 
-    #[snafu(display("Invalid flatbuffers: {}", source))]
+    #[snafu(display("Invalid flatbuffers: {source}"))]
     #[error_code(code = 1)]
     InvalidFlatbuffer {
         #[snafu(source(from(flatbuffers::InvalidFlatbuffer, Box::new)))]
@@ -52,7 +52,7 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("{}", reason))]
+    #[snafu(display("{reason}"))]
     #[error_code(code = 3)]
     CommonError {
         reason: String,
@@ -61,7 +61,7 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("DataSchemaError: {}", source))]
+    #[snafu(display("DataSchemaError: {source}"))]
     #[error_code(code = 4)]
     Schema {
         source: SchemaError,
@@ -83,7 +83,7 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("read tsm block file error: {}", reason))]
+    #[snafu(display("read tsm block file error: {reason}"))]
     #[error_code(code = 7)]
     ReadTsm {
         reason: String,
@@ -92,7 +92,7 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Network status: {}", source))]
+    #[snafu(display("Network status: {source}"))]
     #[error_code(code = 8)]
     Network {
         source: Status,
@@ -101,7 +101,7 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Invalid http error response: {}", error))]
+    #[snafu(display("Invalid http error response: {error}"))]
     #[error_code(code = 9)]
     ErrorResponse {
         error: ErrorResponse,
@@ -110,7 +110,7 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Unsupported datatype {}", dt))]
+    #[snafu(display("Unsupported datatype {dt}"))]
     #[error_code(code = 10)]
     UnsupportedDataType {
         dt: String,
@@ -119,7 +119,7 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Mismatched schema {}", msg))]
+    #[snafu(display("Mismatched schema {msg}"))]
     #[error_code(code = 11)]
     MismatchedSchema {
         msg: String,
@@ -136,7 +136,7 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("ColumnGroupError: {}", reason))]
+    #[snafu(display("ColumnGroupError: {reason}"))]
     #[error_code(code = 13)]
     TsmColumnGroupError {
         reason: String,
@@ -145,7 +145,7 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("TsmPageError: {}", reason))]
+    #[snafu(display("TsmPageError: {reason}"))]
     #[error_code(code = 14)]
     TsmPageError {
         reason: String,
@@ -154,7 +154,7 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("DataBlockError: {}", reason))]
+    #[snafu(display("DataBlockError: {reason}"))]
     #[error_code(code = 15)]
     DataBlockError {
         reason: String,
@@ -163,7 +163,7 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("TagError: {}", reason))]
+    #[snafu(display("TagError: {reason}"))]
     #[error_code(code = 16)]
     TagError {
         reason: String,
@@ -172,14 +172,14 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("ColumnDataError: {}", source))]
+    #[snafu(display("ColumnDataError: {source}"))]
     #[error_code(code = 17)]
     ColumnDataError {
         source: ColumnDataError,
     },
 
     // Internal Error
-    #[snafu(display("{}", source))]
+    #[snafu(display("{source}"))]
     #[error_code(code = 18)]
     IO {
         source: std::io::Error,
@@ -218,7 +218,7 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Unable to sync file: {}", source))]
+    #[snafu(display("Unable to sync file: {source}"))]
     #[error_code(code = 22)]
     SyncFile {
         source: std::io::Error,
@@ -253,7 +253,7 @@ pub enum TskvError {
     #[error_code(code = 25)]
     Eof,
 
-    #[snafu(display("Failed to encode record file block: {}", source))]
+    #[snafu(display("Failed to encode record file block: {source}"))]
     #[error_code(code = 26)]
     RecordFileEncode {
         source: bincode::Error,
@@ -262,7 +262,7 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Faield to decode record file block: {}", source))]
+    #[snafu(display("Faield to decode record file block: {source}"))]
     #[error_code(code = 27)]
     RecordFileDecode {
         source: bincode::Error,
@@ -310,7 +310,7 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Failed to do encode: {}", source))]
+    #[snafu(display("Failed to do encode: {source}"))]
     #[error_code(code = 31)]
     Encode {
         source: Box<dyn std::error::Error + Send + Sync>,
@@ -319,7 +319,7 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Failed to do decode: {}", source))]
+    #[snafu(display("Failed to do decode: {source}"))]
     #[error_code(code = 32)]
     Decode {
         source: Box<dyn std::error::Error + Send + Sync>,
@@ -328,13 +328,13 @@ pub enum TskvError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Index: {}", source))]
+    #[snafu(display("Index: {source}"))]
     #[error_code(code = 33)]
     IndexErr {
         source: IndexError,
     },
 
-    #[snafu(display("Invalid parameter : {}", reason))]
+    #[snafu(display("Invalid parameter : {reason}"))]
     #[error_code(code = 34)]
     InvalidParam {
         reason: String,
@@ -391,7 +391,7 @@ pub enum TskvError {
     },
 
     #[error_code(code = 41)]
-    #[snafu(display("{}", message))]
+    #[snafu(display("{message}"))]
     Tombstone {
         message: String,
         #[snafu(implicit)]
@@ -400,7 +400,7 @@ pub enum TskvError {
     },
 
     #[error_code(code = 42)]
-    #[snafu(display("{}", reason))]
+    #[snafu(display("{reason}"))]
     RecordFileIO {
         reason: String,
         #[snafu(implicit)]
@@ -435,7 +435,7 @@ pub enum TskvError {
 
     // Internal Error
     #[error_code(code = 56)]
-    #[snafu(display("{}", source))]
+    #[snafu(display("{source}"))]
     Serialize {
         source: Box<dyn std::error::Error + Send + Sync>,
         #[snafu(implicit)]
@@ -445,7 +445,7 @@ pub enum TskvError {
 
     // Internal Error
     #[error_code(code = 57)]
-    #[snafu(display("{}", source))]
+    #[snafu(display("{source}"))]
     Deserialize {
         source: Box<dyn std::error::Error + Send + Sync>,
         #[snafu(implicit)]
@@ -454,12 +454,12 @@ pub enum TskvError {
     },
 
     #[error_code(code = 58)]
-    #[snafu(display("file system error: {}", source))]
+    #[snafu(display("file system error: {source}"))]
     FileSystemError {
         source: FileSystemError,
     },
 
-    #[snafu(display("ModelError: {}", source))]
+    #[snafu(display("ModelError: {source}"))]
     #[error_code(code = 89)]
     ModelError {
         source: ModelError,
@@ -552,7 +552,7 @@ impl From<TskvError> for Status {
         match serde_json::to_string(&error_resp) {
             Ok(err) => Status::internal(err),
             Err(err) => {
-                let error_str = format!("Serialize TskvError, error: {}", err);
+                let error_str = format!("Serialize TskvError, error: {err}");
                 trace::error!(error_str);
                 Status::unknown(error_str)
             }

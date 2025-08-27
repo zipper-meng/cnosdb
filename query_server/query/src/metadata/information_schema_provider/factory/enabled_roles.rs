@@ -81,7 +81,7 @@ impl TableProvider for InformationEnabledRolesTable {
             .metadata
             .member_role(self.user.desc().id(), false)
             .await
-            .map_err(|e| DataFusionError::Internal(format!("Failed to list databases: {}", e)))?
+            .map_err(|e| DataFusionError::Internal(format!("Failed to list databases: {e}")))?
         {
             builder.append_row(role.name());
         }

@@ -26,7 +26,7 @@ type PointsResult<T> = Result<T, PointsError>;
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
 pub enum PointsError {
-    #[snafu(display("{}", msg))]
+    #[snafu(display("{msg}"))]
     Points {
         msg: String,
         #[snafu(implicit)]
@@ -241,7 +241,7 @@ impl Display for Points<'_> {
                         "Table: {}",
                         table.tab_ext().unwrap_or("{!BAD_TABLE_NAME}")
                     )?;
-                    writeln!(f, "{}", table)?;
+                    writeln!(f, "{table}")?;
                     writeln!(f, "------------------------------")?;
                 }
             }
@@ -315,11 +315,11 @@ pub fn raft_service_time_out_client(
 }
 
 pub async fn tskv_service_ping(addr: &str) -> Result<(), String> {
-    let connector = Endpoint::from_shared(format!("http://{}", addr)).map_err(|e| e.to_string())?;
+    let connector = Endpoint::from_shared(format!("http://{addr}")).map_err(|e| e.to_string())?;
     let channel = connector
         .connect()
         .await
-        .map_err(|e| format!("connect to {} failed: {}", addr, e))?;
+        .map_err(|e| format!("connect to {addr} failed: {e}"))?;
 
     let mut client =
         tskv_service_time_out_client(channel, time::Duration::from_secs(3), 1024 * 1024, false);
@@ -340,7 +340,7 @@ pub async fn tskv_service_ping(addr: &str) -> Result<(), String> {
         .await;
 
     if let Err(status) = resp {
-        return Err(format!("request failed srtatus: {:?}", status));
+        return Err(format!("request failed srtatus: {status:?}"));
     }
 
     Ok(())

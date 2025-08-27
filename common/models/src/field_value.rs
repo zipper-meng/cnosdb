@@ -75,11 +75,11 @@ impl FieldVal {
 impl Display for FieldVal {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            FieldVal::Unsigned(val) => write!(f, "{}", val),
-            FieldVal::Integer(val) => write!(f, "{}", val),
-            FieldVal::Float(val) => write!(f, "{}", val),
-            FieldVal::Boolean(val) => write!(f, "{}", val),
-            FieldVal::Bytes(val) => write!(f, "{:?})", val),
+            FieldVal::Unsigned(val) => write!(f, "{val}"),
+            FieldVal::Integer(val) => write!(f, "{val}"),
+            FieldVal::Float(val) => write!(f, "{val}"),
+            FieldVal::Boolean(val) => write!(f, "{val}"),
+            FieldVal::Bytes(val) => write!(f, "{val:?})"),
         }
     }
 }
@@ -200,11 +200,11 @@ impl DataType {
 impl Display for DataType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            DataType::U64(ts, val) => write!(f, "({}, {})", ts, val),
-            DataType::I64(ts, val) => write!(f, "({}, {})", ts, val),
-            DataType::Str(ts, val) => write!(f, "({}, {:?})", ts, val),
-            DataType::F64(ts, val) => write!(f, "({}, {})", ts, val),
-            DataType::Bool(ts, val) => write!(f, "({}, {})", ts, val),
+            DataType::U64(ts, val) => write!(f, "({ts}, {val})"),
+            DataType::I64(ts, val) => write!(f, "({ts}, {val})"),
+            DataType::Str(ts, val) => write!(f, "({ts}, {val:?})"),
+            DataType::F64(ts, val) => write!(f, "({ts}, {val})"),
+            DataType::Bool(ts, val) => write!(f, "({ts}, {val})"),
         }
     }
 }

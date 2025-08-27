@@ -87,7 +87,7 @@ fn insufficient_capacity_err(
     additional: usize,
     available: usize,
 ) -> DataFusionError {
-    DataFusionError::ResourcesExhausted(format!("Failed to allocate additional {} bytes with {} bytes already allocated - maximum available is {}", additional, reservation.size(), available))
+    DataFusionError::ResourcesExhausted(format!("Failed to allocate additional {additional} bytes with {} bytes already allocated - maximum available is {available}", reservation.size()))
 }
 
 #[cfg(test)]

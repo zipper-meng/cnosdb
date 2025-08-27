@@ -23,8 +23,7 @@ impl Resolve for TableReference {
             Self::Full { .. } => {
                 // check table reference name
                 return Err(DataFusionError::Plan(format!(
-                    "Database object names must have at most two parts, but found: '{}'",
-                    self
+                    "Database object names must have at most two parts, but found: '{self}'",
                 )));
             }
             Self::Partial { schema, table } => ResolvedTable {

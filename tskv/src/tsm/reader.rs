@@ -323,7 +323,7 @@ impl TsmReader {
             .tsm_meta
             .table_schema_by_sid(series_id)
             .context(CommonSnafu {
-                reason: format!("table schema for series id : {} not found", series_id),
+                reason: format!("table schema for series id : {series_id} not found"),
             })?;
         let record_batch = decode_pages(
             column_group,
@@ -361,10 +361,7 @@ pub fn decode_buf_to_pages(
         .column_group()
         .get(&column_group_id)
         .context(CommonSnafu {
-            reason: format!(
-                "column group for column group id : {} not found",
-                column_group_id
-            ),
+            reason: format!("column group for column group id : {column_group_id} not found"),
         })?;
     let mut pages = Vec::with_capacity(column_group.pages().len());
 
@@ -580,7 +577,7 @@ pub fn get_time_page_meta(
                 .nulls(array_data.nulls().cloned())
                 .build()
                 .map_err(|e| TskvError::CommonError {
-                    reason: format!("Failed to build Int64Array: {}", e),
+                    reason: format!("Failed to build Int64Array: {e}"),
                     location: location!(),
                     backtrace: Backtrace::generate(),
                 })?;

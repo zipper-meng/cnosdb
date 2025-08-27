@@ -43,7 +43,7 @@ impl Display for AssertGeomType {
             .collect::<Vec<_>>()
             .join(", ");
 
-        write!(f, "AssertGeomType({})", str)
+        write!(f, "AssertGeomType({str})")
     }
 }
 

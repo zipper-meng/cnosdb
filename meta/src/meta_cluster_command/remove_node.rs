@@ -6,7 +6,7 @@ use super::meta_http_client::HttpClient;
 
 pub async fn remove_node(bind: &str, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
     let http_client = HttpClient::new();
-    let url = format!("http://{}/metrics", bind);
+    let url = format!("http://{bind}/metrics");
     let body: RaftMetrics<RaftNodeId, RaftNodeInfo> =
         http_client.http_request_method("GET", &url, "").await?;
 
@@ -20,9 +20,9 @@ pub async fn remove_node(bind: &str, addr: &str) -> Result<(), Box<dyn std::erro
         .iter()
         .find(|(_, v)| v.address == addr)
         .map(|(k, _)| **k)
-        .ok_or_else(|| format!("Node with address {} not found in the cluster", addr))?;
+        .ok_or_else(|| format!("Node with address {addr} not found in the cluster"))?;
 
-    let url = format!("http://{}/change-membership", bind);
+    let url = format!("http://{bind}/change-membership");
     let mut nodes_map = nodes.clone();
     nodes_map.retain(|(id, _)| **id != node_id_to_remove);
 
@@ -34,16 +34,14 @@ pub async fn remove_node(bind: &str, addr: &str) -> Result<(), Box<dyn std::erro
 
     if res_body.get("Err").is_some() {
         return Err(format!(
-            "Error removing node {} from meta service at {}: {}",
-            addr,
-            bind,
+            "Error removing node {addr} from meta service at {bind}: {}",
             res_body
                 .get("Err")
                 .unwrap_or(&Value::String("Unknown error".to_string()))
         )
         .into());
     }
-    println!("Node {} removed successfully", addr);
+    println!("Node {addr} removed successfully");
 
     if node_id_to_remove == leader_id {
         if let Some(new_leader_candidate) = nodes_map.iter().find_map(|(_, node_info)| {
@@ -56,7 +54,7 @@ pub async fn remove_node(bind: &str, addr: &str) -> Result<(), Box<dyn std::erro
         }) {
             for _ in 0..100 {
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-                let url = format!("http://{}/metrics", new_leader_candidate);
+                let url = format!("http://{new_leader_candidate}/metrics");
                 let body: RaftMetrics<RaftNodeId, RaftNodeInfo> =
                     http_client.http_request_method("GET", &url, "").await?;
                 let new_leader_id = body.vote.leader_id.node_id;
@@ -65,7 +63,7 @@ pub async fn remove_node(bind: &str, addr: &str) -> Result<(), Box<dyn std::erro
                 {
                     let new_leader_addr = &new_leader_info.address;
                     if new_leader_id != node_id_to_remove {
-                        println!("New leader address: {}", new_leader_addr);
+                        println!("New leader address: {new_leader_addr}");
                         return Ok(());
                     }
                 }

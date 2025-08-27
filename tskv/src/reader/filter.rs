@@ -63,7 +63,7 @@ impl BatchReader for DataFilter {
                 write!(f, "DataFilter: expr=None")
             }
             Some(e) => {
-                write!(f, "DataFilter: expr=[{}]", e)
+                write!(f, "DataFilter: expr=[{e}]")
             }
         }
     }

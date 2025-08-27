@@ -103,7 +103,7 @@ impl ResultFormat {
         let mut result =
             self.format_batches(batches, has_headers)
                 .map_err(|e| HttpError::FetchResult {
-                    reason: format!("{}", e),
+                    reason: format!("{e}"),
                 })?;
 
         let mut builder = ResponseBuilder::new(StatusCode::OK)
@@ -141,7 +141,7 @@ impl TryFrom<&str> for ResultFormat {
         }
 
         Err(HttpError::InvalidHeader {
-            reason: format!("accept type not support: {}", s),
+            reason: format!("accept type not support: {s}"),
         })
     }
 }
@@ -157,7 +157,7 @@ impl FromStr for ResultFormat {
 pub fn get_result_format_from_header(header: &Header) -> Result<ResultFormat, Rejection> {
     ResultFormat::try_from(header.get_accept()).map_err(|e| {
         let e = HttpError::InvalidHeader {
-            reason: format!("{}", e),
+            reason: format!("{e}"),
         };
         error!("get_result_format_from_header: {:?}", e);
         reject::custom(e)

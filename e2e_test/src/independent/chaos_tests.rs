@@ -38,8 +38,8 @@ fn move_vnode(meta: Arc<TenantMeta>, server_url: &str) {
     let move_vnode_id = vnode.id;
     let target_node = if vnode.node_id == 1 { 2 } else { 1 };
     let command = format!("move vnode {move_vnode_id} to node {target_node}");
-    println!("{} ------- Move Vnode Command: {}", time_str(), command);
-    println!("{} ------- Move Vnode Group: {:?}", time_str(), group);
+    println!("{} ------- Move Vnode Command: {command}", time_str());
+    println!("{} ------- Move Vnode Group: {group:?}", time_str());
     let client = Client::with_auth("root".to_string(), Some(String::new()));
     client.post(server_url, &command).unwrap();
 }
@@ -48,7 +48,7 @@ fn alter_replica(server_url: &str) {
     let mut rng = rand::rng();
     let target_replica = rng.random_range(1..=2);
     let command = format!("alter database chaos_test_db set replica {target_replica}");
-    println!("------- Alter Replica Command: {}", command);
+    println!("------- Alter Replica Command: {command}");
     let client = Client::with_auth("root".to_string(), Some(String::new()));
     client.post(server_url, &command).unwrap();
 }
@@ -57,7 +57,7 @@ fn alter_shard(server_url: &str) {
     let mut rng = rand::rng();
     let target_shard = rng.random_range(1..=10);
     let command = format!("alter database chaos_test_db set shard {target_shard}");
-    println!("------- Alter Shard Command: {}", command);
+    println!("------- Alter Shard Command: {command}");
     let client = Client::with_auth("root".to_string(), Some(String::new()));
     client.post(server_url, &command).unwrap();
 }
@@ -66,7 +66,7 @@ fn alter_vnode_duration(server_url: &str) {
     let mut rng = rand::rng();
     let duration = rng.random_range(1..=365);
     let command = format!("alter database chaos_test_db set vnode_duration '{duration}d'");
-    println!("------- Alter Vnode Duration Command: {}", command);
+    println!("------- Alter Vnode Duration Command: {command}");
     let client = Client::with_auth("root".to_string(), Some(String::new()));
     client.post(server_url, &command).unwrap();
 }
@@ -109,7 +109,7 @@ fn chaos_test_case_1() {
             let mut count = write_count_c.lock();
             let tstamp = (1711333406_u64 + *count) * 1000000000;
             let random = rand::rng().random_range(0..32);
-            let body = format!("ma,ta=a_{} fa={} {}", random, count, tstamp);
+            let body = format!("ma,ta=a_{random} fa={count} {tstamp}");
 
             loop {
                 let resp = client.post(url, &body).unwrap();
@@ -165,8 +165,8 @@ fn chaos_test_case_1() {
     assert_eq!(resp.status(), status_code::OK);
     let actual = resp.text().unwrap();
     let expected = format!("{}", *write_count.lock());
-    println!("\nselect count(*): {}", actual);
-    println!("expected: {}", expected);
+    println!("\nselect count(*): {actual}");
+    println!("expected: {expected}");
     assert!(actual.contains(&expected));
 
     println!("#### Test complete chaos_test_case_1 ####");

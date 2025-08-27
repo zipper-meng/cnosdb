@@ -116,8 +116,7 @@ impl ExecutionPlan for TableWriterExec {
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         debug!(
-            "Start TableWriterExec::execute for partition {} of context session_id {} and task_id {:?}",
-            partition,
+            "Start TableWriterExec::execute for partition {partition} of context session_id {} and task_id {:?}",
             context.session_id(),
             context.task_id()
         );

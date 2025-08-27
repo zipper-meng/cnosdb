@@ -163,7 +163,7 @@ mod test {
             name = "Bar1"
         "#;
         let err = toml::from_str::<Foo>(config_str).unwrap_err();
-        let err_msg = format!("{}", err);
+        let err_msg = format!("{err}");
         let exp_err_msg = r#"TOML parse error at line 2, column 24
   |
 2 |             duration = "a1s"

@@ -42,7 +42,7 @@ pub fn arrow_data_type_to_sql_data_type(
         }
         _ => {
             return Err(CommonSnafu {
-                msg: format!("Not implement {} to sql type", data_type),
+                msg: format!("Not implement {data_type} to sql type"),
             }
             .build());
         }

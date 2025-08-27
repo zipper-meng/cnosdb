@@ -102,7 +102,7 @@ impl TryFrom<&str> for SystemTenantRole {
         match value {
             "owner" => Ok(Self::Owner),
             "member" => Ok(Self::Member),
-            _ => Err(format!("Expected [owner,member], found {}", value)),
+            _ => Err(format!("Expected [owner,member], found {value}")),
         }
     }
 }

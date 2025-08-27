@@ -75,7 +75,7 @@ impl CheckConfig for MetaConfig {
                 ret.add_error(CheckConfigItemResult {
                     config: config_name.clone(),
                     item: meta_addr.clone(),
-                    message: format!("Cannot resolve 'meta_service_addr': {}", e),
+                    message: format!("Cannot resolve 'meta_service_addr': {e}"),
                 });
             }
         }

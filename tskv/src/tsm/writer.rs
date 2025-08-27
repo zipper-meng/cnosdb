@@ -370,7 +370,7 @@ impl TsmWriter {
             .column_group()
             .get(&column_group_id)
             .context(CommonSnafu {
-                reason: format!("column group not found: {}", column_group_id),
+                reason: format!("column group not found: {column_group_id}"),
             })?;
         for spec in column_group.pages() {
             let spec = PageWriteSpec {

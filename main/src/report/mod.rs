@@ -114,7 +114,7 @@ impl ReportService {
         let request = match CLIENT.post(USAGE_SERVER_URL).json(&message).build() {
             Ok(request) => request,
             Err(e) => {
-                debug!("usage request construct fail: {}", e);
+                debug!("usage request construct fail: {e}");
                 return;
             }
         };
@@ -126,7 +126,7 @@ impl ReportService {
                 }
             }
             Err(e) => {
-                debug!("message:{:?} send fail, e: {}", &message, &e);
+                debug!("message:{message:?} send fail, e: {e}");
             }
         }
     }

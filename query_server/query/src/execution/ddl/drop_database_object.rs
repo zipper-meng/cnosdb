@@ -34,7 +34,7 @@ impl DDLDefinitionTask for DropDatabaseObjectTask {
         match obj_type {
             DatabaseObjectType::Table => {
                 // TODO 删除指定租户下的表
-                info!("Drop table {}", object_name);
+                info!("Drop table {object_name}");
                 let tenant = object_name.tenant();
                 let client = query_state_machine
                     .meta

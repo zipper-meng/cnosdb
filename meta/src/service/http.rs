@@ -233,11 +233,8 @@ pub async fn process_watch(req: Bytes, storage: Arc<RwLock<StateMachine>>) -> Me
     let req: (String, String, HashSet<String>, u64) = serde_json::from_slice(&req)?;
     let (client, cluster, tenants, base_ver) = req;
     trace::debug!(
-        "watch all  args: client-id: {}, cluster: {}, tenants: {:?}, version: {}",
-        client,
-        cluster,
-        tenants,
-        base_ver
+        "watch all  args: client-id: {client}, cluster: {cluster}, tenants: {tenants:?}, version: {base_ver}",
+
     );
 
     let mut notify = {
@@ -261,7 +258,7 @@ pub async fn process_watch(req: Bytes, storage: Arc<RwLock<StateMachine>>) -> Me
             .read()
             .await
             .read_change_logs(&cluster, &tenants, follow_ver);
-        trace::debug!("watch notify {} {}.{}", client, base_ver, follow_ver);
+        trace::debug!("watch notify {client} {base_ver}.{follow_ver}");
         if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
             return Ok(crate::store::storage::response_encode(Ok(watch_data)));
         }

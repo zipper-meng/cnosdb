@@ -30,7 +30,7 @@ pub enum IndexError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("index storage error: {}", msg))]
+    #[snafu(display("index storage error: {msg}"))]
     IndexStorage {
         msg: String,
         #[snafu(implicit)]
@@ -38,7 +38,7 @@ pub enum IndexError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("roaring encode/decode error: {}", source))]
+    #[snafu(display("roaring encode/decode error: {source}"))]
     RoaringBitmap {
         source: io::Error,
         #[snafu(implicit)]
@@ -46,7 +46,7 @@ pub enum IndexError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("binlog storage error: {}", source))]
+    #[snafu(display("binlog storage error: {source}"))]
     IOErrors {
         source: io::Error,
         #[snafu(implicit)]
@@ -54,7 +54,7 @@ pub enum IndexError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("file error: {}", msg))]
+    #[snafu(display("file error: {msg}"))]
     FileErrors {
         msg: String,
         #[snafu(implicit)]
@@ -94,7 +94,7 @@ pub enum IndexError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("file system error: {}", source))]
+    #[snafu(display("file system error: {source}"))]
     FileSystemError { source: FileSystemError },
 }
 

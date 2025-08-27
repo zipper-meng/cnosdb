@@ -147,12 +147,12 @@ pub async fn print_wal_statistics(path: impl AsRef<Path>, compress: codec::Encod
             }) => {
                 println!("============================================================");
                 println!("WAL file truncated");
-                println!("location: {:?}", location);
-                println!("backtrace: {:?}", backtrace);
+                println!("location: {location:?}");
+                println!("backtrace: {backtrace:?}");
                 break;
             }
             Err(e) => {
-                panic!("Failed to read wal file: {:?}", e);
+                panic!("Failed to read wal file: {e:?}");
             }
         }
     }

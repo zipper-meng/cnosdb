@@ -95,7 +95,7 @@ impl TableProvider for InformationDatabasePrivilegesTable {
         if self.user.can_access_role(*tenant_id) {
             // All records of this view are visible to the Owner of the current tenant.
             for role in self.metadata.custom_roles().await.map_err(|e| {
-                DataFusionError::Internal(format!("Failed to get custom roles, cause: {:?}", e))
+                DataFusionError::Internal(format!("Failed to get custom roles, cause: {e:?}"))
             })? {
                 for (database_name, privilege) in role.additional_privileges() {
                     builder.append_row(tenant_name, database_name, privilege.as_str(), role.name())
@@ -108,7 +108,7 @@ impl TableProvider for InformationDatabasePrivilegesTable {
                 .member_role(user_id, false)
                 .await
                 .map_err(|e| {
-                    DataFusionError::Internal(format!("Failed to get member role, cause: {:?}", e))
+                    DataFusionError::Internal(format!("Failed to get member role, cause: {e:?}"))
                 })?
             {
                 match role {
@@ -119,8 +119,7 @@ impl TableProvider for InformationDatabasePrivilegesTable {
                         if let Some(role) =
                             self.metadata.custom_role(role_name).await.map_err(|e| {
                                 DataFusionError::Internal(format!(
-                                    "Failed to get custom role {}, cause: {:?}",
-                                    role_name, e
+                                    "Failed to get custom role {role_name}, cause: {e:?}"
                                 ))
                             })?
                         {
@@ -133,8 +132,7 @@ impl TableProvider for InformationDatabasePrivilegesTable {
                                 )
                             }
                         } else {
-                            error!("The metadata is inconsistent, member {} of the tenant {} have the role {}, but this role does not exist",
-                        user_name, tenant_name, role_name);
+                            error!("The metadata is inconsistent, member {user_name} of the tenant {tenant_name} have the role {role_name}, but this role does not exist");
                         }
                     }
                 }

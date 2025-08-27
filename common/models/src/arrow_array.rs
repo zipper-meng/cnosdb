@@ -179,8 +179,7 @@ pub fn build_arrow_array_builder(
         //     Ok(Box::new(values_builder))
         // }
         _ => Err(ArrowError::NotYetImplemented(format!(
-            "array builder create failed, found data type: {}",
-            data_type
+            "array builder create failed, found data type: {data_type}"
         ))),
     }
 }

@@ -1376,10 +1376,10 @@ impl HttpService {
             let leader = meta.meta_leader().await?;
             let url = match tenant {
                 Some(t) => {
-                    format!("http://{}/{}/{cluster}/{t}", leader, "dump/sql/ddl")
+                    format!("http://{leader}/dump/sql/ddl/{cluster}/{t}")
                 }
                 None => {
-                    format!("http://{}/{}/{cluster}", leader, "dump/sql/ddl")
+                    format!("http://{leader}/dump/sql/ddl/{cluster}")
                 }
             };
 
@@ -1395,7 +1395,7 @@ impl HttpService {
 
             if !status.is_success() {
                 return Err(MetaError::MetaClientErr {
-                    msg: format!("httpcode: {}, response:{}", status, data),
+                    msg: format!("httpcode: {status}, response:{data}"),
                 });
             }
             Ok(data)
@@ -1906,14 +1906,13 @@ impl HttpService {
                             let column_trace_id = batch
                                 .column_by_name(TRACE_ID_COL_NAME)
                                 .ok_or(HttpError::FetchResult {
-                                    reason: format!("column {} is not exist", TRACE_ID_COL_NAME),
+                                    reason: format!("column {TRACE_ID_COL_NAME} is not exist"),
                                 })?
                                 .as_any()
                                 .downcast_ref::<StringArray>()
                                 .ok_or(HttpError::FetchResult {
                                     reason: format!(
-                                        "column {} is not StringArray",
-                                        TRACE_ID_COL_NAME
+                                        "column {TRACE_ID_COL_NAME} is not StringArray"
                                     ),
                                 })?;
                             if let Some(i) = (0..column_trace_id.len()).next() {
@@ -2035,12 +2034,12 @@ impl HttpService {
             let column_trace_id = batch
                 .column_by_name(TRACE_ID_COL_NAME)
                 .ok_or(HttpError::FetchResult {
-                    reason: format!("column {} is not exist", TRACE_ID_COL_NAME),
+                    reason: format!("column {TRACE_ID_COL_NAME} is not exist"),
                 })?
                 .as_any()
                 .downcast_ref::<StringArray>()
                 .ok_or(HttpError::FetchResult {
-                    reason: format!("column {} is not StringArray", TRACE_ID_COL_NAME),
+                    reason: format!("column {TRACE_ID_COL_NAME} is not StringArray"),
                 })?;
             if let Some(i) = (0..column_trace_id.len()).next() {
                 trace
@@ -2094,7 +2093,7 @@ impl HttpService {
                     let mut trace = Self::get_trace_inner(coord, &header, trace_id).await?;
                     for (i, span) in trace.spans.iter_mut().enumerate() {
                         if let Some(process) = &span.process {
-                            let process_id = format!("p{}", i);
+                            let process_id = format!("p{i}");
                             span.process_id = Some(process_id.clone());
                             trace.processes.insert(process_id, process.clone());
                         }
@@ -2210,12 +2209,12 @@ impl HttpService {
                         let column = batch
                             .column_by_name(SERVICE_NAME_COL_NAME)
                             .ok_or(HttpError::FetchResult {
-                                reason: format!("column {} is not exist", SERVICE_NAME_COL_NAME),
+                                reason: format!("column {SERVICE_NAME_COL_NAME} is not exist"),
                             })?
                             .as_any()
                             .downcast_ref::<StringArray>()
                             .ok_or(HttpError::FetchResult {
-                                reason: format!("column {} is not StringArray", TRACE_ID_COL_NAME),
+                                reason: format!("column {TRACE_ID_COL_NAME} is not StringArray"),
                             })?;
                         for i in 0..column.len() {
                             services.insert(column.value(i).to_string());
@@ -2340,22 +2339,22 @@ impl HttpService {
                         let name_col = batch
                             .column_by_name(OPERATION_NAME_COL_NAME)
                             .ok_or(HttpError::FetchResult {
-                                reason: format!("column {} is not exist", OPERATION_NAME_COL_NAME),
+                                reason: format!("column {OPERATION_NAME_COL_NAME} is not exist"),
                             })?
                             .as_any()
                             .downcast_ref::<StringArray>()
                             .ok_or(HttpError::FetchResult {
-                                reason: format!("column {} is not StringArray", TRACE_ID_COL_NAME),
+                                reason: format!("column {TRACE_ID_COL_NAME} is not StringArray"),
                             })?;
                         let span_kind_col = batch
                             .column_by_name(SPAN_KIND_COL_NAME)
                             .ok_or(HttpError::FetchResult {
-                                reason: format!("column {} is not exist", SPAN_KIND_COL_NAME),
+                                reason: format!("column {SPAN_KIND_COL_NAME} is not exist"),
                             })?
                             .as_any()
                             .downcast_ref::<StringArray>()
                             .ok_or(HttpError::FetchResult {
-                                reason: format!("column {} is not StringArray", TRACE_ID_COL_NAME),
+                                reason: format!("column {TRACE_ID_COL_NAME} is not StringArray"),
                             })?;
                         for i in 0..name_col.len() {
                             operations.insert(Operation {
@@ -2480,12 +2479,12 @@ impl HttpService {
                         let name_col = batch
                             .column_by_name(OPERATION_NAME_COL_NAME)
                             .ok_or(HttpError::FetchResult {
-                                reason: format!("column {} is not exist", OPERATION_NAME_COL_NAME),
+                                reason: format!("column {OPERATION_NAME_COL_NAME} is not exist"),
                             })?
                             .as_any()
                             .downcast_ref::<StringArray>()
                             .ok_or(HttpError::FetchResult {
-                                reason: format!("column {} is not StringArray", TRACE_ID_COL_NAME),
+                                reason: format!("column {TRACE_ID_COL_NAME} is not StringArray"),
                             })?;
                         for i in 0..name_col.len() {
                             operations.insert(name_col.value(i).to_string());
@@ -2549,7 +2548,7 @@ impl Service for HttpService {
                         .cert_path(certificate)
                         .key_path(private_key)
                         .bind_with_graceful_shutdown(self.addr, signal);
-                    info!("http server start addr: {}, {}", addr, self.mode);
+                    info!("http server start addr: {addr}, {}", self.mode);
                     tokio::spawn(server)
                 }
                 ServerMode::Query => {
@@ -2559,7 +2558,7 @@ impl Service for HttpService {
                         .cert_path(certificate)
                         .key_path(private_key)
                         .bind_with_graceful_shutdown(self.addr, signal);
-                    info!("http server start addr: {}, {}", addr, self.mode);
+                    info!("http server start addr: {addr}, {}", self.mode);
                     tokio::spawn(server)
                 }
                 ServerMode::Bundle => {
@@ -2569,7 +2568,7 @@ impl Service for HttpService {
                         .cert_path(certificate)
                         .key_path(private_key)
                         .bind_with_graceful_shutdown(self.addr, signal);
-                    info!("http server start addr: {}, {}", addr, self.mode);
+                    info!("http server start addr: {addr}, {}", self.mode);
                     tokio::spawn(server)
                 }
             }
@@ -2579,21 +2578,21 @@ impl Service for HttpService {
                     let routes = self.routes_store().recover(handle_rejection);
                     let (addr, server) =
                         warp::serve(routes).bind_with_graceful_shutdown(self.addr, signal);
-                    info!("http server start addr: {}, {}", addr, self.mode);
+                    info!("http server start addr: {addr}, {}", self.mode);
                     tokio::spawn(server)
                 }
                 ServerMode::Query => {
                     let routes = self.routes_query().recover(handle_rejection);
                     let (addr, server) =
                         warp::serve(routes).bind_with_graceful_shutdown(self.addr, signal);
-                    info!("http server start addr: {}, {}", addr, self.mode);
+                    info!("http server start addr: {addr}, {}", self.mode);
                     tokio::spawn(server)
                 }
                 ServerMode::Bundle => {
                     let routes = self.routes_query().recover(handle_rejection);
                     let (addr, server) =
                         warp::serve(routes).bind_with_graceful_shutdown(self.addr, signal);
-                    info!("http server start addr: {}, {}", addr, self.mode);
+                    info!("http server start addr: {addr}, {}", self.mode);
                     tokio::spawn(server)
                 }
             }
@@ -2785,7 +2784,7 @@ fn construct_write_tsdb_points_json_request(req: &Bytes) -> Result<Vec<Line>, Ht
         Err(_) => match serde_json::from_str::<Vec<DataPoint>>(lines) {
             Ok(datapoints) => datapoints,
             Err(e) => {
-                error!("{}", e);
+                error!("{e}");
                 return Err(HttpError::ParseOpentsdbJsonProtocol { source: e });
             }
         },

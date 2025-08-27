@@ -4,11 +4,11 @@ use std::sync::Arc;
 use crate::tskv::Config;
 
 fn write_error(f: &mut std::fmt::Formatter<'_>, message: &str) -> std::fmt::Result {
-    write!(f, "    {}", message)
+    write!(f, "    {message}")
 }
 
 fn write_warn(f: &mut std::fmt::Formatter<'_>, message: &str) -> std::fmt::Result {
-    write!(f, "    {}", message)
+    write!(f, "    {message}")
 }
 
 pub trait CheckConfig {
@@ -54,7 +54,7 @@ impl Display for CheckConfigResult {
             } else {
                 "errors"
             };
-            writeln!(f, "There are no {} in the configuration file.", item_type)?;
+            writeln!(f, "There are no {item_type} in the configuration file.")?;
         }
         for e in self.error.iter() {
             writeln!(f, "Error in entry '{}.{}':", e.config, e.item)?;
@@ -117,5 +117,5 @@ fn test_print() {
         show_warnings: true,
     };
 
-    print!("{}", r);
+    print!("{r}");
 }

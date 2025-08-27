@@ -84,7 +84,7 @@ impl ExecutionPlan for TracedProxyExec {
     ) -> Result<SendableRecordBatchStream> {
         let span_ctx = context.session_config().get_extension::<SpanContext>();
         let span = Span::from_context(
-            format!("{} ({})", self.name(), partition),
+            format!("{} ({partition})", self.name()),
             span_ctx.as_deref(),
         );
 

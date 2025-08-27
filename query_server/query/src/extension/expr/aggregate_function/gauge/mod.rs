@@ -161,7 +161,7 @@ impl GaugeData {
             if !input_fields.eq(&field_names) {
                 return Err(DataFusionError::External(Box::new(
                     AnalyzerSnafu {
-                        err: format!("Expected GaugeData, got {:?}", fields),
+                        err: format!("Expected GaugeData, got {fields:?}"),
                     }
                     .build(),
                 )));
@@ -205,7 +205,7 @@ impl GaugeData {
             }
             _ => Err(DataFusionError::External(Box::new(
                 AnalyzerSnafu {
-                    err: format!("Expected GaugeData, got {:?}", scalar),
+                    err: format!("Expected GaugeData, got {scalar:?}"),
                 }
                 .build(),
             ))),

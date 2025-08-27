@@ -215,8 +215,7 @@ impl ExecutionPlan for TableScanExec {
         _children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         Err(DataFusionError::Internal(format!(
-            "Children cannot be replaced in {:?}",
-            self,
+            "Children cannot be replaced in {self:?}",
         )))
     }
 
@@ -289,8 +288,7 @@ impl ExecutionPlan for TableScanPlan {
         _children: Vec<Arc<dyn ExecutionPlan>>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         Err(DataFusionError::Internal(format!(
-            "Children cannot be replaced in {:?}",
-            self
+            "Children cannot be replaced in {self:?}"
         )))
     }
 

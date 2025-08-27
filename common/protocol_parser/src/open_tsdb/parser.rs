@@ -47,7 +47,7 @@ impl Parser {
             if let Some(t) = next_value(&buf[pos..]) {
                 let timestamp = t.0.parse::<i64>().map_err(|e| Error::Parse {
                     pos,
-                    content: format!("{}: '{}'", e, buf),
+                    content: format!("{e}: '{buf}'"),
                 })?;
                 pos += t.1;
                 timestamp
@@ -62,7 +62,7 @@ impl Parser {
             if let Some(t) = next_value(&buf[pos..]) {
                 let value = t.0.parse::<f64>().map_err(|e| Error::Parse {
                     pos,
-                    content: format!("{}: '{}'", e, buf),
+                    content: format!("{e}: '{buf}'"),
                 })?;
                 pos += t.1;
                 value
@@ -111,7 +111,7 @@ impl Parser {
         let mut ret: Vec<Line> = Vec::new();
         let mut pos = 0;
         let lines = std::str::from_utf8(buf).map_err(|e| Error::Common {
-            content: format!("Invalid Point: {}", e),
+            content: format!("Invalid Point: {e}"),
         })?;
         let lines = lines.split("\r\n").collect::<Vec<&str>>();
         for line_raw in lines {

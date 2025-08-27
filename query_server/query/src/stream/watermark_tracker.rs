@@ -149,10 +149,7 @@ impl WatermarkTracker {
             }
         }
 
-        debug!(
-            "timestamp: {}, query_id: {}, watermark_ns: {}",
-            timestamp, query_id, watermark_ns
-        );
+        debug!("timestamp: {timestamp}, query_id: {query_id}, watermark_ns: {watermark_ns}",);
         Ok(Self {
             global_watermark_ns: AtomicI64::new(watermark_ns),
             query_id,

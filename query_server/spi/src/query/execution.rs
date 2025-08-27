@@ -335,8 +335,8 @@ impl QueryStateMachine {
 
         for auth in auths {
             match self.auth_cache.remove(&auth) {
-                true => debug!("Successfully removed auth cache for user {}", username),
-                false => warn!("Failed to remove auth cache for user {}", username),
+                true => debug!("Successfully removed auth cache for user {username}"),
+                false => warn!("Failed to remove auth cache for user {username}"),
             }
         }
     }
@@ -351,8 +351,8 @@ impl QueryStateMachine {
 
         for auth in auths {
             match self.auth_cache.remove(&auth) {
-                true => debug!("Successfully removed auth cache for user {}", user_id),
-                false => warn!("Failed to remove auth cache for user {}", user_id),
+                true => debug!("Successfully removed auth cache for user {user_id}"),
+                false => warn!("Failed to remove auth cache for user {user_id}"),
             }
         }
     }

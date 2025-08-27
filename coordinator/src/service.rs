@@ -614,7 +614,7 @@ impl Coordinator for CoordService {
         for lines in map_lines.into_values() {
             let batches = line_to_batches(&lines.lines).map_err(|e| {
                 CommonSnafu {
-                    msg: format!("line to batch error: {}", e),
+                    msg: format!("line to batch error: {e}"),
                 }
                 .build()
             })?;
@@ -633,10 +633,8 @@ impl Coordinator for CoordService {
         let now = tokio::time::Instant::now();
         for res in futures::future::join_all(requests).await {
             debug!(
-                "Parallel write points on vnode over, start at: {:?}, elapsed: {} millis, result: {:?}",
-                now,
+                "Parallel write points on vnode over, start at: {now:?}, elapsed: {} millis, result: {res:?}",
                 now.elapsed().as_millis(),
-                res
             );
             res?
         }
@@ -681,7 +679,7 @@ impl Coordinator for CoordService {
                 let tskv_schema_column =
                     table_schema.get_column_by_name(name).ok_or_else(|| {
                         CommonSnafu {
-                            msg: format!("column {} not found in table {}", name, table_name),
+                            msg: format!("column {name} not found in table {table_name}"),
                         }
                         .build()
                     })?;
@@ -704,7 +702,7 @@ impl Coordinator for CoordService {
                         .downcast_ref::<StringArray>()
                         .ok_or_else(|| {
                             CommonSnafu {
-                                msg: format!("column {} is not StringArray", name),
+                                msg: format!("column {name} is not StringArray"),
                             }
                             .build()
                         })?
@@ -722,10 +720,7 @@ impl Coordinator for CoordService {
 
             if !has_ts {
                 return Err(CommonSnafu {
-                    msg: format!(
-                        "column {} not found in table {}",
-                        TIME_FIELD_NAME, table_name
-                    ),
+                    msg: format!("column {TIME_FIELD_NAME} not found in table {table_name}",),
                 }
                 .build());
             }
@@ -751,7 +746,7 @@ impl Coordinator for CoordService {
                 .map(|column| {
                     take(column, &indices, None).map_err(|e| {
                         CommonSnafu {
-                            msg: format!("take column error: {}", e),
+                            msg: format!("take column error: {e}"),
                         }
                         .build()
                     })
@@ -762,7 +757,7 @@ impl Coordinator for CoordService {
                 arrow_array_to_points(columns, schema, table_schema.clone(), indices.len())
                     .map_err(|e| {
                         CommonSnafu {
-                            msg: format!("arrow array to points error: {}", e),
+                            msg: format!("arrow array to points error: {e}"),
                         }
                         .build()
                     })?,
@@ -780,10 +775,8 @@ impl Coordinator for CoordService {
         let now = tokio::time::Instant::now();
         for res in futures::future::join_all(requests).await {
             debug!(
-                "Parallel write points on vnode over, start at: {:?}, elapsed: {} millis, result: {:?}",
-                now,
+                "Parallel write points on vnode over, start at: {now:?}, elapsed: {} millis, result: {res:?}",
                 now.elapsed().as_millis(),
-                res
             );
             res?
         }
@@ -896,7 +889,7 @@ impl Coordinator for CoordService {
                 let replica = get_replica_all_info(self.meta.clone(), tenant, replica_id).await?;
                 if replica.replica_set.by_node_id(node_id).is_some() {
                     return Err(CommonSnafu {
-                        msg: format!("A Replication Already in {}", node_id),
+                        msg: format!("A Replication Already in {node_id}"),
                     }
                     .build());
                 }
@@ -1081,7 +1074,7 @@ impl Coordinator for CoordService {
                     let tskv_schema_column =
                         table_schema.get_column_by_name(name).ok_or_else(|| {
                             CommonSnafu {
-                                msg: format!("column {} not found in table {}", name, table_name),
+                                msg: format!("column {name} not found in table {table_name}"),
                             }
                             .build()
                         })?;
@@ -1092,7 +1085,7 @@ impl Coordinator for CoordService {
                             .downcast_ref::<StringArray>()
                             .ok_or_else(|| {
                                 CommonSnafu {
-                                    msg: format!("column {} is not string", name),
+                                    msg: format!("column {name} is not string"),
                                 }
                                 .build()
                             })?

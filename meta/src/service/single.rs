@@ -238,7 +238,7 @@ pub async fn process_watch(req: Bytes, storage: Arc<RwLock<StateMachine>>) -> Me
             .read()
             .await
             .read_change_logs(&cluster, &tenants, follow_ver);
-        trace::debug!("watch notify {} {}.{}", client, base_ver, follow_ver);
+        trace::debug!("watch notify {client} {base_ver}.{follow_ver}");
         if watch_data.need_return(base_ver) || now.elapsed() > Duration::from_secs(30) {
             return Ok(crate::store::storage::response_encode(Ok(watch_data)));
         }

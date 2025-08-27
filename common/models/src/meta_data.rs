@@ -428,14 +428,14 @@ mod test {
     #[test]
     fn test_get_disk_info() {
         let p = get_disk_info(".").unwrap();
-        println!("disk info: {}", p);
+        println!("disk info: {p}");
 
         let p = get_disk_info("/").unwrap();
-        println!("disk info: {}", p);
+        println!("disk info: {p}");
 
         let p = get_disk_info("/not_existed");
         assert!(p.is_err());
         let pe = std::io::Error::last_os_error();
-        println!("disk info error: {}", pe);
+        println!("disk info error: {pe}");
     }
 }

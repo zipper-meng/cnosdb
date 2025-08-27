@@ -232,7 +232,7 @@ impl SimpleQueryDispatcher {
                     info!("Re-execute persistent query: {}", query.content());
                 }
                 Err(err) => {
-                    trace::warn!("Ignore, failed to re-execute persistent query: {}", err)
+                    trace::warn!("Ignore, failed to re-execute persistent query: {err}")
                 }
             }
         }

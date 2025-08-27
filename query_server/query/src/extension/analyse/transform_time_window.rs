@@ -177,7 +177,7 @@ fn parse_duration_arg(expr: &Expr) -> Result<Duration, QueryError> {
     let duration = nano.ok_or_else(|| QueryError::InvalidTimeWindowParam {
         reason: format!("{expr}"),
     })?;
-    debug!("duration str: {}", duration);
+    debug!("duration str: {duration}");
     Ok(Duration::from_nanos(duration as u64))
 }
 
@@ -356,8 +356,7 @@ fn build_sliding_window_plan(
     // Do not allow windows to overlap too much
     if overlapping_windows > 100 {
         return Err(DataFusionError::Plan(format!(
-            "Too many overlapping windows: {}",
-            overlapping_windows
+            "Too many overlapping windows: {overlapping_windows}"
         )));
     }
 

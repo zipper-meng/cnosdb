@@ -144,7 +144,7 @@ impl DisplayAs for UpdateTagExec {
         let assigns = self
             .assigns
             .iter()
-            .map(|(col, val_expr)| format!("{}={}", col, val_expr))
+            .map(|(col, val_expr)| format!("{col}={val_expr}"))
             .collect::<Vec<_>>()
             .join(", ");
 
@@ -152,8 +152,8 @@ impl DisplayAs for UpdateTagExec {
             DisplayFormatType::Default => {
                 write!(
                     f,
-                    "UpdateTagExec: table={}, set=[{}], ",
-                    self.table_schema.name, assigns
+                    "UpdateTagExec: table={}, set=[{assigns}], ",
+                    self.table_schema.name,
                 )
             }
             DisplayFormatType::Verbose => {
@@ -165,9 +165,8 @@ impl DisplayAs for UpdateTagExec {
                     .collect::<Vec<_>>();
                 write!(
                     f,
-                    "UpdateTagExec: table={}, set=[{}], output=[{}]",
+                    "UpdateTagExec: table={}, set=[{assigns}], output=[{}]",
                     self.table_schema.name,
-                    assigns,
                     schemas.join(",")
                 )
             }

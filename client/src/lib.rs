@@ -1,4 +1,7 @@
 #![doc = include_str!("../README.md")]
+#![allow(clippy::result_large_err)] // use datafusion-49 to remove this
+#![allow(clippy::large_enum_variant)] // use datafusion-49 to remove this
+
 pub const CNOSDB_CLI_VERSION: &str = env!("CARGO_PKG_VERSION");
 
 pub mod command;

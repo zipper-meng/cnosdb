@@ -1,4 +1,5 @@
 [workspace]
+resolver = "2"
 default-members = ["main"]
 members = [
     "common/models",
@@ -26,7 +27,6 @@ members = [
     "client",
     "replication",
 ]
-resolver = "2"
 
 [workspace.package]
 edition = "2021"

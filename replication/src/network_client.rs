@@ -34,16 +34,16 @@ impl NetworkConn {
             return Ok(val.clone());
         }
 
-        let connector = Endpoint::from_shared(format!("http://{}", addr)).map_err(|err| {
+        let connector = Endpoint::from_shared(format!("http://{addr}")).map_err(|err| {
             GRPCRequestSnafu {
-                msg: format!("Connect to({}) error: {}", addr, err),
+                msg: format!("Connect to({addr}) error: {err}"),
             }
             .build()
         })?;
 
         let channel = connector.connect().await.map_err(|err| {
             GRPCRequestSnafu {
-                msg: format!("Connect to({}) error: {}", addr, err),
+                msg: format!("Connect to({addr}) error: {err}"),
             }
             .build()
         })?;

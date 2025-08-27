@@ -67,16 +67,13 @@ impl Tag {
         }
         if self.key.len() > TAG_KEY_MAX_LEN {
             return Err(InvalidTagSnafu {
-                err: format!("Tag key exceeds the TAG_KEY_MAX_LEN({})", TAG_KEY_MAX_LEN),
+                err: format!("Tag key exceeds the TAG_KEY_MAX_LEN({TAG_KEY_MAX_LEN})"),
             }
             .build());
         }
         if self.value.len() > TAG_VALUE_MAX_LEN {
             return Err(InvalidTagSnafu {
-                err: format!(
-                    "Tag value exceeds the TAG_VALUE_MAX_LEN({})",
-                    TAG_VALUE_MAX_LEN
-                ),
+                err: format!("Tag value exceeds the TAG_VALUE_MAX_LEN({TAG_VALUE_MAX_LEN})",),
             }
             .build());
         }

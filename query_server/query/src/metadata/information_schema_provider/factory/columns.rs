@@ -87,7 +87,7 @@ impl TableProvider for InformationColumnsTable {
         let dbs = self
             .metadata
             .list_databases()
-            .map_err(|e| DataFusionError::Internal(format!("Failed to list databases: {}", e)))?;
+            .map_err(|e| DataFusionError::Internal(format!("Failed to list databases: {e}")))?;
         let tenant_id = tenant.id();
         let tenant_name = tenant.name();
 
@@ -104,10 +104,10 @@ impl TableProvider for InformationColumnsTable {
             let tables = self
                 .metadata
                 .list_tables(&db)
-                .map_err(|e| DataFusionError::Internal(format!("Failed to list tables: {}", e)))?;
+                .map_err(|e| DataFusionError::Internal(format!("Failed to list tables: {e}")))?;
             for table in tables {
                 if let Some(table) = self.metadata.get_table_schema(&db, &table).map_err(|e| {
-                    DataFusionError::Internal(format!("Failed to get table schema: {}", e))
+                    DataFusionError::Internal(format!("Failed to get table schema: {e}"))
                 })? {
                     match table {
                         TableSchema::TsKvTableSchema(t) => {

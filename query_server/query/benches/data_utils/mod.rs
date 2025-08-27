@@ -1,3 +1,6 @@
+#![allow(clippy::result_large_err)] // use datafusion-49 to remove this
+#![allow(clippy::large_enum_variant)] // use datafusion-49 to remove this
+
 use std::sync::Arc;
 
 use arrow::array::{Float32Array, Float64Array, StringArray, UInt64Array};

@@ -89,7 +89,7 @@ impl VnodeStorage {
                 let precision = Precision::from(cmd.precision as u8);
                 if let Err(err) = self.write(ctx, cmd.data, precision, None).await {
                     if ctx.apply_type == replication::APPLY_TYPE_WAL {
-                        info!("recover: write points: {}", err);
+                        info!("recover: write points: {err}");
                     } else {
                         return Err(err);
                     }
@@ -106,7 +106,7 @@ impl VnodeStorage {
             raft_write_command::Command::DropColumn(cmd) => {
                 if let Err(err) = self.drop_table_column(&cmd.table, &cmd.column).await {
                     if ctx.apply_type == replication::APPLY_TYPE_WAL {
-                        info!("recover: drop column: {}", err);
+                        info!("recover: drop column: {err}");
                     } else {
                         return Err(err);
                     }
@@ -130,7 +130,7 @@ impl VnodeStorage {
         if let Some(snapshot) = self.snapshots.last_mut() {
             snapshot.active_time = now_timestamp_secs();
 
-            info!("Snapshot: Get snapshot {}", snapshot);
+            info!("Snapshot: Get snapshot {snapshot}");
             return Ok(Some(snapshot.clone()));
         }
 
@@ -158,7 +158,7 @@ impl VnodeStorage {
             create_time: chrono::Local::now().format("%Y%m%d_%H%M%S_%3f").to_string(),
             active_time: 0,
         };
-        info!("Snapshot: build snapshot: {}", snapshot);
+        info!("Snapshot: build snapshot: {snapshot}");
 
         self.snapshots.retain(|x| {
             now_timestamp_secs() - x.active_time < self.ctx.options.storage.snapshot_holding_time
@@ -176,7 +176,7 @@ impl VnodeStorage {
         snapshot: VnodeSnapshot,
         shapshot_dir: &Path,
     ) -> TskvResult<()> {
-        info!("Snapshot: apply snapshot {}", snapshot);
+        info!("Snapshot: apply snapshot {snapshot}");
 
         // clear all snapshot
         self.snapshots = vec![];
@@ -388,7 +388,7 @@ impl VnodeStorage {
         let column_id = schema
             .get_column_by_name(column_name)
             .context(FieldNotFoundSnafu {
-                msg: format!("'{}'.'{}'.{}", db_name, table, column_name),
+                msg: format!("'{db_name}'.'{table}'.{column_name}"),
             })?
             .id;
 

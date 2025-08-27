@@ -78,8 +78,7 @@ where
     ) -> DFResult<SendableRecordBatchStream> {
         let session_id = context.session_id();
         debug!(
-            "Start StateRestoreExec::execute for partition {} of context session_id {} and task_id {:?}, metadata: {:?}",
-            partition,
+            "Start StateRestoreExec::execute for partition {partition} of context session_id {} and task_id {:?}, metadata: {:?}",
             context.session_id(),
             context.task_id(),
             self.input.schema().metadata(),
@@ -139,9 +138,8 @@ impl Stream for AppendStream {
                 let poll = self.input.poll_next_unpin(cx).map(|x| match x {
                     Some(Ok(batch)) => {
                         trace::trace!(
-                            "AppendStream of StateRestore , num rows: {}, rows:\n{:?}",
+                            "AppendStream of StateRestore , num rows: {}, rows:\n{batch:?}",
                             batch.num_rows(),
-                            batch
                         );
                         Some(Ok(batch))
                     }

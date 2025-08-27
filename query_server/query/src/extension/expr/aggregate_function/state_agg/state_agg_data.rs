@@ -771,10 +771,8 @@ mod test {
 
                     assert!(
                         exists,
-                        "expect_result {:?} does not contain state = {}, duration = {}",
+                        "expect_result {:?} does not contain state = {state}, duration = {duration}",
                         duration_tuple_list(),
-                        state,
-                        duration
                     );
 
                     assert!(exists);
@@ -826,10 +824,8 @@ mod test {
 
                     assert!(
                         exists,
-                        "expect_result {:?} does not contain state = {}, time_period = {:?}",
+                        "expect_result {:?} does not contain state = {state}, time_period = {period_tuple:?}",
                         duration_tuple_list(),
-                        state,
-                        period_tuple
                     );
 
                     assert!(exists);

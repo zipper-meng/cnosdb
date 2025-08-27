@@ -18,7 +18,7 @@ use tonic::transport::{Channel, Endpoint};
 use crate::assert_batches_one_of;
 
 async fn flight_channel(host: &str, port: u16) -> Result<Channel, ArrowError> {
-    let endpoint = Endpoint::new(format!("http://{}:{}", host, port))
+    let endpoint = Endpoint::new(format!("http://{host}:{port}"))
         .map_err(|e| ArrowError::IpcError(format!("Cannot create endpoint: {e}")))?
         .connect_timeout(Duration::from_secs(20))
         .timeout(Duration::from_secs(20))
@@ -38,7 +38,7 @@ async fn flight_channel(host: &str, port: u16) -> Result<Channel, ArrowError> {
 
 async fn clean_env(client: &mut FlightSqlServiceClient<Channel>, db_name: &str) {
     let flight_info = client
-        .execute(format!("DROP DATABASE IF EXISTS {};", db_name), None)
+        .execute(format!("DROP DATABASE IF EXISTS {db_name};"), None)
         .await
         .unwrap();
     let actual = fetch_result_and_print(flight_info, client).await;
@@ -1298,7 +1298,7 @@ async fn test_flight_sql_get_primary_key() {
         table: "primary_key".to_string(),
     };
     if let Err(e) = client.get_primary_keys(getprimarykey).await {
-        assert!(format!("{:?}", e).contains("get_flight_info_primary_keys not implemented"));
+        assert!(format!("{e:?}").contains("get_flight_info_primary_keys not implemented"));
     };
     //clean env
     clean_env(&mut client, db_name).await;
@@ -1349,7 +1349,7 @@ async fn test_flight_sql_get_exported_keys() {
         table: "export_key_tb".to_string(),
     };
     if let Err(e) = client.get_exported_keys(getexportkey).await {
-        assert!(format!("{:?}", e).contains("get_flight_info_exported_keys not implemented"));
+        assert!(format!("{e:?}").contains("get_flight_info_exported_keys not implemented"));
     };
     //clean env
     clean_env(&mut client, db_name).await;
@@ -1404,7 +1404,7 @@ async fn test_flight_sql_get_imported_keys() {
         table: "imported_key_tb".to_string(),
     };
     if let Err(e) = client.get_imported_keys(getimportkey).await {
-        assert!(format!("{:?}", e).contains("get_flight_info_imported_keys not implemented"));
+        assert!(format!("{e:?}").contains("get_flight_info_imported_keys not implemented"));
     };
     //clean env
     clean_env(&mut client, db_name).await;
@@ -1462,7 +1462,7 @@ async fn test_flight_sql_get_cross_reference() {
     };
 
     if let Err(e) = client.get_cross_reference(crossreference).await {
-        assert!(format!("{:?}", e).contains("get_flight_info_imported_keys not implemented"));
+        assert!(format!("{e:?}").contains("get_flight_info_imported_keys not implemented"));
     };
     //clean env
     clean_env(&mut client, db_name).await;
@@ -1497,7 +1497,7 @@ async fn test_flight_sql_get_sql_info() {
     let actual = fetch_result_and_print(flight_info, &mut client).await;
     assert!(actual.is_empty());
     if let Err(e) = client.get_sql_info(sql_infos).await {
-        assert!(format!("{:?}", e).contains("get_flight_info_sql_info not implemented"));
+        assert!(format!("{e:?}").contains("get_flight_info_sql_info not implemented"));
     };
     //clean env
     clean_env(&mut client, db_name).await;

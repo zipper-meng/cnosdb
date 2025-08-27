@@ -5,7 +5,7 @@ pub fn backtrace() -> String {
     #[cfg(feature = "backtrace")]
     {
         res = async_backtrace::taskdump_tree(true);
-        info!("taskdump_tree: {}", res);
+        info!("taskdump_tree: {res}");
     }
 
     #[cfg(not(feature = "backtrace"))]

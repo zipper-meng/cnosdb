@@ -113,7 +113,7 @@ impl SeriesKey {
             let id = table_schema
                 .get_column_by_name(tag_key)
                 .context(InvalidTagSnafu {
-                    err: format!("tag not found {}", tag_key),
+                    err: format!("tag not found {tag_key}"),
                 })?
                 .id;
 

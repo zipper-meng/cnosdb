@@ -30,7 +30,7 @@ impl RaftCBServer {
             .ok_or_else(|| {
                 tonic::Status::new(
                     tonic::Code::Internal,
-                    format!("Not Found Raft Node for Group: {}", group_id),
+                    format!("Not Found Raft Node for Group: {group_id}"),
                 )
             })?;
 

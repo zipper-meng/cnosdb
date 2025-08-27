@@ -64,12 +64,12 @@ async fn test_tskv_ping() {
         .await;
 
     let ping_response = resp.unwrap().into_inner();
-    println!("PING: {:?}", ping_response);
+    println!("PING: {ping_response:?}");
 
     let ping_response_body = flatbuffers::root::<PingBody>(&ping_response.body);
     if let Err(e) = ping_response_body {
-        eprintln!("{}", e);
+        eprintln!("{e}");
     } else {
-        println!("ping_resp:body(flatbuffer): {:?}", ping_response_body);
+        println!("ping_resp:body(flatbuffer): {ping_response_body:?}");
     }
 }

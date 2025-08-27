@@ -67,7 +67,7 @@ impl BatchReader for SchemaAlignmenter {
             .map(|f| f.name())
             .collect::<Vec<_>>();
 
-        write!(f, "SchemaAlignmenter: columns={:?}", fields)
+        write!(f, "SchemaAlignmenter: columns={fields:?}")
     }
 
     fn children(&self) -> Vec<BatchReaderRef> {

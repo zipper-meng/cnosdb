@@ -90,7 +90,7 @@ impl Header {
                 let content = BASE64_STANDARD
                     .decode(e)
                     .map_err(|_| HttpError::InvalidHeader {
-                        reason: format!("Can not parse private_key with base64: {}", e),
+                        reason: format!("Can not parse private_key with base64: {e}"),
                     })?;
                 String::from_utf8(content).map_err(|err| HttpError::InvalidHeader {
                     reason: err.to_string(),
@@ -208,21 +208,21 @@ mod tests {
     #[test]
     fn test_header_auth() {
         let auth = BASE64_STANDARD.encode("xx:");
-        let valid_auth_without_passwd = format!("{}{}", BASIC_PREFIX, auth);
+        let valid_auth_without_passwd = format!("{BASIC_PREFIX}{auth}");
         let header = Header::with(None, None, None, valid_auth_without_passwd);
         let user_info = header.try_get_basic_auth().unwrap();
         assert_eq!(&user_info.user, "xx");
         assert_eq!(&user_info.password, "");
 
         let auth = BASE64_STANDARD.encode("xx:xx");
-        let valid_auth_with_passwd = format!("{}{}", BASIC_PREFIX, auth);
+        let valid_auth_with_passwd = format!("{BASIC_PREFIX}{auth}");
         let header = Header::with(None, None, None, valid_auth_with_passwd);
         let user_info = header.try_get_basic_auth().unwrap();
         assert_eq!(&user_info.user, "xx");
         assert_eq!(&user_info.password, "xx");
 
         let auth = BASE64_STANDARD.encode("xx");
-        let invalid_auth_1 = format!("{}{}", BASIC_PREFIX, auth);
+        let invalid_auth_1 = format!("{BASIC_PREFIX}{auth}");
         let header = Header::with(None, None, None, invalid_auth_1);
         assert!(header.try_get_basic_auth().is_err());
 

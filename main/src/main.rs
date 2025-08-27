@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 #![recursion_limit = "256"]
+#![allow(clippy::result_large_err)] // use datafusion-49 to remove this
+#![allow(clippy::large_enum_variant)] // use datafusion-49 to remove this
 
 use std::fmt::Display;
 use std::process;
@@ -214,7 +216,7 @@ fn main() -> Result<(), std::io::Error> {
             ),
         };
 
-        info!("CnosDB server start as {} mode", deployment_mode);
+        info!("CnosDB server start as {deployment_mode} mode");
         server.start().expect("CnosDB server start.");
         signal::block_waiting_ctrl_c();
         let raft_manager = coordinator.raft_manager();
@@ -240,7 +242,7 @@ fn main() -> Result<(), std::io::Error> {
 
 fn handle_error<T, E: std::fmt::Debug>(result: Result<T, E>, context: &str) -> T {
     result.unwrap_or_else(|e| {
-        error!("{}: {:?}", context, e);
+        error!("{context}: {e:?}");
         process::exit(1);
     })
 }
@@ -278,7 +280,7 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
 fn get_deployment_mode(config_deployment_mode: &str) -> Result<DeploymentMode, std::io::Error> {
     match config_deployment_mode.parse::<DeploymentMode>() {
         Ok(mode) => Ok(mode),
-        Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
+        Err(e) => Err(std::io::Error::other(e)),
     }
 }
 

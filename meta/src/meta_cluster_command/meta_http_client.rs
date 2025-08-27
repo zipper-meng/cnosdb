@@ -29,13 +29,13 @@ impl HttpClient {
                 .header("Content-Type", "application/json")
                 .body(data.to_string()),
             "GET" => self.client.get(url),
-            _ => return Err(format!("Unsupported HTTP method: {}", method).into()),
+            _ => return Err(format!("Unsupported HTTP method: {method}").into()),
         };
 
         let res = request
             .send()
             .await
-            .map_err(|e| format!("Request error: {}", e))?;
+            .map_err(|e| format!("Request error: {e}"))?;
 
         if !res.status().is_success() {
             return Err(format!("Request failed with status: {}", res.status()).into());
@@ -44,12 +44,12 @@ impl HttpClient {
         let rsp = res
             .text()
             .await
-            .map_err(|e| format!("Failed to read response body: {}", e))?;
+            .map_err(|e| format!("Failed to read response body: {e}"))?;
 
-        // println!("Response body: {}", rsp);
+        // println!("Response body: {rsp}");
 
         let result = serde_json::from_str::<T>(&rsp)
-            .map_err(|e| format!("Failed to deserialize response: {}, body: {}", e, rsp))?;
+            .map_err(|e| format!("Failed to deserialize response: {e}, body: {rsp}"))?;
 
         Ok(result)
     }

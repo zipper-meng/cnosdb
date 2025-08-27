@@ -74,7 +74,7 @@ impl FileReporter {
             .append(true)
             .open(path)
             .unwrap_or_else(|e| {
-                panic!("Failed to open file: {:?}", e);
+                panic!("Failed to open file: {e:?}");
             });
         Self { file }
     }
@@ -83,7 +83,7 @@ impl FileReporter {
 impl Reporter for FileReporter {
     fn report(&mut self, spans: &[SpanRecord]) {
         for span in spans {
-            let _ = self.file.write_all(format!("{:#?}", span).as_bytes());
+            let _ = self.file.write_all(format!("{span:#?}").as_bytes());
         }
     }
 }

@@ -570,7 +570,7 @@ mod tests {
 
         // write data 950 times
         for i in 50..1000 {
-            command.value = format!("v_{}", i);
+            command.value = format!("v_{i}");
             let data = serde_json::to_string(&command).unwrap();
             rt.block_on(servers[0].node.raw_raft().client_write(data.into()))
                 .unwrap();
@@ -598,7 +598,7 @@ mod tests {
 
         // write data 1000 times
         for i in 1000..2000 {
-            command.value = format!("v_{}", i);
+            command.value = format!("v_{i}");
             let data = serde_json::to_string(&command).unwrap();
             rt.block_on(servers[0].node.raw_raft().client_write(data.into()))
                 .unwrap();
@@ -620,7 +620,7 @@ mod tests {
 
         // write data 1000 times
         for i in 2000..3000 {
-            command.value = format!("v_{}", i);
+            command.value = format!("v_{i}");
             let data = serde_json::to_string(&command).unwrap();
             rt.block_on(servers[0].node.raw_raft().client_write(data.into()))
                 .unwrap();
@@ -653,7 +653,7 @@ mod tests {
 
         // write data 1000 times
         for i in 3000..4000 {
-            command.value = format!("v_{}", i);
+            command.value = format!("v_{i}");
             let data = serde_json::to_string(&command).unwrap();
             rt.block_on(servers[0].node.raw_raft().client_write(data.into()))
                 .unwrap();
@@ -700,7 +700,7 @@ mod tests {
 
         // write data 900 times
         for i in 100..1000 {
-            command.value = format!("v_{}", i);
+            command.value = format!("v_{i}");
             let data = serde_json::to_string(&command).unwrap();
             rt.block_on(servers[0].node.raw_raft().client_write(data.into()))
                 .unwrap();
@@ -738,7 +738,7 @@ mod tests {
 
         // write data 1000 times
         for i in 1000..1300 {
-            command.value = format!("v_{}", i);
+            command.value = format!("v_{i}");
             let data = serde_json::to_string(&command).unwrap();
             rt.block_on(servers[1].node.raw_raft().client_write(data.into()))
                 .unwrap();
@@ -785,7 +785,7 @@ mod tests {
 
             // write data 900 times
             for i in 900..1000 {
-                command.value = format!("v_{}", i);
+                command.value = format!("v_{i}");
                 let data = serde_json::to_string(&command).unwrap();
                 rt.block_on(servers[0].node.raw_raft().client_write(data.into()))
                     .unwrap();
@@ -806,7 +806,7 @@ mod tests {
         let servers = start_servers(rt.clone(), &dir, 8000..=8000);
         // write data 900 times
         for i in 1000..1300 {
-            command.value = format!("v_{}", i);
+            command.value = format!("v_{i}");
             let data = serde_json::to_string(&command).unwrap();
             rt.block_on(servers[0].node.raw_raft().client_write(data.into()))
                 .unwrap();

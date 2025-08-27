@@ -24,14 +24,14 @@ where
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::Global(g) => {
-                write!(f, "{}", g)
+                write!(f, "{g}")
             }
             Self::TenantObject(p, t) => match t {
                 Some(t) => {
-                    write!(f, "{} of tenant {}", p, t)
+                    write!(f, "{p} of tenant {t}")
                 }
                 None => {
-                    write!(f, "{} of all tenants", p)
+                    write!(f, "{p} of all tenants")
                 }
             },
         }
@@ -73,7 +73,7 @@ where
             }
             Self::User(u) => match u {
                 Some(u) => {
-                    write!(f, "maintainer for user {}", u)
+                    write!(f, "maintainer for user {u}")
                 }
                 None => {
                     write!(f, "maintainer for all users")
@@ -81,7 +81,7 @@ where
             },
             Self::Tenant(t) => match t {
                 Some(t) => {
-                    write!(f, "maintainer for tenant {}", t)
+                    write!(f, "maintainer for tenant {t}")
                 }
                 None => {
                     write!(f, "maintainer for all tenants")
@@ -136,10 +136,10 @@ impl Display for TenantObjectPrivilege {
             }
             Self::Database(p, db) => match db {
                 Some(db) => {
-                    write!(f, "{:?} on database {}", p, db)
+                    write!(f, "{p:?} on database {db}")
                 }
                 None => {
-                    write!(f, "{:?} on all databases", p)
+                    write!(f, "{p:?} on all databases")
                 }
             },
         }

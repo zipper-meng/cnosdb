@@ -23,13 +23,13 @@ pub mod open_tsdb;
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
 pub enum Error {
-    #[snafu(display("Error: pos: {}, in: '{}'", pos, content))]
+    #[snafu(display("Error: pos: {pos}, in: '{content}'"))]
     Parse { pos: usize, content: String },
 
-    #[snafu(display("line missing field : {} or line invalid: {}", field, buf))]
+    #[snafu(display("line missing field : {field} or line invalid: {buf}"))]
     MissingField { field: String, buf: String },
 
-    #[snafu(display("{}", content))]
+    #[snafu(display("{content}"))]
     Common { content: String },
 }
 

@@ -125,8 +125,7 @@ impl ExecutionPlan for WatermarkExec {
         context: Arc<TaskContext>,
     ) -> DFResult<SendableRecordBatchStream> {
         debug!(
-            "Start ExpandExec::execute for partition {} of context session_id {} and task_id {:?}",
-            partition,
+            "Start ExpandExec::execute for partition {partition} of context session_id {} and task_id {:?}",
             context.session_id(),
             context.task_id()
         );

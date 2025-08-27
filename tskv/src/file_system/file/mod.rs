@@ -140,7 +140,7 @@ mod test {
                 println!("ok test done");
             }
             Err(e) => {
-                panic!("error: {:?}", e);
+                panic!("error: {e:?}");
             }
         }
     }

@@ -72,21 +72,21 @@ async fn main() {
 
     if show_tsm {
         if let Some(p) = tsm_path {
-            println!("TSM Path: {}, ShowTombstone: {}", p, show_tombstone);
+            println!("TSM Path: {p}, ShowTombstone: {show_tombstone}");
             // tskv::print_tsm_statistics(p, show_tombstone).await;
         }
     }
 
     if show_summary {
         if let Some(p) = summary_path {
-            println!("Summary Path: {}", p);
+            println!("Summary Path: {p}");
             tskv::print_summary_statistics(p).await;
         }
     }
 
     if show_wal {
         if let Some(p) = wal_path {
-            println!("Wal Path: {}", p);
+            println!("Wal Path: {p}");
             let wal_compress = match Encoding::from_str(wal_compress.as_str()) {
                 Ok(enc) => enc,
                 Err(e) => {

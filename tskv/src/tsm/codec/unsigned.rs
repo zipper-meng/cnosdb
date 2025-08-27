@@ -181,8 +181,7 @@ mod tests {
             assert_eq!(
                 &dst[1] >> 4,
                 DeltaEncoding::Rle as u8,
-                "didn't use rle on {:?}",
-                src
+                "didn't use rle on {src:?}"
             );
             let null_bitset = NullBuffer::new_valid(src.len());
             let array_ref =

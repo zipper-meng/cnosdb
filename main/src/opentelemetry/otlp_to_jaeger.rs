@@ -77,7 +77,7 @@ impl OtlpToJaeger {
             let (tskv_table_schema, filter_expr, limit) = match &filter_type {
                 FilterType::GetTraceID(trace_id) => (
                     tskv_table_schema,
-                    Some(col(format!("{}.\"{}\"", table, TRACE_ID_COL_NAME)).eq(lit(trace_id))),
+                    Some(col(format!("{table}.\"{TRACE_ID_COL_NAME}\"")).eq(lit(trace_id))),
                     None,
                 ),
                 FilterType::GetServices => (
@@ -99,20 +99,18 @@ impl OtlpToJaeger {
                     let filter_expr = if service_name.is_empty() && span_kind.is_empty() {
                         None
                     } else if service_name.is_empty() && !span_kind.is_empty() {
-                        Some(
-                            col(format!("{}.\"{}\"", table, SPAN_KIND_COL_NAME)).eq(lit(span_kind)),
-                        )
+                        Some(col(format!("{table}.\"{SPAN_KIND_COL_NAME}\"")).eq(lit(span_kind)))
                     } else if span_kind.is_empty() && !service_name.is_empty() {
                         Some(
-                            col(format!("{}.\"{}\"", table, SERVICE_NAME_COL_NAME))
+                            col(format!("{table}.\"{SERVICE_NAME_COL_NAME}\""))
                                 .eq(lit(service_name)),
                         )
                     } else {
                         Some(
-                            col(format!("{}.\"{}\"", table, SERVICE_NAME_COL_NAME))
+                            col(format!("{table}.\"{SERVICE_NAME_COL_NAME}\""))
                                 .eq(lit(service_name))
                                 .and(
-                                    col(format!("{}.\"{}\"", table, SPAN_KIND_COL_NAME))
+                                    col(format!("{table}.\"{SPAN_KIND_COL_NAME}\""))
                                         .eq(lit(span_kind)),
                                 ),
                         )
@@ -146,7 +144,7 @@ impl OtlpToJaeger {
                         if let Some(service) = &query_paras.service {
                             if !service.is_empty() {
                                 filter_expr_opt = Some(
-                                    col(format!("{}.\"{}\"", table, SERVICE_NAME_COL_NAME))
+                                    col(format!("{table}.\"{SERVICE_NAME_COL_NAME}\""))
                                         .eq(lit(service)),
                                 );
                             }
@@ -154,9 +152,8 @@ impl OtlpToJaeger {
 
                         if let Some(operation) = &query_paras.operation {
                             if !operation.is_empty() {
-                                let expr =
-                                    col(format!("{}.\"{}\"", table, OPERATION_NAME_COL_NAME))
-                                        .eq(lit(operation));
+                                let expr = col(format!("{table}.\"{OPERATION_NAME_COL_NAME}\""))
+                                    .eq(lit(operation));
                                 if let Some(filter_expr) = filter_expr_opt {
                                     filter_expr_opt = Some(filter_expr.and(expr));
                                 } else {
@@ -167,7 +164,7 @@ impl OtlpToJaeger {
 
                         if let Some(start) = &query_paras.start {
                             let nanos: i64 = start * 1_000;
-                            let expr = col(format!("{}.\"time\"", table))
+                            let expr = col(format!("{table}.\"time\""))
                                 .gt_eq(lit(ScalarValue::TimestampNanosecond(Some(nanos), None)));
                             if let Some(filter_expr) = filter_expr_opt {
                                 filter_expr_opt = Some(filter_expr.and(expr));
@@ -179,8 +176,7 @@ impl OtlpToJaeger {
                         if let Some(end) = &query_paras.end {
                             let nanos = (end * 1_000) as f64;
                             let expr = col(format!(
-                                "{}.\"ResourceSpans/ScopeSpans/Span/end_time_unix_nano\"",
-                                table
+                                "{table}.\"ResourceSpans/ScopeSpans/Span/end_time_unix_nano\"",
                             ))
                             .lt_eq(lit(nanos));
                             if let Some(filter_expr) = filter_expr_opt {
@@ -209,8 +205,7 @@ impl OtlpToJaeger {
                         }
                         for (k, v) in tag_map.iter() {
                             let expr = col(format!(
-                                "{}.\"ResourceSpans/ScopeSpans/Span/attributes/{}\"",
-                                table, k
+                                "{table}.\"ResourceSpans/ScopeSpans/Span/attributes/{k}\""
                             ))
                             .eq(lit(v));
                             if let Some(filter_expr) = filter_expr_opt {
@@ -223,8 +218,7 @@ impl OtlpToJaeger {
                         if let Some(duration_min) = &query_paras.min_duration {
                             let duration_min = Self::parse_duration(duration_min)? as f64;
                             let expr = col(format!(
-                                "{}.\"ResourceSpans/ScopeSpans/Span/duration_nano\"",
-                                table
+                                "{table}.\"ResourceSpans/ScopeSpans/Span/duration_nano\""
                             ))
                             .gt_eq(lit(duration_min));
                             if let Some(filter_expr) = filter_expr_opt {
@@ -237,8 +231,7 @@ impl OtlpToJaeger {
                         if let Some(duration_max) = &query_paras.max_duration {
                             let duration_max = Self::parse_duration(duration_max)? as f64;
                             let expr = col(format!(
-                                "{}.\"ResourceSpans/ScopeSpans/Span/duration_nano\"",
-                                table
+                                "{table}.\"ResourceSpans/ScopeSpans/Span/duration_nano\""
                             ))
                             .lt_eq(lit(duration_max));
                             if let Some(filter_expr) = filter_expr_opt {
@@ -330,8 +323,7 @@ impl OtlpToJaeger {
                 .as_any()
                 .downcast_ref::<StringArray>()
                 .ok_or(Status::internal(format!(
-                    "column {} is not StringArray",
-                    TRACE_ID_COL_NAME
+                    "column {TRACE_ID_COL_NAME} is not StringArray"
                 )))?
                 .value(row_i)
                 .to_string();
@@ -342,8 +334,7 @@ impl OtlpToJaeger {
                 .as_any()
                 .downcast_ref::<StringArray>()
                 .ok_or(Status::internal(format!(
-                    "column {} is not StringArray",
-                    SPAN_ID_COL_NAME
+                    "column {SPAN_ID_COL_NAME} is not StringArray"
                 )))?
                 .value(row_i)
                 .to_string();
@@ -355,8 +346,7 @@ impl OtlpToJaeger {
                     .as_any()
                     .downcast_ref::<StringArray>()
                     .ok_or(Status::internal(format!(
-                        "column {} is not StringArray",
-                        PARENT_SPAN_ID_COL_NAME
+                        "column {PARENT_SPAN_ID_COL_NAME} is not StringArray"
                     )))?
                     .value(row_i)
                     .to_string(),
@@ -369,8 +359,7 @@ impl OtlpToJaeger {
                     .as_any()
                     .downcast_ref::<Float64Array>()
                     .ok_or(Status::internal(format!(
-                        "column {} is not Float64Array",
-                        FLAGS_COL_NAME
+                        "column {FLAGS_COL_NAME} is not Float64Array"
                     )))?
                     .value(row_i) as u32,
             );
@@ -381,8 +370,7 @@ impl OtlpToJaeger {
                 .as_any()
                 .downcast_ref::<StringArray>()
                 .ok_or(Status::internal(format!(
-                    "column {} is not StringArray",
-                    OPERATION_NAME_COL_NAME
+                    "column {OPERATION_NAME_COL_NAME} is not StringArray"
                 )))?
                 .value(row_i)
                 .to_string();
@@ -393,8 +381,7 @@ impl OtlpToJaeger {
                 .as_any()
                 .downcast_ref::<StringArray>()
                 .ok_or(Status::internal(format!(
-                    "column {} is not StringArray",
-                    SPAN_KIND_COL_NAME
+                    "column {SPAN_KIND_COL_NAME} is not StringArray"
                 )))?
                 .value(row_i);
             let span_kind = Self::to_jaeger_span_kind(span_kind).to_string();
@@ -422,8 +409,7 @@ impl OtlpToJaeger {
                 .as_any()
                 .downcast_ref::<Float64Array>()
                 .ok_or(Status::internal(format!(
-                    "column {} is not Float64Array",
-                    DURATION_COL_NAME
+                    "column {DURATION_COL_NAME} is not Float64Array"
                 )))?
                 .value(row_i) as u64
                 / 1_000;
@@ -435,8 +421,7 @@ impl OtlpToJaeger {
                 .as_any()
                 .downcast_ref::<StringArray>()
                 .ok_or(Status::internal(format!(
-                    "column {} is not StringArray",
-                    STATUS_CODE_COL_NAME
+                    "column {STATUS_CODE_COL_NAME} is not StringArray"
                 )))?
                 .value(row_i)
                 .to_string();
@@ -463,8 +448,7 @@ impl OtlpToJaeger {
                         .as_any()
                         .downcast_ref::<StringArray>()
                         .ok_or(Status::internal(format!(
-                            "column {} is not StringArray",
-                            STATUS_MESSAGE_COL_NAME
+                            "column {STATUS_MESSAGE_COL_NAME} is not StringArray"
                         )))?
                         .value(row_i)
                         .to_string(),
@@ -481,8 +465,7 @@ impl OtlpToJaeger {
                         .as_any()
                         .downcast_ref::<StringArray>()
                         .ok_or(Status::internal(format!(
-                            "column {} is not StringArray",
-                            LIBRARY_NAME_COL_NAME
+                            "column {LIBRARY_NAME_COL_NAME} is not StringArray"
                         )))?
                         .value(row_i)
                         .to_string(),
@@ -499,8 +482,7 @@ impl OtlpToJaeger {
                         .as_any()
                         .downcast_ref::<StringArray>()
                         .ok_or(Status::internal(format!(
-                            "column {} is not StringArray",
-                            LIBRARY_VERSION_COL_NAME
+                            "column {LIBRARY_VERSION_COL_NAME} is not StringArray"
                         )))?
                         .value(row_i)
                         .to_string(),
@@ -513,8 +495,7 @@ impl OtlpToJaeger {
                 .as_any()
                 .downcast_ref::<StringArray>()
                 .ok_or(Status::internal(format!(
-                    "column {} is not StringArray",
-                    SERVICE_NAME_COL_NAME
+                    "column {SERVICE_NAME_COL_NAME} is not StringArray"
                 )))?
                 .value(row_i)
                 .to_string();
@@ -543,15 +524,11 @@ impl OtlpToJaeger {
             } else if col_name.eq(RESOURCE_DROPPED_ATTRIBUTES_COUNT_COL_NAME) {
                 let value = batch
                     .column_by_name(col_name)
-                    .ok_or(Status::internal(format!(
-                        "column {} is not exist",
-                        col_name
-                    )))?
+                    .ok_or(Status::internal(format!("column {col_name} is not exist")))?
                     .as_any()
                     .downcast_ref::<Float64Array>()
                     .ok_or(Status::internal(format!(
-                        "column {} is not Float64Array",
-                        col_name
+                        "column {col_name} is not Float64Array"
                     )))?
                     .value(row_i) as i64;
                 process.tags.push(KeyValue {
@@ -568,15 +545,11 @@ impl OtlpToJaeger {
             {
                 let value = batch
                     .column_by_name(col_name)
-                    .ok_or(Status::internal(format!(
-                        "column {} is not exist",
-                        col_name
-                    )))?
+                    .ok_or(Status::internal(format!("column {col_name} is not exist")))?
                     .as_any()
                     .downcast_ref::<Float64Array>()
                     .ok_or(Status::internal(format!(
-                        "column {} is not Float64Array",
-                        col_name
+                        "column {col_name} is not Float64Array"
                     )))?
                     .value(row_i) as i64;
                 span.tags.push(KeyValue {
@@ -599,15 +572,11 @@ impl OtlpToJaeger {
                     value: serde_json::Value::String(
                         batch
                             .column_by_name(col_name)
-                            .ok_or(Status::internal(format!(
-                                "column {} is not exist",
-                                col_name
-                            )))?
+                            .ok_or(Status::internal(format!("column {col_name} is not exist")))?
                             .as_any()
                             .downcast_ref::<StringArray>()
                             .ok_or(Status::internal(format!(
-                                "column {} is not StringArray",
-                                col_name
+                                "column {col_name} is not StringArray"
                             )))?
                             .value(row_i)
                             .to_string(),
@@ -623,8 +592,7 @@ impl OtlpToJaeger {
                     .as_any()
                     .downcast_ref::<Float64Array>()
                     .ok_or(Status::internal(format!(
-                        "column {} is not Float64Array",
-                        col_name
+                        "column {col_name} is not Float64Array"
                     )))?
                     .value(row_i) as u64;
 
@@ -642,14 +610,12 @@ impl OtlpToJaeger {
                                 batch
                                     .column_by_name(col_name)
                                     .ok_or(Status::internal(format!(
-                                        "column {} is not exist",
-                                        col_name
+                                        "column {col_name} is not exist"
                                     )))?
                                     .as_any()
                                     .downcast_ref::<StringArray>()
                                     .ok_or(Status::internal(format!(
-                                        "column {} is not StringArray",
-                                        col_name
+                                        "column {col_name} is not StringArray"
                                     )))?
                                     .value(row_i)
                                     .to_string(),
@@ -658,15 +624,11 @@ impl OtlpToJaeger {
                     } else if col_name.eq(&(event_prefix.clone() + "dropped_attributes_count")) {
                         let value = batch
                             .column_by_name(col_name)
-                            .ok_or(Status::internal(format!(
-                                "column {} is not exist",
-                                col_name
-                            )))?
+                            .ok_or(Status::internal(format!("column {col_name} is not exist")))?
                             .as_any()
                             .downcast_ref::<Float64Array>()
                             .ok_or(Status::internal(format!(
-                                "column {} is not Float64Array",
-                                col_name
+                                "column {col_name} is not Float64Array"
                             )))?
                             .value(row_i) as i64;
                         attributes.push(KeyValue {
@@ -746,7 +708,7 @@ impl OtlpToJaeger {
         }
         if s.is_empty() {
             return Err(QueryError::Parser {
-                source: ParserError::ParserError(format!("time: invalid duration {}", orig)),
+                source: ParserError::ParserError(format!("time: invalid duration {orig}")),
             });
         }
 
@@ -758,7 +720,7 @@ impl OtlpToJaeger {
             // The next character must be [0-9.]
             if !(s.starts_with('.') || s.chars().next().unwrap().is_ascii_digit()) {
                 return Err(QueryError::Parser {
-                    source: ParserError::ParserError(format!("time: invalid duration {}", orig)),
+                    source: ParserError::ParserError(format!("time: invalid duration {orig}")),
                 });
             }
 
@@ -782,7 +744,7 @@ impl OtlpToJaeger {
 
             if !pre && !post {
                 return Err(QueryError::Parser {
-                    source: ParserError::ParserError(format!("time: invalid duration {}", orig)),
+                    source: ParserError::ParserError(format!("time: invalid duration {orig}")),
                 });
             }
 
@@ -792,7 +754,7 @@ impl OtlpToJaeger {
                 .unwrap_or(s.len());
             if i == 0 {
                 return Err(QueryError::Parser {
-                    source: ParserError::ParserError(format!("time: invalid duration {}", orig)),
+                    source: ParserError::ParserError(format!("time: invalid duration {orig}")),
                 });
             }
             let u = &s[..i];
@@ -803,8 +765,7 @@ impl OtlpToJaeger {
                 None => {
                     return Err(QueryError::Parser {
                         source: ParserError::ParserError(format!(
-                            "time: unknown unit {} in duration {}",
-                            u, orig
+                            "time: unknown unit {u} in duration {orig}"
                         )),
                     });
                 }
@@ -812,7 +773,7 @@ impl OtlpToJaeger {
 
             if v > (1 << 63) / unit {
                 return Err(QueryError::Parser {
-                    source: ParserError::ParserError(format!("time: invalid duration {}", orig)),
+                    source: ParserError::ParserError(format!("time: invalid duration {orig}")),
                 });
             }
             v *= unit;
@@ -821,10 +782,7 @@ impl OtlpToJaeger {
                 v += (f as f64 * (unit as f64 / scale)) as u64;
                 if v > 1 << 63 {
                     return Err(QueryError::Parser {
-                        source: ParserError::ParserError(format!(
-                            "time: invalid duration {}",
-                            orig
-                        )),
+                        source: ParserError::ParserError(format!("time: invalid duration {orig}")),
                     });
                 }
             }
@@ -832,7 +790,7 @@ impl OtlpToJaeger {
             d += v;
             if d > 1 << 63 {
                 return Err(QueryError::Parser {
-                    source: ParserError::ParserError(format!("time: invalid duration {}", orig)),
+                    source: ParserError::ParserError(format!("time: invalid duration {orig}")),
                 });
             }
         }
@@ -842,7 +800,7 @@ impl OtlpToJaeger {
         }
         if d > 1 << (63 - 1) {
             return Err(QueryError::Parser {
-                source: ParserError::ParserError(format!("time: invalid duration {}", orig)),
+                source: ParserError::ParserError(format!("time: invalid duration {orig}")),
             });
         }
         Ok(d)
@@ -898,7 +856,7 @@ fn convert_column_to_any_value(
 ) -> Result<AnyValue, Status> {
     let array = batch
         .column_by_name(col_name)
-        .ok_or_else(|| Status::internal(format!("column {} does not exist", col_name)))?;
+        .ok_or_else(|| Status::internal(format!("column {col_name} does not exist")))?;
 
     let any_value = if let Some(array) = array.as_any().downcast_ref::<StringArray>() {
         if row_i < array.len() {
@@ -910,8 +868,7 @@ fn convert_column_to_any_value(
         }
     } else {
         return Err(Status::internal(format!(
-            "Unsupported array type for column {}",
-            col_name
+            "Unsupported array type for column {col_name}"
         )));
     };
 

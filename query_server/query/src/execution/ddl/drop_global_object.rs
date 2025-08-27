@@ -43,7 +43,7 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                 //     &mut self,
                 //     name: &str
                 // ) -> Result<bool>;
-                debug!("Drop user {}", name);
+                debug!("Drop user {name}");
 
                 if FORBIDDEN_DROP_USERS.contains(&name.as_str()) {
                     return Err(QueryError::ForbiddenDropUser {
@@ -70,7 +70,7 @@ impl DDLDefinitionTask for DropGlobalObjectTask {
                 //     &self,
                 //     name: &str
                 // ) -> Result<bool>;
-                debug!("Drop tenant {}", name);
+                debug!("Drop tenant {name}");
 
                 match meta.tenant(name).await {
                     Ok(Some(tenant_schema)) => {

@@ -1582,7 +1582,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
                     Expr::Literal(ScalarValue::Int64(Some(m))) => {
                         if m < 0 {
                             return Err(QueryError::Semantic {
-                                err: format!("OFFSET must be >= 0, '{}' was provided.", m),
+                                err: format!("OFFSET must be >= 0, '{m}' was provided."),
                             });
                         } else {
                             m as usize
@@ -1673,8 +1673,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             plan_config.with_precision(Precision::new(&precision).ok_or_else(|| {
                 QueryError::Parser {
                     source: ParserError::ParserError(format!(
-                        "{} is not a valid precision, use like 'ms', 'us', 'ns'",
-                        precision
+                        "{precision} is not a valid precision, use like 'ms', 'us', 'ns'",
                     )),
                 }
             })?);
@@ -1692,8 +1691,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             plan_config.with_wal_sync(bool::from_str(wal_sync.as_str()).map_err(|_| {
                 QueryError::Parser {
                     source: ParserError::ParserError(format!(
-                        "{} is not a valid bool value, use like 'true', 'false'",
-                        wal_sync
+                        "{wal_sync} is not a valid bool value, use like 'true', 'false'",
                     )),
                 }
             })?);
@@ -1702,8 +1700,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             plan_config.with_strict_write(bool::from_str(strict_write.as_str()).map_err(|_| {
                 QueryError::Parser {
                     source: ParserError::ParserError(format!(
-                        "{} is not a valid bool value, use like 'true', 'false'",
-                        strict_write
+                        "{strict_write} is not a valid bool value, use like 'true', 'false'",
                     )),
                 }
             })?);
@@ -1717,8 +1714,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     fn str_to_duration(&self, text: &str) -> QueryResult<CnosDuration> {
         CnosDuration::new(text).ok_or_else(|| QueryError::Parser {
             source: ParserError::ParserError(format!(
-                "{} is not a valid duration or duration overflow",
-                text
+                "{text} is not a valid duration or duration overflow",
             )),
         })
     }
@@ -1726,7 +1722,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     fn str_to_bytes(&self, text: &str) -> QueryResult<u64> {
         CnosByteNumber::parse(text)
             .ok_or_else(|| QueryError::Parser {
-                source: ParserError::ParserError(format!("{} is not a valid byte number", text)),
+                source: ParserError::ParserError(format!("{text} is not a valid byte number")),
             })
             .map(|byte| byte.as_bytes_num())
     }
@@ -2129,7 +2125,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
 
         if SystemTenantRole::try_from(role_name.as_str()).is_ok() {
             let err = QueryError::SystemRoleModification;
-            warn!("{}", err.to_string());
+            warn!("{err}");
             return Err(err);
         }
 
@@ -2638,8 +2634,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
             // @todo Support TableFactory::TableFunction?
             _ => {
                 return Err(DataFusionError::NotImplemented(format!(
-                    "Unsupported ast node {:?} in create_relation",
-                    relation
+                    "Unsupported ast node {relation:?} in create_relation"
                 )));
             }
         };
@@ -2724,8 +2719,7 @@ fn build_and_register_object_store(
     // local file will not object_store
     if let Some(object_store) = build_object_store(schema, bucket, connection_options)? {
         debug!(
-            "Register object store, schema: {}, bucket: {}",
-            schema,
+            "Register object store, schema: {schema}, bucket: {}",
             bucket.unwrap_or_default()
         );
         runtime_env.register_object_store(url, object_store);
@@ -2780,7 +2774,7 @@ async fn build_listing_table(
     let schema = if let Some(schema) = default_schema {
         schema
     } else {
-        debug!("Not has default schema, infer schema, path: {}", table_path);
+        debug!("Not has default schema, infer schema, path: {table_path}");
         options.infer_schema(ctx, &table_path).await?
     };
 
@@ -2985,15 +2979,15 @@ fn show_tag_value_projections(
 fn check_privilege(user: &User, privileges: Vec<Privilege<Oid>>) -> QueryResult<()> {
     let privileges_str = privileges
         .iter()
-        .map(|e| format!("{:?}", e))
+        .map(|e| format!("{e:?}"))
         .collect::<Vec<String>>()
         .join(",");
-    debug!("logical_plan's privileges: [{}]", privileges_str);
+    debug!("logical_plan's privileges: [{privileges_str}]");
 
     for p in privileges.iter() {
         if !user.check_privilege(p) {
             return Err(QueryError::InsufficientPrivileges {
-                privilege: format!("{}", p),
+                privilege: format!("{p}"),
             });
         }
     }
@@ -3403,7 +3397,7 @@ mod tests {
             .await
             .unwrap();
         if let Plan::DDL(DDLPlan::DropDatabaseObject(drop)) = plan.plan {
-            println!("{:?}", drop);
+            println!("{drop:?}");
         } else {
             panic!("expected drop plan")
         }

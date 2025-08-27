@@ -417,7 +417,7 @@ impl Display for TimeRanges {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{{ ")?;
         for tr in &self.inner {
-            write!(f, "{:?}", tr)?;
+            write!(f, "{tr:?}")?;
         }
         write!(f, " }}")
     }
@@ -679,7 +679,7 @@ impl Display for Marker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} ({})", self.bound, self.data_type)?;
         if let Some(ref v) = self.value {
-            return write!(f, "{}", v);
+            return write!(f, "{v}");
         }
         Ok(())
     }
@@ -711,7 +711,7 @@ impl Display for Range {
         ) -> std::fmt::Result {
             write!(f, "({})", marker.data_type)?;
             if let Some(ref v) = &marker.value {
-                write!(f, "{}", v)
+                write!(f, "{v}")
             } else if is_left_bound {
                 write!(f, "-∞")
             } else {
@@ -1047,7 +1047,7 @@ impl Display for RangeValueSet {
         ) -> std::fmt::Result {
             // write!(f, "{} ({})", self.bound, self.data_type)?;
             // if let Some(ref v) = self.value {
-            //     return write!(f, "{}", v);
+            //     return write!(f, "{v}");
             // }
             if marker.is_lower_unbound() {
                 write!(f, "(-∞, )")

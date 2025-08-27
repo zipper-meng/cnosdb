@@ -72,9 +72,9 @@ impl PartialOrd for CompactTask {
 impl std::fmt::Display for CompactTask {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            CompactTask::Normal(vnode_id) => write!(f, "Normal({})", vnode_id),
-            CompactTask::Delta(vnode_id) => write!(f, "Delta({})", vnode_id),
-            CompactTask::Manual(vnode_id) => write!(f, "Manual({})", vnode_id),
+            CompactTask::Normal(vnode_id) => write!(f, "Normal({vnode_id})"),
+            CompactTask::Delta(vnode_id) => write!(f, "Delta({vnode_id})"),
+            CompactTask::Manual(vnode_id) => write!(f, "Manual({vnode_id})"),
         }
     }
 }

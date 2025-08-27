@@ -109,8 +109,8 @@ impl TskvEngineStorage {
                 .to_string();
 
             info!(
-                "begin download file {} -> {:?}, from {}",
-                src_filename, filename, snapshot.node_id
+                "begin download file {src_filename} -> {filename:?}, from {}",
+                snapshot.node_id
             );
 
             Self::download_file(&src_filename, &filename, client).await?;
@@ -119,8 +119,8 @@ impl TskvEngineStorage {
             if info.file_size != length {
                 return Err(CommonSnafu {
                     msg: format!(
-                        "download file length not match {} -> {}",
-                        info.file_size, length
+                        "download file length not match {} -> {length}",
+                        info.file_size,
                     ),
                 }
                 .build());

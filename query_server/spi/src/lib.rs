@@ -1,3 +1,6 @@
+#![allow(clippy::result_large_err)] // use datafusion-49 to remove this
+#![allow(clippy::large_enum_variant)] // use datafusion-49 to remove this
+
 use std::error;
 
 use coordinator::errors::CoordinatorError;
@@ -42,9 +45,8 @@ pub enum QueryError {
     },
 
     #[snafu(display(
-        "Internal error: {}. This was likely caused by a bug in Cnosdb's \
+        "Internal error: {reason}. This was likely caused by a bug in Cnosdb's \
     code and we would welcome that you file an bug report in our issue tracker",
-        reason
     ))]
     #[error_code(code = 9998)]
     Internal {
@@ -72,43 +74,43 @@ pub enum QueryError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Insufficient privileges, expected [{}]", privilege))]
+    #[snafu(display("Insufficient privileges, expected [{privilege}]"))]
     #[error_code(code = 4)]
     InsufficientPrivileges {
         privilege: String,
     },
 
-    #[snafu(display("This feature is not implemented: {}", err))]
+    #[snafu(display("This feature is not implemented: {err}"))]
     #[error_code(code = 5)]
     NotImplemented {
         err: String,
     },
 
-    #[snafu(display("Failed to build QueryDispatcher. err: {}", err))]
+    #[snafu(display("Failed to build QueryDispatcher. err: {err}"))]
     #[error_code(code = 6)]
     BuildQueryDispatcher {
         err: String,
     },
 
-    #[snafu(display("Udf already exists, name:{}.", name))]
+    #[snafu(display("Udf already exists, name:{name}."))]
     #[error_code(code = 7)]
     FunctionExists {
         name: String,
     },
 
-    #[snafu(display("Udf not exists, name:{}.", name))]
+    #[snafu(display("Udf not exists, name:{name}."))]
     #[error_code(code = 8)]
     FunctionNotExists {
         name: String,
     },
 
-    #[snafu(display("{}", source))]
+    #[snafu(display("{source}"))]
     #[error_code(code = 9)]
     Parser {
         source: ParserError,
     },
 
-    #[snafu(display("Failed to do analyze. err: {}", err))]
+    #[snafu(display("Failed to do analyze. err: {err}"))]
     #[error_code(code = 10)]
     Analyzer {
         err: String,
@@ -127,7 +129,7 @@ pub enum QueryError {
     #[error_code(code = 12)]
     RequestLimit,
 
-    #[snafu(display("Multi-statement not allow, found num:{}, sql:{}", num, sql))]
+    #[snafu(display("Multi-statement not allow, found num:{num}, sql:{sql}"))]
     #[error_code(code = 13)]
     MultiStatement {
         num: usize,
@@ -142,13 +144,13 @@ pub enum QueryError {
     #[error_code(code = 15)]
     Closed,
 
-    #[snafu(display("Auth error: {}", source))]
+    #[snafu(display("Auth error: {source}"))]
     #[error_code(code = 16)]
     Auth {
         source: AuthError,
     },
 
-    #[snafu(display("Invalid flatbuffers: {}", source))]
+    #[snafu(display("Invalid flatbuffers: {source}"))]
     #[error_code(code = 17)]
     InvalidFlatbuffer {
         #[snafu(source(from(flatbuffers::InvalidFlatbuffer, Box::new)))]
@@ -159,9 +161,8 @@ pub enum QueryError {
     },
 
     #[snafu(display(
-        "Common error: {}. This was likely caused by a bug in CnosDB's \
+        "Common error: {msg}. This was likely caused by a bug in CnosDB's \
     code and we would welcome that you file an bug report in our issue tracker",
-        msg
     ))]
     #[error_code(code = 18)]
     CommonError {
@@ -171,7 +172,7 @@ pub enum QueryError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Failed to write points flat buffer, err: {}", err))]
+    #[snafu(display("Failed to write points flat buffer, err: {err}"))]
     #[error_code(code = 19)]
     ToPointsFlatBuffer {
         err: String,
@@ -180,7 +181,7 @@ pub enum QueryError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Invalid array type, expected: {}, found: {}", expected, found))]
+    #[snafu(display("Invalid array type, expected: {expected}, found: {found}"))]
     #[error_code(code = 20)]
     InvalidArrayType {
         expected: String,
@@ -190,13 +191,13 @@ pub enum QueryError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Column {} not found.", col))]
+    #[snafu(display("Column {col} not found."))]
     #[error_code(code = 21)]
     ColumnNotFound {
         col: String,
     },
 
-    #[snafu(display("Data type {} not support.", type_))]
+    #[snafu(display("Data type {type_} not support."))]
     #[error_code(code = 22)]
     PointErrorDataTypeNotSupport {
         type_: String,
@@ -205,7 +206,7 @@ pub enum QueryError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Column {} cannot be null.", col))]
+    #[snafu(display("Column {col} cannot be null."))]
     #[error_code(code = 23)]
     PointErrorNotNullConstraint {
         col: String,
@@ -214,7 +215,7 @@ pub enum QueryError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Invalid parameter : {}", reason))]
+    #[snafu(display("Invalid parameter : {reason}"))]
     #[error_code(code = 24)]
     InvalidParam {
         reason: String,
@@ -228,7 +229,7 @@ pub enum QueryError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Read/Write record file block: {}", reason))]
+    #[snafu(display("Read/Write record file block: {reason}"))]
     #[error_code(code = 26)]
     RecordFileIo {
         reason: String,
@@ -237,39 +238,39 @@ pub enum QueryError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Semantic error: {}", err))]
+    #[snafu(display("Semantic error: {err}"))]
     #[error_code(code = 3)]
     Semantic {
         err: String,
     },
 
-    #[snafu(display("Semantic error: Field or Tag have the same name {}", column))]
+    #[snafu(display("Semantic error: Field or Tag have the same name {column}"))]
     #[error_code(code = 27)]
     SameColumnName {
         column: String,
     },
 
-    #[snafu(display("Semantic error:  column {} already exists in table {}", column, table))]
+    #[snafu(display("Semantic error:  column {column} already exists in table {table}"))]
     #[error_code(code = 28)]
     ColumnAlreadyExists {
         table: String,
         column: String,
     },
 
-    #[snafu(display("Semantic error: Column {} not exists in table {}", column, table))]
+    #[snafu(display("Semantic error: Column {column} not exists in table {table}"))]
     #[error_code(code = 29)]
     ColumnNotExists {
         table: String,
         column: String,
     },
 
-    #[snafu(display("Semantic error: Can't drop tag column {}.", column))]
+    #[snafu(display("Semantic error: Can't drop tag column {column}."))]
     #[error_code(code = 30)]
     DropTag {
         column: String,
     },
 
-    #[snafu(display("Semantic error: Can't drop column {}.", TIME_FIELD_NAME))]
+    #[snafu(display("Semantic error: Can't drop column {TIME_FIELD_NAME}."))]
     #[error_code(code = 31)]
     DropTime,
 
@@ -285,21 +286,18 @@ pub enum QueryError {
     #[error_code(code = 34)]
     TagNotSupportCompression,
 
-    #[snafu(display(
-        "Semantic error: Column {} does not support modification",
-        TIME_FIELD_NAME
-    ))]
+    #[snafu(display("Semantic error: Column {TIME_FIELD_NAME} does not support modification",))]
     #[error_code(code = 35)]
     TimeColumnAlter,
 
-    #[snafu(display("Semantic error: DB {} conflict with table {}", db, table))]
+    #[snafu(display("Semantic error: DB {db} conflict with table {table}"))]
     #[error_code(code = 36)]
     DBTableConflict {
         db: String,
         table: String,
     },
 
-    #[snafu(display("Semantic error: OFFSET must be >= 0, '{}' was provided.", provide))]
+    #[snafu(display("Semantic error: OFFSET must be >= 0, '{provide}' was provided."))]
     #[error_code(code = 37)]
     OffsetBtZero {
         provide: i64,
@@ -309,7 +307,7 @@ pub enum QueryError {
     #[error_code(code = 38)]
     OffsetConstant,
 
-    #[snafu(display("Semantic error: Limit must be >= 0, '{}' was provided.", provide))]
+    #[snafu(display("Semantic error: Limit must be >= 0, '{provide}' was provided."))]
     #[error_code(code = 39)]
     LimitBtZero {
         provide: i64,
@@ -319,12 +317,7 @@ pub enum QueryError {
     #[error_code(code = 40)]
     LimitConstant,
 
-    #[snafu(display(
-        "Semantic error: Unexpected data type {} of {}, {}",
-        data_type,
-        column,
-        prompt
-    ))]
+    #[snafu(display("Semantic error: Unexpected data type {data_type} of {column}, {prompt}",))]
     #[error_code(code = 41)]
     DataType {
         data_type: String,
@@ -333,9 +326,7 @@ pub enum QueryError {
     },
 
     #[snafu(display(
-        "Semantic error: Unsupported encoding type {:?} for {}",
-        encoding_type,
-        data_type
+        "Semantic error: Unsupported encoding type {encoding_type:?} for {data_type}",
     ))]
     #[error_code(code = 42)]
     EncodingType {
@@ -348,9 +339,7 @@ pub enum QueryError {
     SystemRoleModification,
 
     #[snafu(display(
-        "Semantic error: Insert column '{}' does not exist in target table, expect {}",
-        insert_col,
-        fields
+        "Semantic error: Insert column '{insert_col}' does not exist in target table, expect {fields}",
     ))]
     #[error_code(code = 44)]
     MissingColumn {
@@ -363,8 +352,7 @@ pub enum QueryError {
     MismatchColumns,
 
     #[snafu(display(
-        "Semantic error: SHOW SERIES does not support where clause contains field {}",
-        column
+        "Semantic error: SHOW SERIES does not support where clause contains field {column}",
     ))]
     #[error_code(code = 46)]
     ShowSeriesWhereContainsField {
@@ -372,7 +360,7 @@ pub enum QueryError {
     },
 
     #[error_code(code = 47)]
-    #[snafu(display("object store error: {}", msg))]
+    #[snafu(display("object store error: {msg}"))]
     ObjectStore {
         msg: String,
         #[snafu(implicit)]
@@ -381,7 +369,7 @@ pub enum QueryError {
     },
 
     #[error_code(code = 48)]
-    #[snafu(display("Failed to close parquet writer, error: {}", source))]
+    #[snafu(display("Failed to close parquet writer, error: {source}"))]
     CloseParquetWriter {
         source: ParquetError,
         #[snafu(implicit)]
@@ -390,7 +378,7 @@ pub enum QueryError {
     },
 
     #[error_code(code = 49)]
-    #[snafu(display("Failed to serialize data to parquet bytes, error: {}", source))]
+    #[snafu(display("Failed to serialize data to parquet bytes, error: {source}"))]
     SerializeParquet {
         source: ParquetError,
         #[snafu(implicit)]
@@ -399,7 +387,7 @@ pub enum QueryError {
     },
 
     #[error_code(code = 50)]
-    #[snafu(display("Failed to build parquet writer, error: {}", source))]
+    #[snafu(display("Failed to build parquet writer, error: {source}"))]
     BuildParquetArrowWriter {
         source: ParquetError,
         #[snafu(implicit)]
@@ -408,7 +396,7 @@ pub enum QueryError {
     },
 
     #[error_code(code = 51)]
-    #[snafu(display("Failed to serialize data to csv bytes, error: {}", source))]
+    #[snafu(display("Failed to serialize data to csv bytes, error: {source}"))]
     SerializeCsv {
         source: ArrowError,
         #[snafu(implicit)]
@@ -417,7 +405,7 @@ pub enum QueryError {
     },
 
     #[error_code(code = 52)]
-    #[snafu(display("Failed to serialize data to json bytes, error: {}", source))]
+    #[snafu(display("Failed to serialize data to json bytes, error: {source}"))]
     SerializeJson {
         source: ArrowError,
         #[snafu(implicit)]
@@ -426,7 +414,7 @@ pub enum QueryError {
     },
 
     #[error_code(code = 53)]
-    #[snafu(display("{}", source))]
+    #[snafu(display("{source}"))]
     StdIoError {
         source: std::io::Error,
         #[snafu(implicit)]
@@ -435,7 +423,7 @@ pub enum QueryError {
     },
 
     #[error_code(code = 54)]
-    #[snafu(display("{}", source))]
+    #[snafu(display("{source}"))]
     SerdeJsonError {
         source: serde_json::Error,
         #[snafu(implicit)]
@@ -444,7 +432,7 @@ pub enum QueryError {
     },
 
     #[error_code(code = 55)]
-    #[snafu(display("{}", source))]
+    #[snafu(display("{source}"))]
     SnappyError {
         source: snap::Error,
         #[snafu(implicit)]
@@ -453,48 +441,48 @@ pub enum QueryError {
     },
 
     #[error_code(code = 56)]
-    #[snafu(display("Invalid prom remote read request, error: {}", source))]
+    #[snafu(display("Invalid prom remote read request, error: {source}"))]
     InvalidRemoteReadReq {
         source: GenericError,
     },
 
     #[error_code(code = 57)]
-    #[snafu(display("Invalid prom remote write requeset, error: {}", source))]
+    #[snafu(display("Invalid prom remote write requeset, error: {source}"))]
     InvalidRemoteWriteReq {
         source: GenericError,
     },
 
-    #[snafu(display("Invalid TimeWindow parameter : {}", reason))]
+    #[snafu(display("Invalid TimeWindow parameter : {reason}"))]
     #[error_code(code = 58)]
     InvalidTimeWindowParam {
         reason: String,
     },
 
-    #[snafu(display("Unsupported stream type: {}", stream_type))]
+    #[snafu(display("Unsupported stream type: {stream_type}"))]
     #[error_code(code = 59)]
     UnsupportedStreamType {
         stream_type: String,
     },
 
-    #[snafu(display("Stream source factory already exists: {}", stream_type))]
+    #[snafu(display("Stream source factory already exists: {stream_type}"))]
     #[error_code(code = 60)]
     StreamSourceFactoryAlreadyExists {
         stream_type: String,
     },
 
-    #[snafu(display("Event time column not specified of table {}", name))]
+    #[snafu(display("Event time column not specified of table {name}"))]
     #[error_code(code = 61)]
     EventTimeColumnNotSpecified {
         name: String,
     },
 
-    #[snafu(display("Database {} not found.", name))]
+    #[snafu(display("Database {name} not found."))]
     #[error_code(code = 62)]
     DatabaseNotFound {
         name: String,
     },
 
-    #[snafu(display("TenantOptions build fail: {} ", source))]
+    #[snafu(display("TenantOptions build fail: {source} "))]
     #[error_code(code = 63)]
     TenantOptionsBuildFail {
         source: TenantOptionsBuilderError,
@@ -503,26 +491,26 @@ pub enum QueryError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Tenant \"{}\" forbid drop", name))]
+    #[snafu(display("Tenant \"{name}\" forbid drop"))]
     #[error_code(code = 64)]
     ForbidDropTenant {
         name: String,
     },
 
-    #[snafu(display("Database \"{}\" forbid drop", name))]
+    #[snafu(display("Database \"{name}\" forbid drop"))]
     #[error_code(code = 65)]
     ForbidDropDatabase {
         name: String,
     },
 
-    #[snafu(display("Missing option [{}] of table {}", option_name, table_name))]
+    #[snafu(display("Missing option [{option_name}] of table {table_name}"))]
     #[error_code(code = 66)]
     MissingTableOptions {
         option_name: String,
         table_name: String,
     },
 
-    #[snafu(display("Invalid option [{}] of table {}: {}", option_name, table_name, reason))]
+    #[snafu(display("Invalid option [{option_name}] of table {table_name}: {reason}"))]
     #[error_code(code = 67)]
     InvalidTableOption {
         option_name: String,
@@ -530,24 +518,20 @@ pub enum QueryError {
         reason: String,
     },
 
-    #[snafu(display(
-        "Invalid data type for column: {}, valid are: {}",
-        column_name,
-        data_type
-    ))]
+    #[snafu(display("Invalid data type for column: {column_name}, valid are: {data_type}",))]
     #[error_code(code = 68)]
     InvalidDataType {
         column_name: String,
         data_type: String,
     },
 
-    #[snafu(display("Stream table checker already exists: {}", stream_type))]
+    #[snafu(display("Stream table checker already exists: {stream_type}"))]
     #[error_code(code = 69)]
     StreamTableCheckerAlreadyExists {
         stream_type: String,
     },
 
-    #[snafu(display("Serialization failed: {}", source))]
+    #[snafu(display("Serialization failed: {source}"))]
     #[error_code(code = 70)]
     BincodeSerialize {
         source: GenericError,
@@ -556,7 +540,7 @@ pub enum QueryError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Persist query info, error: {}", reason))]
+    #[snafu(display("Persist query info, error: {reason}"))]
     #[error_code(code = 71)]
     PersistQuery {
         reason: String,
@@ -565,50 +549,50 @@ pub enum QueryError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Analyze pushed down predicates, error: {}", source))]
+    #[snafu(display("Analyze pushed down predicates, error: {source}"))]
     #[error_code(code = 72)]
     AnalyzePushedFilter {
         source: ModelError,
     },
 
-    #[snafu(display("Invalid geometry type, error: {}", reason))]
+    #[snafu(display("Invalid geometry type, error: {reason}"))]
     #[error_code(code = 73)]
     InvalidGeometryType {
         reason: String,
     },
 
-    #[snafu(display("User '{}' is prohibited from being dropped", user))]
+    #[snafu(display("User '{user}' is prohibited from being dropped"))]
     #[error_code(code = 74)]
     ForbiddenDropUser {
         user: String,
     },
 
-    #[snafu(display("Tenant {} cannot be restricted", tenant))]
+    #[snafu(display("Tenant {tenant} cannot be restricted"))]
     #[error_code(code = 75)]
     ForbiddenLimitTenant {
         tenant: String,
     },
 
-    #[snafu(display("Couldn't drop system role {}", role))]
+    #[snafu(display("Couldn't drop system role {role}"))]
     #[error_code(code = 76)]
     ForbiddenDropSystemRole {
         role: String,
     },
 
-    #[snafu(display("Couldn't create a role with the same name as system role: {}", role))]
+    #[snafu(display("Couldn't create a role with the same name as system role: {role}"))]
     #[error_code(code = 77)]
     ForbiddenCreateSystemRole {
         role: String,
     },
 
-    #[snafu(display("Replica Set({}) not found replica in node {}", replica_id, node_id))]
+    #[snafu(display("Replica Set({replica_id}) not found replica in node {node_id}"))]
     #[error_code(code = 78)]
     ReplicaNotFound {
         replica_id: ReplicationSetId,
         node_id: NodeId,
     },
 
-    #[snafu(display("model error {}", source))]
+    #[snafu(display("model error {source}"))]
     #[error_code(code = 79)]
     Models {
         source: ModelError,

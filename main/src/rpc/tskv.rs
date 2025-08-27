@@ -221,7 +221,7 @@ impl TskvService for TskvServiceImpl {
         let ping_req = _request.into_inner();
         let ping_body = flatbuffers::root::<PingBody>(&ping_req.body);
         if let Err(e) = ping_body {
-            error!("{}", e);
+            error!("{e}");
         } else {
             info!("ping_req:body(flatbuffer): {:?}", ping_body);
         }
@@ -255,7 +255,7 @@ impl TskvService for TskvServiceImpl {
         let replica = client
             .get_replication_set(&inner.db_name, inner.replica_id)
             .await
-            .map_err(|err| self.internal_status(format!("Meta for replication set: {:?}", err)))?
+            .map_err(|err| self.internal_status(format!("Meta for replication set: {err:?}")))?
             .ok_or_else(|| {
                 self.internal_status(format!("Not Found Replica Set({})", inner.replica_id))
             })?;

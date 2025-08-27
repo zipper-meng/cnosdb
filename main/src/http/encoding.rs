@@ -43,7 +43,7 @@ pub fn get_content_encoding_from_header(header: &Header) -> Result<Option<Encodi
             Some(encoding) => Ok(Some(encoding)),
             None => {
                 let e = HttpError::InvalidHeader {
-                    reason: format!("content encoding not support: {}", s),
+                    reason: format!("content encoding not support: {s}"),
                 };
                 error!("get_content_encoding_from_header: {:?}", e);
                 Err(reject::custom(e))

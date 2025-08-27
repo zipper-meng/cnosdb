@@ -61,7 +61,7 @@ impl RaftNode {
             .await
             .map_err(|err| {
                 RaftInternalErrSnafu {
-                    msg: format!("New raft({}) execute failed: {}", id, err),
+                    msg: format!("New raft({id}) execute failed: {err}"),
                 }
                 .build()
             })?;
@@ -106,7 +106,7 @@ impl RaftNode {
             Ok(())
         } else if let Err(err) = result {
             Err(RaftInternalErrSnafu {
-                msg: format!("Initialize raft group failed: {}", err),
+                msg: format!("Initialize raft group failed: {err}"),
             }
             .build())
         } else {
@@ -117,7 +117,7 @@ impl RaftNode {
         match self.raft.is_initialized().await {
             Ok(flag) => Ok(flag),
             Err(err) => Err(ReplicationError::RaftInternalErr {
-                msg: format!("Initialize raft group failed: {}", err),
+                msg: format!("Initialize raft group failed: {err}"),
             }),
         }
     }
@@ -130,7 +130,7 @@ impl RaftNode {
     ) -> ReplicationResult<()> {
         self.raft.add_learner(id, info, true).await.map_err(|err| {
             RaftInternalErrSnafu {
-                msg: format!("Addlearner raft execute failed: {}", err),
+                msg: format!("Addlearner raft execute failed: {err}"),
             }
             .build()
         })?;
@@ -149,7 +149,7 @@ impl RaftNode {
             .await
             .map_err(|err| {
                 RaftInternalErrSnafu {
-                    msg: format!("Change membership raft execute failed: {}", err),
+                    msg: format!("Change membership raft execute failed: {err}"),
                 }
                 .build()
             })?;
@@ -183,7 +183,7 @@ impl RaftNode {
 
         waiter.metrics(func, &message).await.map_err(|err| {
             RaftInternalErrSnafu {
-                msg: format!("wait condition: {}, error: {}", message, err),
+                msg: format!("wait condition: {message}, error: {err}"),
             }
             .build()
         })

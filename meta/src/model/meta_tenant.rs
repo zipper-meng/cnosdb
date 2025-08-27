@@ -99,10 +99,7 @@ impl TenantMeta {
         if let Some(max) = max_databases {
             if db_num >= *max {
                 return Err(MetaError::ObjectLimit {
-                    msg: format!(
-                        "Create database failed, the maximum number of database is {}",
-                        max
-                    ),
+                    msg: format!("Create database failed, the maximum number of database is {max}"),
                 });
             }
         }
@@ -112,8 +109,7 @@ impl TenantMeta {
             if replica as usize > *max {
                 return Err(MetaError::ObjectLimit {
                     msg: format!(
-                        "Create database failed, the maximum number of database's replica is {}",
-                        max
+                        "Create database failed, the maximum number of database's replica is {max}"
                     ),
                 });
             }
@@ -124,8 +120,7 @@ impl TenantMeta {
             if shard as usize > *max {
                 return Err(MetaError::ObjectLimit {
                     msg: format!(
-                        "Create database failed, the maximum number of database's shards is {}",
-                        max
+                        "Create database failed, the maximum number of database's shards is {max}"
                     ),
                 });
             }
@@ -136,7 +131,7 @@ impl TenantMeta {
                 > CnosDuration::new_with_day(*day as u64).to_nanoseconds()
             {
                 return Err(MetaError::ObjectLimit {
-                    msg: format!("TTL reached limit, max is {} days", day),
+                    msg: format!("TTL reached limit, max is {day} days"),
                 });
             }
         }
@@ -158,7 +153,7 @@ impl TenantMeta {
         if let Some(max) = max_users_number {
             if user_number >= *max {
                 return Err(MetaError::ObjectLimit {
-                    msg: format!("users reached limit, max is {}", max),
+                    msg: format!("users reached limit, max is {max}"),
                 });
             }
         }
@@ -577,7 +572,7 @@ impl TenantMeta {
         }
 
         Err(MetaError::CommonError {
-            msg: format!("create bucket unknown error db:{} {}", db, ts),
+            msg: format!("create bucket unknown error db:{db} {ts}"),
         })
     }
 
@@ -838,8 +833,8 @@ impl TenantMeta {
         };
 
         info!(
-            "change replica set({}) new leader({})",
-            info.repl_set_id, new_leader
+            "change replica set({}) new leader({new_leader})",
+            info.repl_set_id
         );
 
         let req = command::WriteCommand::ChangeReplSetLeader(args);
@@ -968,15 +963,15 @@ mod test {
     #[tokio::test]
     async fn test_sys_info() {
         let info = sys_info::disk_info();
-        println!("Disk: {:?}", info);
+        println!("Disk: {info:?}");
 
         let info = sys_info::mem_info();
-        println!("Mem: {:?}", info);
+        println!("Mem: {info:?}");
 
         let info = sys_info::cpu_num();
-        println!("Cpu Num: {:?}", info);
+        println!("Cpu Num: {info:?}");
 
         let info = sys_info::loadavg();
-        println!("Cpu Num: {:?}", info);
+        println!("Cpu Num: {info:?}");
     }
 }

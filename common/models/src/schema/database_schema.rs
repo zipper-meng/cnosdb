@@ -94,7 +94,7 @@ impl DatabaseSchema {
 }
 
 pub fn make_owner(tenant_name: &str, database_name: &str) -> String {
-    format!("{}.{}", tenant_name, database_name)
+    format!("{tenant_name}.{database_name}")
 }
 
 /// "tenant.database" -> ("tenant", "database")

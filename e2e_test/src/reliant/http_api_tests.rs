@@ -234,8 +234,7 @@ fn test_compression() {
                         .unwrap();
                 if !resp.status().is_success() {
                     panic!(
-                        "req_encoding: {:?}, resp_encoding: {:?}, resp: {:?}",
-                        req_encoding, resp_encoding, resp
+                        "req_encoding: {req_encoding:?}, resp_encoding: {resp_encoding:?}, resp: {resp:?}"
                     );
                 }
                 let resp_bytes_enc = resp.bytes().unwrap();
@@ -243,8 +242,7 @@ fn test_compression() {
                 let resp_text = String::from_utf8(resp_bytes_dec.to_vec()).unwrap();
                 assert_eq!(
                     resp_text, "Int64(1)\n1\n",
-                    "req_encoding: {:?}, resp_encoding: {:?}",
-                    req_encoding, resp_encoding
+                    "req_encoding: {req_encoding:?}, resp_encoding: {resp_encoding:?}"
                 );
             }
         }

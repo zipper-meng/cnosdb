@@ -5,7 +5,7 @@ use super::meta_http_client::HttpClient;
 
 pub async fn show_nodes(bind: &str) -> Result<(), Box<dyn std::error::Error>> {
     let http_client = HttpClient::new();
-    let url = format!("http://{}/metrics", bind);
+    let url = format!("http://{bind}/metrics");
     let body: RaftMetrics<RaftNodeId, RaftNodeInfo> =
         http_client.http_request_method("GET", &url, "").await?;
 
@@ -32,7 +32,7 @@ pub async fn show_nodes(bind: &str) -> Result<(), Box<dyn std::error::Error>> {
                 .map(|id| id.to_string())
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("[{}]", ids)
+            format!("[{ids}]")
         })
         .collect::<Vec<_>>()
         .join(", ");
@@ -45,8 +45,7 @@ pub async fn show_nodes(bind: &str) -> Result<(), Box<dyn std::error::Error>> {
             "Follower"
         };
         println!(
-            "{:<8} {:<15} {:<9} {:<6} {:<16} {:<12} {:<7} {}",
-            node_id, address, state, term, last_log_index, last_applied, leader, members_str
+            "{node_id:<8} {address:<15} {state:<9} {term:<6} {last_log_index:<16} {last_applied:<12} {leader:<7} {members_str}"
         );
     }
     Ok(())

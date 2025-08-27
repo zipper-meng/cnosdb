@@ -72,9 +72,9 @@ impl AccessControl for AccessControlNoCheck {
             .user_with_privileges(user_name, tenant_name)
             .await
             .map_err(|err| {
-                warn!("query user's privilege, error: {}", err);
+                warn!("query user's privilege, error: {err}");
                 AuthError::Metadata {
-                    err: format!("{}", err),
+                    err: format!("{err}"),
                 }
             })
     }

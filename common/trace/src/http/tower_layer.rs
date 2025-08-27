@@ -69,10 +69,7 @@ where
                 request.extensions_mut().insert(ctx);
             }
             (_, Err(e)) => {
-                warn!(
-                    "parse trace context from request {}, error: {}",
-                    self.name, e
-                );
+                warn!("parse trace context from request {}, error: {e}", self.name,);
             }
             (true, _) => {
                 request.extensions_mut().insert(SpanContext::random());

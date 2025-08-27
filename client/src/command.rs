@@ -49,7 +49,7 @@ impl Command {
             Self::Help => print_options.print_batches(&(all_commands_info()?), now),
             Self::ConnectDatabase(database) => {
                 connect_database(database, ctx).await.inspect_err(|_e| {
-                    println!("Cannot connect to database {}.", database);
+                    println!("Cannot connect to database {database}.");
                 })
             }
             Self::ListTables => {
@@ -58,12 +58,12 @@ impl Command {
                 print_options.print_batches(&results, now)
             }
             Self::DescribeTable(name) => {
-                let resp = ctx.sql(format!("DESCRIBE TABLE {}", name)).await?;
+                let resp = ctx.sql(format!("DESCRIBE TABLE {name}")).await?;
                 let results = SessionContext::parse_response(resp).await?;
                 print_options.print_batches(&results, now)
             }
             Self::DescribeDatabase(name) => {
-                let resp = ctx.sql(format!("DESCRIBE DATABASE {}", name)).await?;
+                let resp = ctx.sql(format!("DESCRIBE DATABASE {name}")).await?;
                 let results = SessionContext::parse_response(resp).await?;
                 print_options.print_batches(&results, now)
             }
@@ -87,7 +87,7 @@ impl Command {
             Self::SearchFunctions(function) => {
                 if let Ok(func) = function.parse::<Function>() {
                     let details = func.function_details()?;
-                    println!("{}", details);
+                    println!("{details}");
                     Ok(())
                 } else {
                     Err(anyhow!("{function} is not a supported function"))

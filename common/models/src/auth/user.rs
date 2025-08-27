@@ -264,15 +264,15 @@ impl UserOptions {
 impl std::fmt::Display for UserOptions {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         if let Some(ref e) = self.must_change_password {
-            write!(f, "must_change_password={},", e)?;
+            write!(f, "must_change_password={e},")?;
         }
 
         if let Some(ref e) = self.comment {
-            write!(f, "comment={},", e)?;
+            write!(f, "comment={e},")?;
         }
 
         if let Some(ref e) = self.granted_admin {
-            write!(f, "granted_admin={},", e)?;
+            write!(f, "granted_admin={e},")?;
         }
 
         Ok(())
@@ -367,7 +367,7 @@ impl UserInfo {
     pub fn to_authorization(&self) -> String {
         let auth = match &self.password {
             password if password.is_empty() => format!("{}:", self.user),
-            password => format!("{}:{}", self.user, password),
+            password => format!("{}:{password}", self.user),
         };
         format!("Basic {}", BASE64_STANDARD.encode(auth))
     }

@@ -14,9 +14,7 @@ pub fn check_args(func_name: &str, expects: usize, input: &[DataType]) -> DFResu
         return Err(DataFusionError::External(Box::new(
             AnalyzerSnafu {
                 err: format!(
-                    "The function {:?} expects {} arguments, but {} were provided",
-                    func_name,
-                    expects,
+                    "The function {func_name:?} expects {expects} arguments, but {} were provided",
                     input.len()
                 ),
             }
@@ -33,9 +31,7 @@ pub fn check_args_eq_any(func_name: &str, expects: &[usize], input: &[DataType])
         return Err(DataFusionError::External(Box::new(
             AnalyzerSnafu {
                 err: format!(
-                    "The function {:?} expects {:?} arguments, but {} were provided",
-                    func_name,
-                    expects,
+                    "The function func_name{func_name:?} expects {expects:?} arguments, but {} were provided",
                     input.len()
                 ),
             }

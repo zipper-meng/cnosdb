@@ -21,7 +21,7 @@ impl VarProvider for SimpleSystemVarManager {
         self.vars
             .get(&name)
             .cloned()
-            .ok_or_else(|| DataFusionError::Plan(format!("System variable not found: {}", name)))
+            .ok_or_else(|| DataFusionError::Plan(format!("System variable not found: {name}")))
     }
 
     fn get_type(&self, var_names: &[String]) -> Option<DataType> {
@@ -35,8 +35,7 @@ impl SystemVariableManager for SimpleSystemVarManager {
     fn register_variable(&mut self, name: VarName, value: ScalarValue) -> DFResult<()> {
         if let Some(value) = self.vars.insert(name.clone(), value) {
             return Err(DataFusionError::Internal(format!(
-                "Variable {} already registered with value {:?}",
-                name, value
+                "Variable {name} already registered with value {value:?}",
             )));
         }
 

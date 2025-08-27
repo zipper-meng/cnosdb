@@ -213,10 +213,10 @@ impl Ipv4PortPicker {
                 return Ok(SocketAddrV4::new(host, port));
             }
         }
-        Err(IoError::new(
-            IoErrorKind::Other,
-            format!("No available ports in {:?}", self.range),
-        ))
+        Err(IoError::other(format!(
+            "No available ports in {:?}",
+            self.range
+        )))
     }
 
     fn try_bind(host: Ipv4Addr, port: u16) -> IoResult<bool> {
@@ -261,7 +261,7 @@ mod test {
                 used_addrs.push(addr);
             }
             for addr in used_addrs {
-                println!("Trying bind twice on: {:?}", addr);
+                println!("Trying bind twice on: {addr:?}");
                 let bind_result = TcpListener::bind(addr);
                 assert!(bind_result.is_err());
                 println!("Expected binding error: {:?}", bind_result.unwrap_err());

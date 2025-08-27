@@ -39,7 +39,7 @@ fn get_version(path: &Path) -> String {
         Command::new(path)
             .arg("--version")
             .output()
-            .unwrap_or_else(|_| panic!("failed to get version of {:?}", path))
+            .unwrap_or_else(|_| panic!("failed to get version of {path:?}"))
             .stdout,
     )
     .unwrap()

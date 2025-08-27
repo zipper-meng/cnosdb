@@ -128,10 +128,7 @@ impl Writer<'_> {
         };
         // save Sample
         let labels_str = concat_labels(&labels);
-        debug!(
-            "Metric labels str: {}, row_index: {}",
-            labels_str, row_index
-        );
+        debug!("Metric labels str: {labels_str}, row_index: {row_index}",);
         self.labels_to_series
             .entry(labels_str)
             .or_insert_with(|| TimeSeries {

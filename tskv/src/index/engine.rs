@@ -242,7 +242,7 @@ impl IndexEngine {
     ) -> IndexResult<roaring::RoaringBitmap> {
         let mut bitmap = roaring::RoaringBitmap::new();
         if tags.is_empty() {
-            let prefix = format!("{}.", tab);
+            let prefix = format!("{tab}.");
             let it = self.prefix(prefix.as_bytes())?;
             for val in it {
                 let val = val.map_err(|e| IndexStorageSnafu { msg: e.to_string() }.build())?;

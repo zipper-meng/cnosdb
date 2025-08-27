@@ -41,7 +41,7 @@ impl Service for TcpService {
             let listener = TcpListener::bind(&addr).await.unwrap();
             loop {
                 let (mut stream, _) = listener.accept().await.map_err(|e| Error::Common {
-                    reason: format!("{:?}", e),
+                    reason: format!("{e:?}"),
                 })?;
                 let coord = coord.clone();
                 tokio::spawn(async move {
@@ -52,7 +52,7 @@ impl Service for TcpService {
                             .read_buf(&mut buffer)
                             .await
                             .map_err(|e| Error::Common {
-                                reason: format!("{:?}", e),
+                                reason: format!("{e:?}"),
                             })?
                             == 0
                         {
@@ -84,7 +84,7 @@ impl Service for TcpService {
                                 )
                                 .await
                                 .map_err(|e| Error::Common {
-                                    reason: format!("open opentsdb write point failed: {:?}", e),
+                                    reason: format!("open opentsdb write point failed: {e:?}"),
                                 })?;
                             buffer.drain(..pos);
                         }

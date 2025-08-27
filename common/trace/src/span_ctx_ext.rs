@@ -6,10 +6,10 @@ use snafu::Snafu;
 
 #[derive(Debug, Snafu)]
 pub enum DecodeError {
-    #[snafu(display("value decode error: {}", source))]
+    #[snafu(display("value decode error: {source}"))]
     ValueDecodeError { source: ParseIntError },
 
-    #[snafu(display("Expected \"trace-id:span-id\", found: {}", value))]
+    #[snafu(display("Expected \"trace-id:span-id\", found: {value}"))]
     InvalidTrace { value: String },
 }
 

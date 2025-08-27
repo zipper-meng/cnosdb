@@ -90,8 +90,7 @@ impl ExecutionPlan for TableWriterMergeExec {
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         debug!(
-            "Start TableWriterMergeExec::execute for partition {} of context session_id {} and task_id {:?}",
-            partition,
+            "Start TableWriterMergeExec::execute for partition {partition} of context session_id {} and task_id {:?}",
             context.session_id(),
             context.task_id()
         );

@@ -8,7 +8,7 @@ pub async fn restore(bind: &str, file_path: &str) -> Result<(), Box<dyn std::err
         .timeout(Duration::from_secs(600))
         .build()?;
 
-    let url = format!("http://{}/restore", bind);
+    let url = format!("http://{bind}/restore");
     let mut file = File::open(file_path)?;
     let mut file_content = Vec::new();
     file.read_to_end(&mut file_content)?;
@@ -21,9 +21,9 @@ pub async fn restore(bind: &str, file_path: &str) -> Result<(), Box<dyn std::err
     let response_body = response.text().await?;
 
     if response_body.contains("Err") {
-        return Err(format!("Error in restore response: {:?}", response_body).into());
+        return Err(format!("Error in restore response: {response_body:?}").into());
     }
-    println!("{}", response_body);
+    println!("{response_body}");
 
     Ok(())
 }

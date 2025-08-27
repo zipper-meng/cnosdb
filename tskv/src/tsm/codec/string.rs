@@ -511,7 +511,7 @@ mod tests {
 
     #[test]
     fn encode_multi_compressed() {
-        let src_strings: Vec<_> = (0..10).map(|i| format!("value {}", i)).collect();
+        let src_strings: Vec<_> = (0..10).map(|i| format!("value {i}")).collect();
         let src: Vec<_> = src_strings.iter().map(|s| s.as_bytes()).collect();
         let mut dst = vec![];
 
@@ -628,7 +628,7 @@ mod tests {
             .iter()
             .map(|s| std::str::from_utf8(s).unwrap())
             .collect();
-        let expected: Vec<_> = (0..10).map(|i| format!("value {}", i)).collect();
+        let expected: Vec<_> = (0..10).map(|i| format!("value {i}")).collect();
         assert_eq!(dst_as_strings, expected);
 
         let null_bitset = NullBuffer::new(BooleanBuffer::from(vec![true; 10]));

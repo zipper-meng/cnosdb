@@ -185,7 +185,7 @@ mod test {
         let iter = db.range(&reader, &range).unwrap();
         for pair in iter {
             let (index, _) = pair.unwrap();
-            println!("--- {}", index);
+            println!("--- {index}");
         }
     }
 }

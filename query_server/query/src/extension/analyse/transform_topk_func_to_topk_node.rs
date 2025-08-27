@@ -86,16 +86,14 @@ fn valid_exprs(exprs: &[Expr]) -> Result<bool> {
             1 => return Ok(true),
             _ => {
                 return Err(DataFusionError::Plan(format!(
-                    "{}, found: {:#?}",
-                    INVALID_EXPRS, exprs
+                    "{INVALID_EXPRS}, found: {exprs:#?}"
                 )))
             }
         }
     }
 
     Err(DataFusionError::Plan(format!(
-        "{}, found: {:#?}",
-        INVALID_EXPRS, exprs
+        "{INVALID_EXPRS}, found: {exprs:#?}"
     )))
 }
 

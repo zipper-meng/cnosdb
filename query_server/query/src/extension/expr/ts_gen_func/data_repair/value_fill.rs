@@ -90,7 +90,7 @@ impl FillMethod {
 fn get_fill_method_from_arg(arg: Arg) -> DFResult<FillMethod> {
     Ok(match arg.method.as_deref() {
         Some(s) => FillMethod::try_from_str(s).ok_or_else(|| {
-            datafusion::error::DataFusionError::Execution(format!("Invalid fill method: {}", s))
+            datafusion::error::DataFusionError::Execution(format!("Invalid fill method: {s}"))
         })?,
         None => FillMethod::Linear,
     })

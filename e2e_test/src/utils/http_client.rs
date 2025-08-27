@@ -16,7 +16,7 @@ pub struct Client {
 impl Client {
     pub fn new() -> Self {
         let inner = ClientBuilder::new().no_proxy().build().unwrap_or_else(|e| {
-            panic!("Failed to build http client: {}", e);
+            panic!("Failed to build http client: {e}");
         });
         Self {
             inner,
@@ -27,7 +27,7 @@ impl Client {
 
     pub fn with_auth(user: String, password: Option<String>) -> Self {
         let inner = ClientBuilder::new().no_proxy().build().unwrap_or_else(|e| {
-            panic!("Failed to build http client: {}", e);
+            panic!("Failed to build http client: {e}");
         });
         Self {
             inner,
@@ -48,7 +48,7 @@ impl Client {
             .add_root_certificate(cert)
             .build()
             .unwrap_or_else(|e| {
-                panic!("Failed to build http client with tls: {}", e);
+                panic!("Failed to build http client with tls: {e}");
             });
         Self {
             inner,

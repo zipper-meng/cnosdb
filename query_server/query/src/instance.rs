@@ -158,12 +158,12 @@ where
             "infos: {}\nstatus: {}\n",
             infos
                 .iter()
-                .map(|e| format!("{:?}", e))
+                .map(|e| format!("{e:?}"))
                 .collect::<Vec<_>>()
                 .join(","),
             status
                 .iter()
-                .map(|e| format!("{:?}", e))
+                .map(|e| format!("{e:?}"))
                 .collect::<Vec<_>>()
                 .join(",")
         )
@@ -381,7 +381,7 @@ mod tests {
         //     .unwrap()
         //     .to_string();
 
-        // println!("{}", formatted);
+        // println!("{formatted}");
 
         assert_batches_eq!(expected, result.deref_mut());
     }
@@ -482,7 +482,7 @@ mod tests {
         //     .unwrap()
         //     .to_string();
 
-        // println!("{}", formatted);
+        // println!("{formatted}");
 
         assert_batches_eq!(expected, result.deref_mut());
     }

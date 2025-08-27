@@ -62,8 +62,7 @@ impl ScalarUDFImpl for TimeWindowFunc {
         _args: datafusion::logical_expr::ScalarFunctionArgs,
     ) -> DFResult<ColumnarValue> {
         Err(DataFusionError::Execution(format!(
-            "{} has no specific implementation, should be converted to Expand operator.",
-            TIME_WINDOW
+            "{TIME_WINDOW} has no specific implementation, should be converted to Expand operator."
         )))
     }
 }

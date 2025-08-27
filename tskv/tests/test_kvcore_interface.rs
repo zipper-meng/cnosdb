@@ -346,7 +346,7 @@ mod tests {
 
         tskv_write(rt.clone(), &tskv, "cnosdb", "public", 0, 1, request.clone());
 
-        println!("{:?}", tskv);
+        println!("{tskv:?}");
         println!("Leave serial test: test_kvcore_build_row_data");
     }
 
@@ -523,7 +523,7 @@ mod tests {
         test_sync();
         let duration1 = start1.elapsed();
 
-        println!("ASync Time elapsed  is: {:?}", duration);
-        println!("Sync Time elapsed  is: {:?}", duration1);
+        println!("ASync Time elapsed  is: {duration:?}");
+        println!("Sync Time elapsed  is: {duration1:?}");
     }
 }

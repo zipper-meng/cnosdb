@@ -15,47 +15,47 @@ use crate::{RaftNodeId, RaftNodeInfo};
 pub struct Key {}
 impl Key {
     fn node_summary(id: u32) -> String {
-        format!("node_summary_{}", id)
+        format!("node_summary_{id}")
     }
 
     fn applied_log(id: u32) -> String {
-        format!("applied_log_{}", id)
+        format!("applied_log_{id}")
     }
 
     fn snapshot_applied_log(id: u32) -> String {
-        format!("snapshot_applied_log_{}", id)
+        format!("snapshot_applied_log_{id}")
     }
 
     fn membership(id: u32) -> String {
-        format!("membership_{}", id)
+        format!("membership_{id}")
     }
 
     fn membership_list_prefix(id: u32) -> String {
-        format!("membership_{}_", id)
+        format!("membership_{id}_")
     }
 
     fn membership_list(id: u32, index: u64) -> String {
-        format!("membership_{}_{}", id, index)
+        format!("membership_{id}_{index}")
     }
 
     fn purged_log_id(id: u32) -> String {
-        format!("purged_log_id_{}", id)
+        format!("purged_log_id_{id}")
     }
 
     fn snapshot_index(id: u32) -> String {
-        format!("snapshot_index_{}", id)
+        format!("snapshot_index_{id}")
     }
 
     fn vote_key(id: u32) -> String {
-        format!("vote_{}", id)
+        format!("vote_{id}")
     }
 
     fn snapshot_key(id: u32) -> String {
-        format!("snapshot_{}", id)
+        format!("snapshot_{id}")
     }
 
     fn already_init_key(id: u32) -> String {
-        format!("already_init_{}", id)
+        format!("already_init_{id}")
     }
 }
 
@@ -471,7 +471,7 @@ mod test {
         let iter = tdb.range(&rtxn, &(101..103)).unwrap();
         for pair in iter {
             let (index, data) = pair.unwrap();
-            println!("--- {}, {}", index, data);
+            println!("--- {index}, {data}");
         }
 
         fs::remove_dir_all(path).unwrap();

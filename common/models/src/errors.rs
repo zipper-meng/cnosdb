@@ -18,7 +18,7 @@ pub enum ModelError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Arrow error: {}", source))]
+    #[snafu(display("Arrow error: {source}"))]
     Arrow {
         source: ArrowError,
         #[snafu(implicit)]
@@ -26,10 +26,10 @@ pub enum ModelError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Invalid point: {}", source))]
+    #[snafu(display("Invalid point: {source}"))]
     InvalidPoint { source: PointsError },
 
-    #[snafu(display("Invalid tag: {}", err))]
+    #[snafu(display("Invalid tag: {err}"))]
     InvalidTag {
         err: String,
         #[snafu(implicit)]
@@ -37,7 +37,7 @@ pub enum ModelError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Invalid field: {}", err))]
+    #[snafu(display("Invalid field: {err}"))]
     InvalidField {
         err: String,
         #[snafu(implicit)]
@@ -45,7 +45,7 @@ pub enum ModelError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Invalid flatbuffer message: {}", err))]
+    #[snafu(display("Invalid flatbuffer message: {err}"))]
     InvalidFlatbufferMessage {
         err: String,
         #[snafu(implicit)]
@@ -53,7 +53,7 @@ pub enum ModelError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Invalid serde message: {}", source))]
+    #[snafu(display("Invalid serde message: {source}"))]
     InvalidSerdeMessage {
         source: bincode::Error,
         #[snafu(implicit)]
@@ -61,7 +61,7 @@ pub enum ModelError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Invalid query expr message: {}", source))]
+    #[snafu(display("Invalid query expr message: {source}"))]
     InvalidQueryExprMsg {
         source: bincode::Error,
         #[snafu(implicit)]
@@ -70,9 +70,8 @@ pub enum ModelError {
     },
 
     #[snafu(display(
-        "Internal error: {}. This was likely caused by a bug in Cnosdb's \
+        "Internal error: {err}. This was likely caused by a bug in Cnosdb's \
     code and we would welcome that you file an bug report in our issue tracker",
-        err
     ))]
     Internal {
         err: String,
@@ -81,7 +80,7 @@ pub enum ModelError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("IO operator: {}", source))]
+    #[snafu(display("IO operator: {source}"))]
     IOErrors {
         source: io::Error,
         #[snafu(implicit)]
@@ -89,7 +88,7 @@ pub enum ModelError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Failed to convert vec to string, because: {}", msg))]
+    #[snafu(display("Failed to convert vec to string, because: {msg}"))]
     EncodingError {
         msg: String,
         #[snafu(implicit)]
@@ -104,7 +103,7 @@ pub enum ModelError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("Dump Error: {}", msg))]
+    #[snafu(display("Dump Error: {msg}"))]
     DumpError {
         msg: String,
         #[snafu(implicit)]

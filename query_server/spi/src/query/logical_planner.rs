@@ -435,8 +435,7 @@ pub fn unset_option_to_alter_tenant_action(
         }
         _ => {
             let source = ParserError::ParserError(format!(
-                "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}], [{TENANT_OPTION_DROP_AFTER}] found [{}]",
-                ident
+                "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}], [{TENANT_OPTION_DROP_AFTER}] found [{ident}]"
             ));
             return Err(ParserSnafu.into_error(source));
         }
@@ -475,7 +474,7 @@ pub fn sql_option_to_alter_tenant_action(
         TENANT_OPTION_DROP_AFTER => {
             let drop_after_str = parse_string_value(value).context(ParserSnafu)?;
             let drop_after = CnosDuration::new(&drop_after_str).ok_or_else(|| QueryError::Parser {
-                source: ParserError::ParserError(format!("{} is not a valid duration or duration overflow", drop_after_str)),
+                source: ParserError::ParserError(format!("{drop_after_str} is not a valid duration or duration overflow")),
             })?;
             tenant_options_builder.drop_after(drop_after);
             Privilege::Global(GlobalPrivilege::Tenant(Some(tenant_id)))
@@ -483,8 +482,7 @@ pub fn sql_option_to_alter_tenant_action(
         _ => {
             return Err(QueryError::Parser {
                 source: ParserError::ParserError(format!(
-                "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}], [{TENANT_OPTION_DROP_AFTER}] found [{}]",
-                name
+                "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}], [{TENANT_OPTION_DROP_AFTER}] found [{name}]"
             )),
             })
         }
@@ -515,15 +513,14 @@ pub fn sql_options_to_tenant_options(options: Vec<SqlOption>) -> QueryResult<Ten
             TENANT_OPTION_DROP_AFTER => {
                 let drop_after_str = parse_string_value(value).context(ParserSnafu)?;
                 let drop_after = CnosDuration::new(&drop_after_str).ok_or_else(|| QueryError::Parser {
-                    source: ParserError::ParserError(format!("{} is not a valid duration or duration overflow", drop_after_str)),
+                    source: ParserError::ParserError(format!("{drop_after_str} is not a valid duration or duration overflow")),
                 })?;
                 builder.drop_after(drop_after);
             }
             _ => {
                 return Err(QueryError::Parser {
                     source: ParserError::ParserError(format!(
-                        "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}], [{TENANT_OPTION_DROP_AFTER}] found [{}]",
-                        name
+                        "Expected option [{TENANT_OPTION_COMMENT}], [{TENANT_OPTION_LIMITER}], [{TENANT_OPTION_DROP_AFTER}] found [{name}]"
                     )),
                 })
             }
@@ -573,8 +570,7 @@ pub fn sql_options_to_user_options(
             }
             _ => {
                 return Err(ParserError::ParserError(format!(
-                "Expected option [password | rsa_public_key | comment | granted_admin], found [{}]",
-                name
+                "Expected option [password | rsa_public_key | comment | granted_admin], found [{name}]"
             )))
             }
         }
@@ -735,7 +731,7 @@ impl CopyOptionsBuilder {
                 }
                 option => {
                     return Err(QueryError::Semantic {
-                        err: format!("Unsupported option [{}]", option),
+                        err: format!("Unsupported option [{option}]"),
                     })
                 }
             }
@@ -776,10 +772,7 @@ impl FileFormatOptionsBuilder {
             "CSV" => Ok(FileType::CSV),
             "JSON" => Ok(FileType::JSON),
             _ => Err(QueryError::Semantic {
-                err: format!(
-                    "Unknown FileType: {}, only support AVRO | PARQUET | CSV | JSON",
-                    s
-                ),
+                err: format!("Unknown FileType: {s}, only support AVRO | PARQUET | CSV | JSON"),
             }),
         }
     }
@@ -791,10 +784,7 @@ impl FileFormatOptionsBuilder {
             "BZIP2" | "BZ2" => Ok(FileCompressionType::BZIP2),
             "" => Ok(FileCompressionType::UNCOMPRESSED),
             _ => Err(QueryError::Semantic {
-                err: format!(
-                    "Unknown FileCompressionType: {}, only support GZIP | BZIP2",
-                    s
-                ),
+                err: format!("Unknown FileCompressionType: {s}, only support GZIP | BZIP2"),
             }),
         }
     }
@@ -840,7 +830,7 @@ impl FileFormatOptionsBuilder {
                 }
                 option => {
                     return Err(QueryError::Semantic {
-                        err: format!("Unsupported option [{}]", option),
+                        err: format!("Unsupported option [{option}]"),
                     })
                 }
             }
@@ -888,7 +878,7 @@ pub fn parse_connection_options(
         (UriSchema::Local, _) => ConnectionOptions::Local,
         (UriSchema::Custom(schema), _) => {
             return Err(QueryError::Semantic {
-                err: format!("Unsupported url schema [{}]", schema),
+                err: format!("Unsupported url schema [{schema}]"),
             })
         }
         (_, None) => {
@@ -929,7 +919,7 @@ fn parse_s3_options(bucket: &str, options: Vec<SqlOption>) -> QueryResult<S3Stor
             }
             _ => {
                 return Err(QueryError::Semantic {
-                    err: format!("Unsupported option [{}]", name),
+                    err: format!("Unsupported option [{name}]"),
                 })
             }
         }
@@ -960,7 +950,7 @@ fn parse_gcs_options(bucket: &str, options: Vec<SqlOption>) -> QueryResult<GcsSt
             }
             _ => {
                 return Err(QueryError::Semantic {
-                    err: format!("Unsupported option [{}]", name),
+                    err: format!("Unsupported option [{name}]"),
                 })
             }
         }
@@ -1000,7 +990,7 @@ fn parse_azure_options(bucket: &str, options: Vec<SqlOption>) -> QueryResult<Azb
             }
             _ => {
                 return Err(QueryError::Semantic {
-                    err: format!("Unsupported option [{}]", name),
+                    err: format!("Unsupported option [{name}]"),
                 })
             }
         }

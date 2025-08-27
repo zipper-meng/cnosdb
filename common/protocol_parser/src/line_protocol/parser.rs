@@ -11,16 +11,16 @@ pub enum Error {
     #[snafu(display("invalid line protocol syntax"))]
     InvaildSyntax,
 
-    #[snafu(display("unexpect token '{}' at {}", token, pos))]
+    #[snafu(display("unexpect token '{token}' at {pos}"))]
     UnexpectedToken { pos: usize, token: char },
 
-    #[snafu(display("unexpect end line start at '{}'", pos))]
+    #[snafu(display("unexpect end line start at '{pos}'"))]
     UnexpectedEnd { pos: usize },
 
-    #[snafu(display("invalid field value: '{}'", content))]
+    #[snafu(display("invalid field value: '{content}'"))]
     FieldValue { content: String },
 
-    #[snafu(display("fail to parse timestamp at {}", pos))]
+    #[snafu(display("fail to parse timestamp at {pos}"))]
     Timestamp { pos: usize },
 }
 
@@ -448,9 +448,8 @@ mod test {
 
         let lines = "ma,ta=2\\,,tb=1 fa=\"112\\\"3\",fb=2,fc=\"hello, world\" 1  \n mb,tb=2,tc=abc fa=1.3,fc=0.9,fs=\"\"";
         println!(
-            "Length of the line protocol string in test case: {}\n======\n{}\n======",
+            "Length of the line protocol string in test case: {}\n======\n{lines}\n======",
             lines.len(),
-            lines
         );
 
         let parser = Parser::new(-1);
@@ -599,7 +598,7 @@ comma\,1,equals\==e\,x,two=val2 field\=x="fir\"
         let lines = parser.parse(&lp_lines).unwrap();
 
         for l in lines {
-            println!("{:?}", l);
+            println!("{l:?}");
         }
     }
 
@@ -658,7 +657,7 @@ comma\,1,equals\==e\,x,two=val2 field\=x="fir\"
                       abc2,foo=bar x="second" 200"#;
         let lines = parser.parse(data).unwrap();
         for line in lines {
-            println!("--- {:?}", line);
+            println!("--- {line:?}");
         }
     }
 }

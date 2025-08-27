@@ -37,8 +37,7 @@ pub async fn generate_pprof() -> Result<String, String> {
         report.flamegraph(file).map_err(|e| e.to_string())?;
 
         Ok(format!(
-            "gernate report in {} {}",
-            profile_name, flamegraph_name
+            "generate report in {profile_name} {flamegraph_name}"
         ))
     } else {
         Err("build report failed".to_string())
@@ -57,8 +56,7 @@ pub async fn generate_jeprof() -> Result<String, String> {
     dump_mem_profile()?;
 
     Ok(format!(
-        "generate memory profile in: {}",
-        PROFILE_OUTPUT_FILE_STR
+        "generate memory profile in: {PROFILE_OUTPUT_FILE_STR}"
     ))
 }
 

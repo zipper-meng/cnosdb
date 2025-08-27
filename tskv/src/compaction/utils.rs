@@ -42,8 +42,7 @@ pub fn filter_record_batch_by_time_range(
             .values(),
         _ => {
             return Err(ArrowError::InvalidArgumentError(format!(
-                "Unsupported time column type: {:?}",
-                time_column_type
+                "Unsupported time column type: {time_column_type:?}"
             )));
         }
     };

@@ -114,9 +114,7 @@ where
     ) -> DFResult<SendableRecordBatchStream> {
         let session_id = context.session_id();
         debug!(
-            "Start StateSaveExec::execute for partition {} of context session_id {} and task_id {:?}, metadata: {:?}",
-            partition,
-            session_id,
+            "Start StateSaveExec::execute for partition {partition} of context session_id {session_id} and task_id {:?}, metadata: {:?}",
             context.task_id(),
             self.input.schema().metadata(),
         );

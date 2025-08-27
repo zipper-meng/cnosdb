@@ -104,7 +104,7 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                         Err(err) => {
                             if let CoordinatorError::PreExecution { ref error } = err {
                                 if let Some(vnode) = self.option.split.pop_front() {
-                                    warn!("failover reader try to read another vnode: {:?}, error: {}", vnode, error);
+                                    warn!("failover reader try to read another vnode: {vnode:?}, error: {error}");
                                     self.vnode = vnode;
                                     self.state = StreamState::Idle;
                                 } else {
@@ -143,7 +143,7 @@ impl<O: VnodeOpener> CheckedCoordinatorRecordBatchStream<O> {
                                     let meta = self.meta.clone();
                                     let tenant = self.option.tenant_name();
 
-                                    trace::warn!("updated vnode {} status broken", id);
+                                    trace::warn!("updated vnode {id} status broken");
                                     meta.try_change_local_vnode_status(
                                         tenant,
                                         id,
@@ -215,18 +215,12 @@ pub async fn change_vnode_to_broken(
             return Ok(());
         }
 
-        warn!(
-            "Vnode not found: {}, when changing vnode state to broken.",
-            vnode_id
-        );
+        warn!("Vnode not found: {vnode_id}, when changing vnode state to broken.",);
 
         return Ok(());
     }
 
-    warn!(
-        "Tenant not found: {}, when changing vnode state to broken.",
-        tenant
-    );
+    warn!("Tenant not found: {tenant}, when changing vnode state to broken.",);
 
     Ok(())
 }

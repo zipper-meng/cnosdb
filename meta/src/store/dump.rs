@@ -91,7 +91,7 @@ pub fn dump_tenant(
     user_used: &mut BTreeSet<String>,
 ) -> MetaResult<Vec<String>> {
     let mut res = vec![];
-    res.push(format!(r#"\change_tenant {}"#, tenant));
+    res.push(format!(r#"\change_tenant {tenant}"#));
     let dbs_key = KeyPath::tenant_dbs(cluster, tenant);
     let dbs = storage
         .children_data::<DatabaseSchema>(&dbs_key)?

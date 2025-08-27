@@ -94,7 +94,7 @@ impl CnosdbDataTestHelper {
                     if has_failed.load(atomic::Ordering::SeqCst) {
                         break;
                     }
-                    let body = format!("{DEFAULT_TABLE},tag_a=a1,tag_b=b1 value={}", j);
+                    let body = format!("{DEFAULT_TABLE},tag_a=a1,tag_b=b1 value={j}");
                     let mut write_fail_count = 0;
                     // Try write and retry at most 3 times if failed..
                     while write_fail_count < 3 {
@@ -102,7 +102,7 @@ impl CnosdbDataTestHelper {
                             Ok(r) => r,
                             Err(e) => {
                                 write_fail_count += 1;
-                                eprintln!("Failed to write: {}", e);
+                                eprintln!("Failed to write: {e}");
                                 continue;
                             }
                         };
@@ -117,7 +117,7 @@ impl CnosdbDataTestHelper {
                         }
                     }
                     if write_fail_count >= 3 {
-                        eprintln!("Failed to write '{}' after retried 3 times", &body);
+                        eprintln!("Failed to write '{body}' after retried 3 times");
                         has_failed.store(true, atomic::Ordering::SeqCst);
                         break;
                     }
@@ -172,8 +172,7 @@ mod self_tests {
                     .expect("failed to execute kill");
                 if !output.status.success() {
                     println!(
-                        " - failed killing process {} ('{}')",
-                        pid,
+                        " - failed killing process {pid} ('{}')",
                         process.name().to_string_lossy()
                     );
                 }
@@ -210,7 +209,7 @@ mod self_tests {
         } else {
             command.args(cmd_args[1..].iter().chain(["-d", body].iter()));
         }
-        println!("Executing command 'curl': {:?}", command);
+        println!("Executing command 'curl': {command:?}");
         command.output()
     }
 
@@ -293,7 +292,7 @@ fn test_multi_tenants_write_data() {
                 panic!("Failed to do query: {e}");
             }
         };
-        println!("- Result text: {}", &result_csv);
+        println!("- Result text: {result_csv}");
         let line_10 = result_csv.lines().nth(1);
         assert_eq!(line_10, Some("100"));
     }
@@ -498,8 +497,7 @@ fn test_ttl() {
         assert_eq!(
             ok_num,
             expected_meta.len(),
-            "{meta_key} {meta_value} does not contains {:?}",
-            expected_meta
+            "{meta_key} {meta_value} does not contains {expected_meta:?}"
         );
 
         let url = format!(
@@ -580,7 +578,7 @@ fn test_balance() {
         );
         println!("- Writing data.");
         for j in 0..10 {
-            let body = format!("tab_1,ta=a1,tb=b1 value={}", j);
+            let body = format!("tab_1,ta=a1,tb=b1 value={j}");
             data.data_node_clients[0].post(&url, &body).unwrap();
         }
         println!("- Write data completed.");
@@ -648,7 +646,7 @@ fn test_balance() {
                 }
             }
         }
-        println!("- Shard - vnode - node IDs: {:?}", shard_vnode_node_ids);
+        println!("- Shard - vnode - node IDs: {shard_vnode_node_ids:?}");
         assert!(ok, "{meta_data:?} does not contains {meta_key}");
 
         println!("Checking balance...");
@@ -691,7 +689,7 @@ fn test_balance() {
                 // TODO: check balance by data count.
             }
 
-            println!("- Vnode sizes: {:?}", vnode_sizes);
+            println!("- Vnode sizes: {vnode_sizes:?}");
             // TODO: check if balanced by comparing vnode_sizes.
         }
     }

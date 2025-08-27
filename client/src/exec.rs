@@ -35,7 +35,7 @@ pub async fn exec_from_lines(
                 if ctx.get_session_config().process_cli_command {
                     ctx.set_tenant(tenant.to_string());
                 } else {
-                    bail!("Can't process \"\\change_tenant {}\", please add arg --process_cli_command", tenant)
+                    bail!("Can't process \"\\change_tenant {tenant}\", please add arg --process_cli_command")
                 }
             }
             Ok(line) if line.starts_with("\\c") => {
@@ -43,10 +43,7 @@ pub async fn exec_from_lines(
                 if ctx.get_session_config().process_cli_command {
                     ctx.set_database(database);
                 } else {
-                    bail!(
-                        "Can't process \"\\c {}\", please add arg --process_cli_command",
-                        database
-                    )
+                    bail!("Can't process \"\\c {database}\", please add arg --process_cli_command",)
                 }
             }
             Ok(line) => {
@@ -56,9 +53,9 @@ pub async fn exec_from_lines(
                     match exec_and_print(ctx, print_options, query.clone()).await {
                         Ok(_) => {}
                         Err(err) => {
-                            eprintln!("{:?}", err);
+                            eprintln!("{err:?}");
                             if ctx.get_session_config().error_stop {
-                                bail!("{} execute fail, STOP!", query)
+                                bail!("{query} execute fail, STOP!")
                             }
                         }
                     }
@@ -78,9 +75,9 @@ pub async fn exec_from_lines(
         match exec_and_print(ctx, print_options, query.clone()).await {
             Ok(_) => {}
             Err(err) => {
-                eprintln!("{:?}", err);
+                eprintln!("{err:?}");
                 if ctx.get_session_config().error_stop {
-                    bail!("{} execute fail, STOP!", query)
+                    bail!("{query} execute fail, STOP!")
                 }
             }
         }
@@ -101,7 +98,7 @@ pub async fn exec_from_files(
         let (path, file) = file?;
         let mut reader = BufReader::new(file);
         if let Err(e) = exec_from_lines(ctx, &mut reader, print_options).await {
-            bail!("Execute file {} fail, Error: {}", path, e)
+            bail!("Execute file {path} fail, Error: {e}")
         };
     }
     Ok(())
@@ -127,7 +124,7 @@ pub async fn exec_from_repl(ctx: &mut SessionContext, print_options: &PrintOptio
                             if let Some(subcommand) = subcommand {
                                 if let Ok(command) = subcommand.parse::<OutputFormat>() {
                                     if let Err(e) = command.execute(&mut print_options).await {
-                                        eprintln!("{}", e)
+                                        eprintln!("{e}")
                                     }
                                 } else {
                                     eprintln!("'\\{}' is not a valid command", &line[1..]);
@@ -150,7 +147,7 @@ pub async fn exec_from_repl(ctx: &mut SessionContext, print_options: &PrintOptio
             Ok(line) if parse_use_database(&line).is_some() => {
                 if let Some(db) = parse_use_database(&line) {
                     if connect_database(&db, ctx).await.is_err() {
-                        eprintln!("Cannot use database {}.", db);
+                        eprintln!("Cannot use database {db}.");
                     }
                 }
             }
@@ -159,7 +156,7 @@ pub async fn exec_from_repl(ctx: &mut SessionContext, print_options: &PrintOptio
                 rl.add_history_entry(line.trim_end()).unwrap();
                 match exec_and_print(ctx, &print_options, line).await {
                     Ok(_) => {}
-                    Err(err) => eprintln!("{:?}", err),
+                    Err(err) => eprintln!("{err:?}"),
                 }
             }
             Err(ReadlineError::Interrupted) => {
@@ -171,7 +168,7 @@ pub async fn exec_from_repl(ctx: &mut SessionContext, print_options: &PrintOptio
                 break;
             }
             Err(err) => {
-                eprintln!("Unknown error happened {:?}", err);
+                eprintln!("Unknown error happened {err:?}");
                 break;
             }
         }
@@ -281,7 +278,7 @@ pub async fn connect_database(database: &str, ctx: &mut SessionContext) -> Resul
     }
     let old_database = ctx.get_database().to_string();
     ctx.set_database(database);
-    ctx.sql(format!("DESCRIBE DATABASE \"{}\"", database))
+    ctx.sql(format!("DESCRIBE DATABASE \"{database}\""))
         .await
         .inspect_err(|_e| {
             ctx.set_database(old_database.as_str());

@@ -30,7 +30,7 @@ const DEFAULT_NODE_IP: &str = "0.0.0.0";
 
 #[derive(Debug, Snafu)]
 pub enum Error {
-    #[snafu(display("Please inject DBMS.\nBacktrace:\n{}", backtrace))]
+    #[snafu(display("Please inject DBMS.\nBacktrace:\n{backtrace}"))]
     NotFoundDBMS { backtrace: Backtrace },
 
     #[snafu(display("Ensure the format of certificate and private_key is correct."))]
@@ -39,10 +39,10 @@ pub enum Error {
     #[snafu(display("Ensure the TLS configuration is correct"))]
     TLSConfig,
 
-    #[snafu(display("Server Common Error : {}", reason))]
+    #[snafu(display("Server Common Error : {reason}"))]
     Common { reason: String },
 
-    #[snafu(display("Tskv Error: {}", source), context(false))]
+    #[snafu(display("Tskv Error: {source}"), context(false))]
     Tskv {
         source: TskvError,
         backtrace: Backtrace,
@@ -125,7 +125,7 @@ async fn regular_report_node_metrics(meta: MetaRef, heartbeat_interval: Duration
         interval.tick().await;
 
         if let Err(e) = meta.report_node_metrics().await {
-            error!("{}", e);
+            error!("{e}");
         }
     }
 }
@@ -142,7 +142,7 @@ impl ServiceBuilder {
         let meta = self.create_meta(self.metrics_register.clone()).await;
         meta.add_data_node().await.map_err(|e| {
             let reason = format!("Failed to add data node: {e}");
-            error!("{}", reason);
+            error!("{reason}");
             Error::Common { reason }
         })?;
         tokio::spawn(regular_report_node_metrics(
@@ -209,8 +209,8 @@ impl ServiceBuilder {
     ) -> Result<(Option<EngineRef>, CoordinatorRef), Error> {
         let meta = self.create_meta(self.metrics_register.clone()).await;
         meta.add_data_node().await.map_err(|e| {
-            let reason = format!("Failed to add data node: {:?}", e);
-            error!("{}", reason);
+            let reason = format!("Failed to add data node: {e:?}");
+            error!("{reason}");
             Error::Common { reason }
         })?;
         tokio::spawn(regular_report_node_metrics(
@@ -339,12 +339,7 @@ impl ServiceBuilder {
 
         let addr = default_http_addr
             .to_socket_addrs()
-            .map_err(|e| {
-                format!(
-                    "Cannot resolve http_listen_addr '{}': {}",
-                    default_http_addr, e
-                )
-            })
+            .map_err(|e| format!("Cannot resolve http_listen_addr '{default_http_addr}': {e}"))
             .unwrap()
             .collect::<Vec<SocketAddr>>()
             .first()
@@ -372,12 +367,7 @@ impl ServiceBuilder {
 
         let addr = default_grpc_addr
             .to_socket_addrs()
-            .map_err(|e| {
-                format!(
-                    "Cannot resolve grpc_listen_addr '{}': {}",
-                    default_grpc_addr, e
-                )
-            })
+            .map_err(|e| format!("Cannot resolve grpc_listen_addr '{default_grpc_addr}': {e}"))
             .unwrap()
             .collect::<Vec<SocketAddr>>()
             .first()
@@ -415,10 +405,7 @@ impl ServiceBuilder {
         let addr = default_flight_sql_addr
             .to_socket_addrs()
             .map_err(|e| {
-                format!(
-                    "Cannot resolve flight_rpc_listen_addr '{}': {}",
-                    default_flight_sql_addr, e
-                )
+                format!("Cannot resolve flight_rpc_listen_addr '{default_flight_sql_addr}': {e}")
             })
             .unwrap()
             .collect::<Vec<SocketAddr>>()

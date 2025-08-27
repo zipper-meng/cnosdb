@@ -106,17 +106,17 @@ async fn main() {
         }
         Some(Commands::Init { bind }) => {
             if let Err(e) = meta_init(&bind).await {
-                eprintln!("Error initializing meta service: {}", e);
+                eprintln!("Error initializing meta service: {e}");
             }
         }
         Some(Commands::AddNode { bind, addr }) => {
             if let Err(e) = add_node(&bind, &addr).await {
-                eprintln!("Error adding node: {}", e);
+                eprintln!("Error adding node: {e}");
             }
         }
         Some(Commands::RemoveNode { bind, addr }) => {
             if let Err(e) = remove_node(&bind, &addr).await {
-                eprintln!("Error removing node: {}", e);
+                eprintln!("Error removing node: {e}");
             }
         }
         Some(Commands::DumpSql {
@@ -125,22 +125,22 @@ async fn main() {
             file,
         }) => {
             if let Err(e) = dumpsql(&bind, &cluster, &file).await {
-                eprintln!("Error backing up meta service: {}", e);
+                eprintln!("Error backing up meta service: {e}");
             }
         }
         Some(Commands::Restore { bind, file }) => {
             if let Err(e) = restore(&bind, &file).await {
-                eprintln!("Error restoring meta service: {}", e);
+                eprintln!("Error restoring meta service: {e}");
             }
         }
         Some(Commands::Dump { bind, file }) => {
             if let Err(e) = dump(&bind, &file).await {
-                eprintln!("Error exporting meta service: {}", e);
+                eprintln!("Error exporting meta service: {e}");
             }
         }
         Some(Commands::ShowNodes { bind }) => {
             if let Err(e) = show_nodes(&bind).await {
-                eprintln!("Error showing nodes: {}", e);
+                eprintln!("Error showing nodes: {e}");
             }
         }
         None => {
@@ -149,7 +149,7 @@ async fn main() {
                 let mut options = match Opt::new(Some(config_path)) {
                     Ok(opt) => opt,
                     Err(e) => {
-                        eprintln!("Error loading config: {}", e);
+                        eprintln!("Error loading config: {e}");
                         process::exit(1);
                     }
                 };

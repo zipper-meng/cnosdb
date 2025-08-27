@@ -190,8 +190,8 @@ pub async fn main() -> Result<(), anyhow::Error> {
     let args = CliArgs::parse();
 
     if !args.quiet && args.subcommand.is_none() {
-        println!("CnosDB CLI v{}", CNOSDB_CLI_VERSION);
-        println!("Input arguments: {:?}", args);
+        println!("CnosDB CLI v{CNOSDB_CLI_VERSION}");
+        println!("Input arguments: {args:?}");
     }
 
     let password = if args.password {
@@ -229,7 +229,7 @@ pub async fn main() -> Result<(), anyhow::Error> {
     match args.subcommand {
         Some(CliCommand::DumpDDL(d)) => {
             let res = ctx.dump(d.tenant).await?;
-            println!("{}", res);
+            println!("{res}");
             return Ok(());
         }
         Some(CliCommand::RestoreDumpDDL(r)) => {
@@ -304,6 +304,6 @@ fn try_parse_target_partitions(size: &str) -> std::result::Result<usize, String>
 fn try_parse_encoding(encoding: &str) -> std::result::Result<Encoding, String> {
     match Encoding::from_str_opt(encoding) {
         Some(encoding) => Ok(encoding),
-        _ => Err(format!("encoding not support: {}", encoding)),
+        _ => Err(format!("encoding not support: {encoding}")),
     }
 }

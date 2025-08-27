@@ -20,7 +20,7 @@ lazy_static! {
 
 /// Make a path for summary file by it's directory and id.
 pub fn make_summary_file(dir: impl AsRef<Path>, number: u64) -> PathBuf {
-    let p = format!("summary-{:06}", number);
+    let p = format!("summary-{number:06}");
     dir.as_ref().join(p)
 }
 
@@ -69,7 +69,7 @@ pub fn get_summary_file_id(file_name: &str) -> TskvResult<u64> {
 
 /// Make a path for index binlog file by it's directory and id.
 pub fn make_index_binlog_file(dir: impl AsRef<Path>, sequence: u64) -> PathBuf {
-    let p = format!("_{:06}.binlog", sequence);
+    let p = format!("_{sequence:06}.binlog");
     dir.as_ref().join(p)
 }
 
@@ -99,7 +99,7 @@ pub fn get_index_binlog_file_id(file_name: &str) -> TskvResult<u64> {
 
 /// Make a path for WAL (write ahead log) file by it's directory and id.
 pub fn make_wal_file(dir: impl AsRef<Path>, sequence: u64) -> PathBuf {
-    let p = format!("_{:06}.wal", sequence);
+    let p = format!("_{sequence:06}.wal");
     dir.as_ref().join(p)
 }
 
@@ -128,7 +128,7 @@ pub fn get_wal_file_id(file_name: &str) -> TskvResult<u64> {
 }
 
 pub fn make_tsm_file_name(sequence: u64) -> String {
-    format!("_{:06}.tsm", sequence)
+    format!("_{sequence:06}.tsm")
 }
 
 /// Make a path for TSM file by it's directory and id.
@@ -164,7 +164,7 @@ pub fn get_tsm_file_id_by_path(tsm_path: impl AsRef<Path>) -> TskvResult<u64> {
 }
 
 pub fn make_tsm_tombstone_file_name(sequence: u64) -> String {
-    format!("_{:06}.tombstone", sequence)
+    format!("_{sequence:06}.tombstone")
 }
 
 /// Make a path for TSM tombstone file by it's directory and id.
@@ -173,7 +173,7 @@ pub fn make_tsm_tombstone_file(dir: impl AsRef<Path>, sequence: u64) -> PathBuf 
 }
 
 pub fn make_delta_file_name(sequence: u64) -> String {
-    format!("_{:06}.delta", sequence)
+    format!("_{sequence:06}.delta")
 }
 
 /// Make a path for TSM delta file by it's directory and id.
@@ -221,7 +221,7 @@ where
 /* -------------------------------------------------------------------------------------- */
 
 pub fn make_file_name(id: u64, suffix: &str) -> String {
-    format!("_{:06}.{}", id, suffix)
+    format!("_{id:06}.{suffix}")
 }
 
 pub fn make_file_path(dir: impl AsRef<Path>, id: u64, suffix: &str) -> PathBuf {

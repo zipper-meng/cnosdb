@@ -184,8 +184,7 @@ impl DedicatedExecutor {
                     .enable_all()
                     .thread_name_fn(move || {
                         format!(
-                            "{} {}",
-                            thread_name,
+                            "{thread_name} {}",
                             thread_counter.fetch_add(1, Ordering::SeqCst)
                         )
                     })

@@ -444,9 +444,7 @@ mod test {
 
         assert! {
             diff.abs() < TARGET_DIFFERENCE as f64,
-            "diff must be less than {}ms, but was {}ms",
-            TARGET_DIFFERENCE,
-            diff,
+            "diff must be less than {TARGET_DIFFERENCE}ms, but was {diff}ms",
         };
     }
 }

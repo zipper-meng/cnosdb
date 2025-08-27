@@ -186,10 +186,7 @@ where
             .map(|e| e.parse::<usize>())
             .transpose()
             .map_err(|e| {
-                Status::invalid_argument(format!(
-                    "parse {} failed, error: {}",
-                    TARGET_PARTITIONS, e
-                ))
+                Status::invalid_argument(format!("parse {TARGET_PARTITIONS} failed, error: {e}"))
             })?;
         let stream_trigger_interval =
             utils::get_value_from_header(metadata, STREAM_TRIGGER_INTERVAL, "")
@@ -197,8 +194,7 @@ where
                 .transpose()
                 .map_err(|e| {
                     Status::invalid_argument(format!(
-                        "parse {} failed, error: {}",
-                        STREAM_TRIGGER_INTERVAL, e
+                        "parse {STREAM_TRIGGER_INTERVAL} failed, error: {e}"
                     ))
                 })?;
         let ctx = ContextBuilder::new(user)
@@ -267,8 +263,7 @@ where
         let (logical_plan, query_state_machine) =
             self.result_cache.get(statement_handle).ok_or_else(|| {
                 Status::internal(format!(
-                    "The result of query({:?}) does not exist or has expired",
-                    statement_handle
+                    "The result of query({statement_handle:?}) does not exist or has expired"
                 ))
             })?;
         let query_state_machine = Arc::new(query_state_machine.with_span_ctx(span_ctx));
@@ -488,7 +483,7 @@ where
         } = query;
 
         let mut filters = vec![];
-        let _ = catalog.map(|e| filters.push(format!("TENANT_NAME = '{}'", e)));
+        let _ = catalog.map(|e| filters.push(format!("TENANT_NAME = '{e}'")));
         let _ =
             db_schema_filter_pattern.map(|e| filters.push(format!("DATABASE_NAME LIKE '{e}'",)));
 
@@ -536,17 +531,17 @@ where
         } = query;
 
         let mut filters = vec![];
-        let _ = catalog.map(|e| filters.push(format!("TABLE_TENANT = '{}'", e)));
+        let _ = catalog.map(|e| filters.push(format!("TABLE_TENANT = '{e}'")));
         let _ =
             db_schema_filter_pattern.map(|e| filters.push(format!("TABLE_DATABASE LIKE '{e}'")));
         let _ = table_name_filter_pattern.map(|e| filters.push(format!("TABLE_NAME LIKE '{e}'")));
         if !table_types.is_empty() {
             let table_types = table_types
                 .iter()
-                .map(|e| format!("'{}'", e))
+                .map(|e| format!("'{e}'"))
                 .collect::<Vec<_>>()
                 .join(",");
-            filters.push(format!("TABLE_TYPE IN ({})", table_types));
+            filters.push(format!("TABLE_TYPE IN ({table_types})"));
         }
 
         let filter = if filters.is_empty() {
@@ -1125,7 +1120,7 @@ mod test {
 
         let svc = FlightServiceServer::new(FlightSqlServiceImpl::new(instance, authenticator));
 
-        println!("Listening on {:?}", addr);
+        println!("Listening on {addr:?}");
 
         let server = Server::builder().add_service(svc).serve(addr);
 
@@ -1196,7 +1191,7 @@ mod test {
                             )
                             .expect("record_batch_from_message");
 
-                            println!("ipc::MessageHeader::RecordBatch: {:?}", batch);
+                            println!("ipc::MessageHeader::RecordBatch: {batch:?}");
 
                             chunks.push(batch);
                         }
@@ -1219,7 +1214,7 @@ mod test {
     }
 
     async fn flight_channel(host: &str, port: u16) -> Channel {
-        Endpoint::new(format!("http://{}:{}", host, port))
+        Endpoint::new(format!("http://{host}:{port}"))
             .unwrap()
             .connect()
             .await

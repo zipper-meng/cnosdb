@@ -77,10 +77,11 @@ impl TableProvider for InformationMembersTable {
     ) -> DFResult<Arc<dyn ExecutionPlan>> {
         let mut builder = InformationSchemaMembersBuilder::default();
 
-        for (user_name, role) in
-            self.metadata.members().await.map_err(|e| {
-                DataFusionError::Internal(format!("Failed to list databases: {}", e))
-            })?
+        for (user_name, role) in self
+            .metadata
+            .members()
+            .await
+            .map_err(|e| DataFusionError::Internal(format!("Failed to list databases: {e}")))?
         {
             builder.append_row(user_name, role.name());
         }

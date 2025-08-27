@@ -144,7 +144,7 @@ pub fn execute_command(command: Command) -> E2eResult<()> {
             if n == 0 {
                 break;
             }
-            print!("{}", buf);
+            print!("{buf}");
             buf.clear();
         }
         Ok(())
@@ -304,7 +304,7 @@ macro_rules! defer {
 }
 
 pub async fn flight_channel(host: &str, port: u16) -> Result<Channel, ArrowError> {
-    let endpoint = Endpoint::new(format!("http://{}:{}", host, port))
+    let endpoint = Endpoint::new(format!("http://{host}:{port}"))
         .map_err(|e| ArrowError::IpcError(format!("Cannot create endpoint: {e}")))?
         .connect_timeout(Duration::from_secs(20))
         .timeout(Duration::from_secs(20))
@@ -463,7 +463,7 @@ mod test {
                         }
                     }
                     Err(e) => {
-                        eprintln!("Failed to accept connection: {}", e);
+                        eprintln!("Failed to accept connection: {e}");
                     }
                 }
             }

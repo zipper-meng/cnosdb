@@ -50,8 +50,7 @@ impl CompactProcessor {
                         .ok_or_else(|| {
                             CommonSnafu {
                                 reason: format!(
-                                    "vnode_id {} not found in vnode_compaction_limit",
-                                    vnode_id
+                                    "vnode_id {vnode_id} not found in vnode_compaction_limit"
                                 ),
                             }
                             .build()
@@ -181,10 +180,10 @@ impl CompactJobInner {
                     let vnode_id = task.vnode_id();
                     let vnode = version_set.read().await.get_vnode(vnode_id).cloned();
                     if let Some(vnode) = vnode {
-                        info!("Starting compaction on ts_family {}", vnode_id);
+                        info!("Starting compaction on ts_family {vnode_id}");
                         let tsf = vnode.get_ts_family();
                         if !tsf.read().await.can_compaction() {
-                            info!("forbidden compaction on moving vnode {}", vnode_id);
+                            info!("forbidden compaction on moving vnode {vnode_id}");
                             return;
                         }
                         let version = tsf.read().await.version();
@@ -341,7 +340,7 @@ impl FlushJob {
     }
 
     async fn run(job: Arc<FlushJob>, request: &FlushReq) -> TskvResult<()> {
-        info!("Flush: begin flush data {}", request);
+        info!("Flush: begin flush data {request}");
         let instant = std::time::Instant::now();
 
         // flush index

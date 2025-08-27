@@ -31,7 +31,7 @@ pub fn line_to_batches<'a>(lines: &'a [Line<'a>]) -> Result<HashMap<String, Muta
             let col = batch
                 .column_mut(tag_key, PhysicalCType::Tag)
                 .map_err(|e| Error::Common {
-                    content: format!("Error getting column: {}", e),
+                    content: format!("Error getting column: {e}"),
                 })?;
             match &mut col.column_data.primary_data {
                 PrimaryColumnDataRef::String(data, ..) => {
@@ -55,7 +55,7 @@ pub fn line_to_batches<'a>(lines: &'a [Line<'a>]) -> Result<HashMap<String, Muta
                     let col = batch
                         .column_mut(field_key, PhysicalCType::Field(ValueType::Unsigned))
                         .map_err(|e| Error::Common {
-                            content: format!("Error getting column: {}", e),
+                            content: format!("Error getting column: {e}"),
                         })?;
                     match &mut col.column_data.primary_data {
                         PrimaryColumnDataRef::U64(data, ..) => {
@@ -77,7 +77,7 @@ pub fn line_to_batches<'a>(lines: &'a [Line<'a>]) -> Result<HashMap<String, Muta
                     let col = batch
                         .column_mut(field_key, PhysicalCType::Field(ValueType::Integer))
                         .map_err(|e| Error::Common {
-                            content: format!("Error getting column: {}", e),
+                            content: format!("Error getting column: {e}"),
                         })?;
                     match &mut col.column_data.primary_data {
                         PrimaryColumnDataRef::I64(data, ..) => {
@@ -99,7 +99,7 @@ pub fn line_to_batches<'a>(lines: &'a [Line<'a>]) -> Result<HashMap<String, Muta
                     let col = batch
                         .column_mut(field_key, PhysicalCType::Field(ValueType::String))
                         .map_err(|e| Error::Common {
-                            content: format!("Error getting column: {}", e),
+                            content: format!("Error getting column: {e}"),
                         })?;
                     match &mut col.column_data.primary_data {
                         PrimaryColumnDataRef::String(data, ..) => {
@@ -121,7 +121,7 @@ pub fn line_to_batches<'a>(lines: &'a [Line<'a>]) -> Result<HashMap<String, Muta
                     let col = batch
                         .column_mut(field_key, PhysicalCType::Field(ValueType::Float))
                         .map_err(|e| Error::Common {
-                            content: format!("Error getting column: {}", e),
+                            content: format!("Error getting column: {e}"),
                         })?;
                     match &mut col.column_data.primary_data {
                         PrimaryColumnDataRef::F64(data, ..) => {
@@ -143,7 +143,7 @@ pub fn line_to_batches<'a>(lines: &'a [Line<'a>]) -> Result<HashMap<String, Muta
                     let col = batch
                         .column_mut(field_key, PhysicalCType::Field(ValueType::Boolean))
                         .map_err(|e| Error::Common {
-                            content: format!("Error getting column: {}", e),
+                            content: format!("Error getting column: {e}"),
                         })?;
                     match &mut col.column_data.primary_data {
                         PrimaryColumnDataRef::Bool(data, ..) => {
@@ -168,7 +168,7 @@ pub fn line_to_batches<'a>(lines: &'a [Line<'a>]) -> Result<HashMap<String, Muta
         let col = batch
             .column_mut("time", PhysicalCType::default_time())
             .map_err(|e| Error::Common {
-                content: format!("Error getting column: {}", e),
+                content: format!("Error getting column: {e}"),
             })?;
         match col.column_data.primary_data {
             PrimaryColumnDataRef::I64(ref mut data, ..) => {
@@ -294,7 +294,7 @@ pub fn arrow_array_to_points(
             table_schema
                 .get_column_by_name(col_name)
                 .ok_or_else(|| Error::Common {
-                    content: format!("column {} not found in table {}", col_name, table_name),
+                    content: format!("column {col_name} not found in table {table_name}"),
                 })?;
         let fb_column = match column_schema.column_type.to_physical_type() {
             PhysicalCType::Tag => {
@@ -306,7 +306,7 @@ pub fn arrow_array_to_points(
             PhysicalCType::Field(value_type) => match value_type {
                 ValueType::Unknown => {
                     return Err(Error::Common {
-                        content: format!("column {} type is unknown", col_name),
+                        content: format!("column {col_name} type is unknown"),
                     });
                 }
                 ValueType::Float => build_f64_column(column, col_name, &mut fbb)?,
@@ -349,7 +349,7 @@ pub fn build_string_column<'a>(
         .as_any()
         .downcast_ref::<StringArray>()
         .ok_or_else(|| Error::Common {
-            content: format!("column {} is not string", col_name),
+            content: format!("column {col_name} is not string"),
         })?;
 
     let mut nullbits = BooleanBufferBuilder::new(array.len());
@@ -396,7 +396,7 @@ pub fn build_timestamp_column<'a>(
                 .as_any()
                 .downcast_ref::<TimestampMillisecondArray>()
                 .ok_or_else(|| Error::Common {
-                    content: format!("column {} is not int64", col_name),
+                    content: format!("column {col_name} is not int64"),
                 })?;
             let mut nullbits = BooleanBufferBuilder::new(values.len());
             let mut col_values = Vec::with_capacity(values.len());
@@ -416,7 +416,7 @@ pub fn build_timestamp_column<'a>(
                 .as_any()
                 .downcast_ref::<TimestampMicrosecondArray>()
                 .ok_or_else(|| Error::Common {
-                    content: format!("column {} is not int64", col_name),
+                    content: format!("column {col_name} is not int64"),
                 })?;
             let mut nullbits = BooleanBufferBuilder::new(values.len());
             let mut col_values = Vec::with_capacity(values.len());
@@ -436,7 +436,7 @@ pub fn build_timestamp_column<'a>(
                 .as_any()
                 .downcast_ref::<TimestampNanosecondArray>()
                 .ok_or_else(|| Error::Common {
-                    content: format!("column {} is not int64", col_name),
+                    content: format!("column {col_name} is not int64"),
                 })?;
             let mut nullbits = BooleanBufferBuilder::new(values.len());
             let mut col_values = Vec::with_capacity(values.len());
@@ -476,7 +476,7 @@ pub fn build_i64_column<'a>(
         .as_any()
         .downcast_ref::<Int64Array>()
         .ok_or_else(|| Error::Common {
-            content: format!("column {} is not int64", col_name),
+            content: format!("column {col_name} is not int64"),
         })?;
     let mut nullbits = BooleanBufferBuilder::new(values.len());
     let mut col_values = Vec::with_capacity(values.len());
@@ -513,7 +513,7 @@ pub fn build_f64_column<'a>(
         .as_any()
         .downcast_ref::<Float64Array>()
         .ok_or_else(|| Error::Common {
-            content: format!("column {} is not float64", col_name),
+            content: format!("column {col_name} is not float64"),
         })?;
     let mut nullbits = BooleanBufferBuilder::new(values.len());
     let mut col_values = Vec::with_capacity(values.len());
@@ -550,7 +550,7 @@ pub fn build_u64_column<'a>(
         .as_any()
         .downcast_ref::<UInt64Array>()
         .ok_or_else(|| Error::Common {
-            content: format!("column {} is not uint64", col_name),
+            content: format!("column {col_name} is not uint64"),
         })?;
     let mut nullbits = BooleanBufferBuilder::new(values.len());
     let mut col_values = Vec::with_capacity(values.len());
@@ -587,7 +587,7 @@ pub fn build_bool_column<'a>(
         .as_any()
         .downcast_ref::<BooleanArray>()
         .ok_or_else(|| Error::Common {
-            content: format!("column {} is not bool", col_name),
+            content: format!("column {col_name} is not bool"),
         })?;
     let mut nullbits = BooleanBufferBuilder::new(values.len());
     let mut col_values = Vec::with_capacity(values.len());

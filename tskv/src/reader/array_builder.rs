@@ -57,7 +57,7 @@ impl ArrayBuilderPtr {
         match value_type {
             PhysicalDType::Unknown => {
                 return Err(CommonSnafu {
-                    reason: format!("unknown type of column '{}'", column_name),
+                    reason: format!("unknown type of column '{column_name}'"),
                 }
                 .build());
             }

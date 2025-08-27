@@ -128,7 +128,7 @@ impl ResourceManager {
             }
         }
 
-        debug!("Drop database {} of tenant {}", db_name, tenant_name);
+        debug!("Drop database {db_name} of tenant {tenant_name}");
         tenant
             .drop_db(db_name)
             .await
@@ -143,7 +143,7 @@ impl ResourceManager {
         db_name: &str,
         table_name: &str,
     ) -> CoordinatorResult<bool> {
-        info!("Drop table {}/{}/{}", tenant_name, db_name, table_name);
+        info!("Drop table {tenant_name}/{db_name}/{table_name}");
         let tenant = coord.tenant_meta(tenant_name).await.ok_or_else(|| {
             CoordinatorError::TenantNotFound {
                 name: tenant_name.to_string(),
@@ -156,7 +156,7 @@ impl ResourceManager {
             .context(MetaSnafu)?
             .ok_or_else(|| {
                 CommonSnafu {
-                    msg: format!("database not found: {}", db_name),
+                    msg: format!("database not found: {db_name}"),
                 }
                 .build()
             })?;
@@ -386,7 +386,7 @@ impl ResourceManager {
                     break;
                 }
                 Err(err) => {
-                    error!("read resourceinfo failed: {}", err);
+                    error!("read resourceinfo failed: {err}");
                 }
             }
         }

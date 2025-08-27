@@ -526,13 +526,13 @@ impl TryFrom<FieldRef> for TableColumn {
             .map(|v| v.parse::<ColumnId>())
             .ok_or_else(|| {
                 InternalSnafu {
-                    err: format!("Column id not found in metadata: {:?}", value),
+                    err: format!("Column id not found in metadata: {value:?}"),
                 }
                 .build()
             })?
             .map_err(|e| {
                 InternalSnafu {
-                    err: format!("Failed to parse column id: {:?}", e),
+                    err: format!("Failed to parse column id: {e:?}"),
                 }
                 .build()
             })?;
@@ -546,7 +546,7 @@ impl TryFrom<FieldRef> for TableColumn {
             .unwrap_or_else(|| Ok(Encoding::Default))
             .map_err(|e| {
                 InternalSnafu {
-                    err: format!("Failed to parse column encoding: {:?}", e),
+                    err: format!("Failed to parse column encoding: {e:?}"),
                 }
                 .build()
             })?;
@@ -557,13 +557,13 @@ impl TryFrom<FieldRef> for TableColumn {
         ) {
             let sub_type = GeometryType::from_str(k).map_err(|e| {
                 InternalSnafu {
-                    err: format!("Failed to parse gis sub type: {:?}", e),
+                    err: format!("Failed to parse gis sub type: {e:?}"),
                 }
                 .build()
             })?;
             let srid = v.parse::<i16>().map_err(|e| {
                 InternalSnafu {
-                    err: format!("Failed to parse gis srid: {:?}", e),
+                    err: format!("Failed to parse gis srid: {e:?}"),
                 }
                 .build()
             })?;
@@ -702,14 +702,14 @@ impl TableColumn {
             .get(COLUMN_ID_META_KEY)
             .ok_or_else(|| {
                 InternalSnafu {
-                    err: format!("Column id not found in metadata: {:?}", field),
+                    err: format!("Column id not found in metadata: {field:?}"),
                 }
                 .build()
             })?
             .parse::<ColumnId>()
             .map_err(|e| {
                 InternalSnafu {
-                    err: format!("Failed to parse column id: {:?}", e),
+                    err: format!("Failed to parse column id: {e:?}"),
                 }
                 .build()
             })?;
@@ -849,7 +849,7 @@ impl From<ArrowDataType> for ColumnType {
 impl Display for ColumnType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> std::fmt::Result {
         let s = self.as_str();
-        write!(f, "{}", s)
+        write!(f, "{s}")
     }
 }
 

@@ -90,9 +90,11 @@ impl TableProvider for InformationRolesTable {
                 builder.append_row(role.name(), "system", None::<String>)
             }
 
-            for role in self.metadata.custom_roles().await.map_err(|e| {
-                DataFusionError::Internal(format!("Failed to list databases: {}", e))
-            })? {
+            for role in
+                self.metadata.custom_roles().await.map_err(|e| {
+                    DataFusionError::Internal(format!("Failed to list databases: {e}"))
+                })?
+            {
                 match role.inherit_role() {
                     Some(inherit_role) => {
                         builder.append_row(role.name(), "custom", Some(inherit_role.name()))

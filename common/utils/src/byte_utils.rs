@@ -24,6 +24,6 @@ mod test {
         let value = -10244_i64;
         let buffer = to_bytes!(value);
         let data = from_bytes!(i64, &buffer[0..8]);
-        println!("Value: {}", data);
+        println!("Value: {data}");
     }
 }

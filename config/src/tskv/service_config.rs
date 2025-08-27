@@ -104,7 +104,7 @@ impl CheckConfig for ServiceConfig {
                 ret.add_error(CheckConfigItemResult {
                     config: config_name.clone(),
                     item: default_http_addr,
-                    message: format!("Cannot resolve 'http_listen_addr': {}", e),
+                    message: format!("Cannot resolve 'http_listen_addr': {e}"),
                 });
             }
         }
@@ -115,7 +115,7 @@ impl CheckConfig for ServiceConfig {
                 ret.add_error(CheckConfigItemResult {
                     config: config_name.clone(),
                     item: default_grpc_addr,
-                    message: format!("Cannot resolve 'grpc_listen_addr': {}", e),
+                    message: format!("Cannot resolve 'grpc_listen_addr': {e}"),
                 });
             }
         }
@@ -126,7 +126,7 @@ impl CheckConfig for ServiceConfig {
                 ret.add_error(CheckConfigItemResult {
                     config: config_name.clone(),
                     item: default_flight_rpc_addr,
-                    message: format!("Cannot resolve 'flight_rpc_listen_addr': {}", e),
+                    message: format!("Cannot resolve 'flight_rpc_listen_addr': {e}"),
                 });
             }
         }
@@ -137,7 +137,7 @@ impl CheckConfig for ServiceConfig {
                 ret.add_error(CheckConfigItemResult {
                     config: config_name.clone(),
                     item: default_tcp_addr,
-                    message: format!("Cannot resolve 'tcp_listen_addr': {}", e),
+                    message: format!("Cannot resolve 'tcp_listen_addr': {e}"),
                 });
             }
         }

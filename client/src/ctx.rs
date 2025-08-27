@@ -254,7 +254,7 @@ impl SessionContext {
             &c.proxy_custom_auth,
         )
         .unwrap_or_else(|e| {
-            eprintln!("ERROR: Failed to build http client: {}", e);
+            eprintln!("ERROR: Failed to build http client: {e}");
             std::process::exit(ExitCode::HttpClientInitFailed as i32);
         });
 
@@ -353,7 +353,7 @@ impl SessionContext {
             let encoding_str = content_encoding.to_str()?;
             let encoding = match Encoding::from_str_opt(encoding_str) {
                 Some(encoding) => Ok(encoding),
-                None => Err(anyhow!("encoding not support: {}", encoding_str)),
+                None => Err(anyhow!("encoding not support: {encoding_str}")),
             }?;
             encoding.decode(body)?
         } else {
@@ -442,7 +442,7 @@ impl SessionContext {
             }
             code => {
                 let body = resp.text().await?;
-                Err(anyhow!("{}, body: {}", code, body))
+                Err(anyhow!("{code}, body: {body}"))
             }
         }
     }
@@ -511,7 +511,7 @@ impl ResultSet {
             Self::Bytes((r, _)) => {
                 let str = String::from_utf8(r.to_owned())?;
                 if !str.is_empty() {
-                    println!("{}", str);
+                    println!("{str}");
                 }
             }
         }

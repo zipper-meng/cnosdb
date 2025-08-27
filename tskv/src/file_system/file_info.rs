@@ -81,10 +81,10 @@ mod test {
         use crate::file_system::file_info::{get_files_info, recursive_list_files};
 
         let list = recursive_list_files(std::path::PathBuf::from("../common/".to_string()));
-        print!("list_all_filenames: {:#?}", list);
+        print!("list_all_filenames: {list:#?}");
 
         let path = std::path::PathBuf::from("../common/");
         let files_meta = get_files_info(&path).await.unwrap();
-        print!("get_files_info: {:#?}", files_meta);
+        print!("get_files_info: {files_meta:#?}");
     }
 }

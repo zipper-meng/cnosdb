@@ -52,7 +52,7 @@ impl Opt {
         let env_key_map = Self::env_keys();
         figment = figment.merge(Env::prefixed("CNOSDB_META_").map(move |env| {
             let env_str = env.to_string();
-            match env_key_map.get(&format!("CNOSDB_META_{}", env_str)) {
+            match env_key_map.get(&format!("CNOSDB_META_{env_str}")) {
                 Some(key) => Uncased::from_owned(key.clone()),
                 None => Uncased::new(env_str.clone()),
             }

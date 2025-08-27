@@ -249,7 +249,7 @@ impl IndexEngine2 {
         let mut bitmap = roaring::RoaringBitmap::new();
         if tags.is_empty() {
             let reader = self.reader_txn()?;
-            let prefix = format!("{}.", tab);
+            let prefix = format!("{tab}.");
             let it = self
                 .db
                 .prefix_iter(&reader, prefix.as_bytes())
@@ -300,11 +300,11 @@ mod test {
         for i in 10000001..60000001 {
             let rand_num = rand::rng().random_range(5..100);
             let value = "v_1234567890".repeat(rand_num);
-            let key = format!("_key_{}", i);
+            let key = format!("_key_{i}");
             engine.set(key.as_bytes(), value.as_bytes()).unwrap();
             if i % 100000 == 0 {
                 engine.flush().unwrap();
-                println!("----------------------- {}", i);
+                println!("----------------------- {i}");
             }
         }
 
@@ -325,7 +325,7 @@ mod test {
         let reader = engine.reader_txn().unwrap();
         let iter = engine.db.iter(&reader).unwrap();
 
-        println!("------scan begin.... {}", path);
+        println!("------scan begin.... {path}");
 
         let mut id_info = (0, 0, 0);
         let mut key_info = (0, 0, 0);
@@ -349,8 +349,8 @@ mod test {
             }
         }
 
-        println!("------ series id: {:?}", id_info);
-        println!("------ series key: {:?}", key_info);
-        println!("------ series inverted: {:?}", inverted);
+        println!("------ series id: {id_info:?}");
+        println!("------ series key: {key_info:?}");
+        println!("------ series inverted: {inverted:?}");
     }
 }

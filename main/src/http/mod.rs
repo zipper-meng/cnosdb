@@ -40,97 +40,97 @@ pub enum Error {
         source: QueryError,
     },
 
-    #[snafu(display("Error parsing message: {}", source))]
+    #[snafu(display("Error parsing message: {source}"))]
     #[error_code(code = 4)]
     ParseLineProtocol {
         source: protocol_parser::LineProtocolError,
     },
 
-    #[snafu(display("Invalid header: {}", reason))]
+    #[snafu(display("Invalid header: {reason}"))]
     #[error_code(code = 5)]
     InvalidHeader {
         reason: String,
     },
 
-    #[snafu(display("Parse auth, malformed basic auth encoding: {}", reason))]
+    #[snafu(display("Parse auth, malformed basic auth encoding: {reason}"))]
     #[error_code(code = 6)]
     ParseAuth {
         reason: String,
     },
 
-    #[snafu(display("Fetch result: {}", reason))]
+    #[snafu(display("Fetch result: {reason}"))]
     #[error_code(code = 7)]
     FetchResult {
         reason: String,
     },
 
-    #[snafu(display("Can't find tenant: {}", name))]
+    #[snafu(display("Can't find tenant: {name}"))]
     #[error_code(code = 8)]
     NotFoundTenant {
         name: String,
     },
 
-    #[snafu(display("generate pprof files: {}", reason))]
+    #[snafu(display("generate pprof files: {reason}"))]
     #[error_code(code = 9)]
     PProf {
         reason: String,
     },
 
-    #[snafu(display("Error parsing message: {}", source))]
+    #[snafu(display("Error parsing message: {source}"))]
     #[error_code(code = 10)]
     ParseOpentsdbProtocol {
         source: protocol_parser::Error,
     },
 
-    #[snafu(display("Error parsing message: {}", source))]
+    #[snafu(display("Error parsing message: {source}"))]
     #[error_code(code = 11)]
     ParseOpentsdbJsonProtocol {
         source: serde_json::Error,
     },
 
-    #[snafu(display("Parse trace context, error: {}", source))]
+    #[snafu(display("Parse trace context, error: {source}"))]
     #[error_code(code = 12)]
     TraceHttp {
         source: trace::http::http_ctx::ContextError,
     },
 
-    #[snafu(display("Error decode request: {}", source))]
+    #[snafu(display("Error decode request: {source}"))]
     #[error_code(code = 13)]
     DecodeRequest {
         source: std::io::Error,
     },
 
-    #[snafu(display("Error encode response: {}", source))]
+    #[snafu(display("Error encode response: {source}"))]
     #[error_code(code = 14)]
     EncodeResponse {
         source: std::io::Error,
     },
 
-    #[snafu(display("Invalid utf-8 sequence: {}", source))]
+    #[snafu(display("Invalid utf-8 sequence: {source}"))]
     #[error_code(code = 15)]
     InvalidUTF8 {
         source: simdutf8::basic::Utf8Error,
     },
 
-    #[snafu(display("Error parsing log message: {}", source))]
+    #[snafu(display("Error parsing log message: {source}"))]
     #[error_code(code = 16)]
     ParseLog {
         source: protocol_parser::JsonLogError,
     },
 
-    #[snafu(display("Error parsing logjson message: {}", source))]
+    #[snafu(display("Error parsing logjson message: {source}"))]
     #[error_code(code = 17)]
     ParseLogJson {
         source: serde_json::Error,
     },
 
-    #[snafu(display("Error context: {}", source))]
+    #[snafu(display("Error context: {source}"))]
     #[error_code(code = 18)]
     Context {
         source: ContextError,
     },
 
-    #[snafu(display("Error parsing otlp message: {}", source))]
+    #[snafu(display("Error parsing otlp message: {source}"))]
     #[error_code(code = 19)]
     ParseOtlpProtocol {
         source: DecodeError,

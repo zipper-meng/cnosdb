@@ -182,7 +182,7 @@ impl VnodeWal {
         raft_entry: &wal_store::RaftEntry,
     ) -> TskvResult<(u64, u64)> {
         if let Err(err) = self.roll_wal_file(self.config.wal_max_file_size).await {
-            trace::warn!("roll wal file failed: {}", err);
+            trace::warn!("roll wal file failed: {err}");
         }
 
         let wal_id = self.current_wal_id();

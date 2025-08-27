@@ -93,7 +93,7 @@ pub fn create_usage_schema_view_table(
         TableHandle::Tskv(table_provider) => provider_as_source(table_provider),
         other => {
             return Err(QueryError::Internal {
-                reason: format!("Usage schema data source is tskv, but found: {}", other),
+                reason: format!("Usage schema data source is tskv, but found: {other}"),
             });
         }
     };

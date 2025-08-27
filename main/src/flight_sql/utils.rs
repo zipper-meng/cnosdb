@@ -66,8 +66,8 @@ where
     N: fmt::Display,
 {
     let auth = match password {
-        Some(password) => format!("{}:{}", username, password),
-        None => format!("{}:", username),
+        Some(password) => format!("{username}:{password}"),
+        None => format!("{username}:"),
     };
 
     let token = format!("Basic {}", BASE64_STANDARD.encode(auth));
@@ -85,7 +85,7 @@ where
     T: fmt::Display,
 {
     let token =
-        AsciiMetadataValue::try_from(format!("Bearer {}", token)).map_err(|e| e.to_string())?;
+        AsciiMetadataValue::try_from(format!("Bearer {token}")).map_err(|e| e.to_string())?;
 
     map.insert(AUTHORIZATION.as_str(), token);
 
@@ -109,7 +109,7 @@ pub fn endpoint(
     ticket: impl ProstMessageExt,
     location_uris: &[&str],
 ) -> std::result::Result<FlightEndpoint, String> {
-    let any_tkt = Any::pack(&ticket).map_err(|e| format!("maybe a bug, error: {}", e))?;
+    let any_tkt = Any::pack(&ticket).map_err(|e| format!("maybe a bug, error: {e}"))?;
 
     let location = location_uris
         .iter()
@@ -146,7 +146,7 @@ pub fn record_batch_from_message(
     );
 
     arrow_batch_result
-        .map_err(|e| Status::internal(format!("Could not convert to RecordBatch: {:?}", e)))
+        .map_err(|e| Status::internal(format!("Could not convert to RecordBatch: {e:?}")))
 }
 
 pub fn dictionary_from_message(
@@ -167,7 +167,7 @@ pub fn dictionary_from_message(
         &message.version(),
     );
     dictionary_batch_result
-        .map_err(|e| Status::internal(format!("Could not convert to Dictionary: {:?}", e)))
+        .map_err(|e| Status::internal(format!("Could not convert to Dictionary: {e:?}")))
 }
 
 pub fn schema_to_ipc_message(schema: &Schema) -> Result<IpcMessage, ArrowError> {

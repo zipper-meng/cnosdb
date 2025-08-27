@@ -120,8 +120,7 @@ impl ExecutionPlan for TskvExec {
         context: Arc<TaskContext>,
     ) -> DFResult<SendableRecordBatchStream> {
         debug!(
-            "Start TskvExec::execute for partition {} of context session_id {} and task_id {:?}",
-            partition,
+            "Start TskvExec::execute for partition {partition} of context session_id {} and task_id {:?}",
             context.session_id(),
             context.task_id()
         );
@@ -267,8 +266,7 @@ impl TableScanStream {
             } else {
                 return Err(CommonSnafu {
                     msg: format!(
-                        "table stream build fail, because can't found field: {}",
-                        field_name
+                        "table stream build fail, because can't found field: {field_name}"
                     ),
                 }
                 .build());

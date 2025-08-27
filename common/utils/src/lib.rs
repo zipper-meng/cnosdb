@@ -18,7 +18,3 @@ pub type Timestamp = i64;
 
 #[cfg(unix)]
 pub mod pprof_tools;
-
-pub fn to_hex_string(data: &[u8]) -> String {
-    format!("{:x?}", data)
-}

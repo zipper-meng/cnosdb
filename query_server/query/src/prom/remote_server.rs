@@ -164,7 +164,7 @@ impl PromRemoteSqlServer {
             let db = self.db.clone();
             let ctx = ctx.clone();
             let meta = meta.clone();
-            let span = Span::enter_with_parent(format!("process_read_request:{}", idx), &span);
+            let span = Span::enter_with_parent(format!("process_read_request:{idx}"), &span);
             let task =
                 task::spawn(
                     async move { Self::process_read_request(q, db, ctx, meta, span).await },
@@ -204,7 +204,7 @@ impl PromRemoteSqlServer {
         for (idx, sql) in sqls.into_iter().enumerate() {
             let db = db.clone();
             let ctx = ctx.clone();
-            let span = Span::enter_with_parent(format!("process_single_sql:{}", idx), &span);
+            let span = Span::enter_with_parent(format!("process_single_sql:{idx}"), &span);
             let task =
                 task::spawn(async move { Self::process_single_sql(db, ctx, sql, span).await });
             tasks.push(task);
@@ -314,8 +314,7 @@ fn build_sql_with_table(
                                 s
                             } else {
                                 warn!(
-                                    "The table {} may have just been dropped, or it may be a bug.",
-                                    table_name
+                                    "The table {table_name} may have just been dropped, or it may be a bug."
                                 );
                                 None
                             }

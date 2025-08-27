@@ -532,8 +532,7 @@ pub fn parse_bool_value(value: Value) -> std::result::Result<bool, ParserError> 
     match value {
         Value::Boolean(s) => Ok(s),
         _ => Err(ParserError::ParserError(format!(
-            "expected boolean value, but found : {}",
-            value
+            "expected boolean value, but found : {value}",
         ))),
     }
 }
@@ -542,8 +541,7 @@ pub fn parse_string_value(value: Value) -> std::result::Result<String, ParserErr
     match value {
         Value::SingleQuotedString(s) => Ok(s),
         _ => Err(ParserError::ParserError(format!(
-            "expected string value, but found : {}",
-            value
+            "expected string value, but found : {value}",
         ))),
     }
 }

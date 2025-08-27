@@ -81,7 +81,7 @@ impl TableProvider for InformationDatabasesTable {
         let dbs = self
             .metadata
             .list_databases()
-            .map_err(|e| DataFusionError::Internal(format!("Failed to list databases: {}", e)))?;
+            .map_err(|e| DataFusionError::Internal(format!("Failed to list databases: {e}")))?;
         let tenant = self.metadata.tenant();
         let tenant_id = tenant.id();
         let tenant_name = tenant.name();

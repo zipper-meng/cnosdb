@@ -60,7 +60,7 @@ impl FromStr for GeometryType {
             "MULTIPOLYGON" => Ok(Self::MultiPolygon),
             "GEOMETRYCOLLECTION" => Ok(Self::GeometryCollection),
             other => {
-                Err(format!("Invalid geometry type: {}, excepted: POINT | LINESTRING | POLYGON | MULTIPOINT | MULTILINESTRING | MULTIPOLYGON | GEOMETRYCOLLECTION", other))
+                Err(format!("Invalid geometry type: {other}, excepted: POINT | LINESTRING | POLYGON | MULTIPOINT | MULTILINESTRING | MULTIPOLYGON | GEOMETRYCOLLECTION"))
             }
         }
     }

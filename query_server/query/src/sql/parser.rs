@@ -202,8 +202,7 @@ impl FromStr for CnosKeyWord {
             "STRICT_WRITE" => Ok(CnosKeyWord::STRICT_WRITE),
             "MAX_CACHE_READERS" => Ok(CnosKeyWord::MAX_CACHE_READERS),
             _ => Err(ParserError::ParserError(format!(
-                "fail parse {} to CnosKeyWord",
-                s
+                "fail parse {s} to CnosKeyWord"
             ))),
         }
     }
@@ -369,7 +368,7 @@ impl<'a> ExtParser<'a> {
     }
     // Report unexpected token
     fn expected<T>(&self, expected: &str, found: impl Display) -> Result<T> {
-        parser_err!(format!("Expected {}, found: {}", expected, found))
+        parser_err!(format!("Expected {expected}, found: {found}"))
     }
 
     // fn expected_cnos_keyword<T>(&self, expected: &str, found: CnosKeyWord) -> Result<T> {
@@ -393,11 +392,11 @@ impl<'a> ExtParser<'a> {
         } else if self.parse_cnos_keyword(CnosKeyWord::QUERIES) {
             self.parse_show_queries()
         } else if self.parse_cnos_keyword(CnosKeyWord::STREAMS) {
-            let verbose = self
-                .parser
-                .parse_keyword(Keyword::VERBOSE)
-                .then_some(true)
-                .unwrap_or_default();
+            let verbose = if self.parser.parse_keyword(Keyword::VERBOSE) {
+                true
+            } else {
+                Default::default()
+            };
             Ok(ExtStatement::ShowStreams(ast::ShowStreams { verbose }))
         } else if self.parse_cnos_keyword(CnosKeyWord::REPLICAS) {
             self.parse_show_replicas()
@@ -1191,8 +1190,7 @@ impl<'a> ExtParser<'a> {
             Ok(v) => Ok(v),
             Err(_) => {
                 parser_err!(format!(
-                    "this option should be a unsigned number, but get {}",
-                    num
+                    "this option should be a unsigned number, but get {num}",
                 ))
             }
         }
@@ -2237,7 +2235,7 @@ impl<'a> ExtParser<'a> {
         }
         let encoding = match self.parse_codec_encoding() {
             Ok(encoding) => encoding,
-            Err(str) => return parser_err!(format!("{} is not valid encoding", str)),
+            Err(str) => return parser_err!(format!("{str} is not valid encoding")),
         };
         self.parser.expect_token(&Token::RParen)?;
         Ok(encoding)
@@ -2260,8 +2258,7 @@ fn check_name_not_contain_illegal_character(object_name: &ObjectName) -> Result<
     // 检查组合后的字符串是否包含 '/'
     if name_str.contains('/') {
         return Err(ParserError::ParserError(format!(
-            "not supported keyword contains '/': {}",
-            name_str
+            "not supported keyword contains '/': {name_str}",
         )));
     }
     if name_str.trim().is_empty() {
@@ -3300,7 +3297,7 @@ mod tests {
                             local_max = 100
                             local_initial = 0;";
         let statements = ExtParser::parse_sql(sql).unwrap();
-        println!("{:?}", statements);
+        println!("{statements:?}");
         assert_eq!(statements.len(), 1);
         match statements[0] {
             ExtStatement::CreateTenant(ref stmt) => {
@@ -3364,7 +3361,7 @@ mod tests {
                     ],
                 };
                 if stmt != &expected {
-                    println!("Actual: {:?}", stmt);
+                    println!("Actual: {stmt:?}");
                 }
                 assert_eq!(stmt, &expected);
             }

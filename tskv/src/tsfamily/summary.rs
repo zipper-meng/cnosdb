@@ -333,7 +333,7 @@ pub async fn print_summary_statistics(path: impl AsRef<Path>) {
                     if !buffer.is_empty() {
                         buffer.truncate(buffer.len() - 2);
                     }
-                    println!("  Add file:[ {} ]", buffer);
+                    println!("  Add file:[ {buffer} ]");
                 }
                 if !ve.del_files.is_empty() {
                     let mut buffer = String::new();
@@ -343,12 +343,12 @@ pub async fn print_summary_statistics(path: impl AsRef<Path>) {
                     if !buffer.is_empty() {
                         buffer.truncate(buffer.len() - 2);
                     }
-                    println!("  Delete file:[ {} ]", buffer);
+                    println!("  Delete file:[ {buffer} ]");
                 }
             }
             Err(TskvError::Eof) => break,
             Err(TskvError::RecordFileHashCheckFailed { .. }) => continue,
-            Err(err) => panic!("Errors when read summary file: {}", err),
+            Err(err) => panic!("Errors when read summary file: {err}"),
         }
         println!("============================================================");
     }

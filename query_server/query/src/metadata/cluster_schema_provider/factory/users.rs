@@ -70,13 +70,13 @@ impl TableProvider for ClusterSchemaUsersTable {
         if self.user.desc().is_admin() {
             let users =
                 self.metadata.users().await.map_err(|e| {
-                    DataFusionError::Internal(format!("Failed to get users: {:?}", e))
+                    DataFusionError::Internal(format!("Failed to get users: {e:?}"))
                 })?;
             for user in users {
                 let mut options = user.options().clone();
                 options.hash_password_hidden();
                 let options_str = serde_json::to_string(&options).map_err(|e| {
-                    DataFusionError::Internal(format!("failed to serialize options: {}", e))
+                    DataFusionError::Internal(format!("failed to serialize options: {e}"))
                 })?;
 
                 builder.append_row(user.name(), user.is_admin(), options_str);

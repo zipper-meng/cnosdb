@@ -66,9 +66,9 @@ impl HttpClient {
         let mut client_builder = reqwest::Client::builder();
         let addr = if use_ssl || use_unsafe_ssl {
             client_builder = client_builder.use_rustls_tls();
-            format!("https://{}:{}", host, port)
+            format!("https://{host}:{port}")
         } else {
-            format!("http://{}:{}", host, port)
+            format!("http://{host}:{port}")
         };
 
         if use_unsafe_ssl {
@@ -126,9 +126,9 @@ impl HttpClient {
     /// Construct test server url
     pub fn url(&self, uri: &str) -> String {
         if uri.starts_with('/') {
-            format!("{}{}", self.addr, uri)
+            format!("{}{uri}", self.addr)
         } else {
-            format!("{}/{}", self.addr, uri)
+            format!("{}/{uri}", self.addr)
         }
     }
 

@@ -30,8 +30,7 @@ fn distance(geo_l: &Geometry, geo_r: &Geometry) -> DFResult<f64> {
         (Geometry::Triangle(p), other) => triangle_distance(p, other)?,
         (geo_l, geo_r) => {
             return Err(DataFusionError::Execution(format!(
-                "Calculating the distance between {:?} and {:?} is not supported",
-                geo_l, geo_r
+                "Calculating the distance between {geo_l:?} and {geo_r:?} is not supported"
             )));
         }
     };
@@ -50,8 +49,7 @@ fn point_distance(point: &Point, other: &Geometry) -> DFResult<f64> {
         Geometry::MultiPolygon(rhs) => Euclidean.distance(point, rhs),
         Geometry::GeometryCollection(_) | Geometry::Rect(_) | Geometry::Triangle(_) => {
             return Err(DataFusionError::Execution(format!(
-                "Calculating the distance between POINT and {:?} is not supported",
-                other
+                "Calculating the distance between POINT and {other:?} is not supported"
             )));
         }
     };
@@ -72,8 +70,7 @@ fn line_distance(point: &Line, other: &Geometry) -> DFResult<f64> {
         | Geometry::Rect(_)
         | Geometry::Triangle(_) => {
             return Err(DataFusionError::Execution(format!(
-                "Calculating the distance between LINE and {:?} is not supported",
-                other
+                "Calculating the distance between LINE and {other:?} is not supported"
             )));
         }
     };
@@ -94,8 +91,7 @@ fn line_string_distance(point: &LineString, other: &Geometry) -> DFResult<f64> {
         | Geometry::Rect(_)
         | Geometry::Triangle(_) => {
             return Err(DataFusionError::Execution(format!(
-                "Calculating the distance between LINESTRING and {:?} is not supported",
-                other
+                "Calculating the distance between LINESTRING and {other:?} is not supported"
             )));
         }
     };
@@ -116,8 +112,7 @@ fn polygon_distance(point: &Polygon, other: &Geometry) -> DFResult<f64> {
         | Geometry::Rect(_)
         | Geometry::Triangle(_) => {
             return Err(DataFusionError::Execution(format!(
-                "Calculating the distance between POLYGON and {:?} is not supported",
-                other
+                "Calculating the distance between POLYGON and {other:?} is not supported"
             )));
         }
     };
@@ -138,8 +133,7 @@ fn multi_polygon_distance(point: &MultiPolygon, other: &Geometry) -> DFResult<f6
         | Geometry::Rect(_)
         | Geometry::Triangle(_) => {
             return Err(DataFusionError::Execution(format!(
-                "Calculating the distance between MULTIPOLYGON and {:?} is not supported",
-                other
+                "Calculating the distance between MULTIPOLYGON and {other:?} is not supported"
             )));
         }
     };
@@ -160,8 +154,7 @@ fn multi_point_distance(point: &MultiPoint, other: &Geometry) -> DFResult<f64> {
         | Geometry::Rect(_)
         | Geometry::Triangle(_) => {
             return Err(DataFusionError::Execution(format!(
-                "Calculating the distance between MULTIPOINT and {:?} is not supported",
-                other
+                "Calculating the distance between MULTIPOINT and {other:?} is not supported"
             )));
         }
     };
@@ -182,8 +175,7 @@ fn multi_line_string_distance(point: &MultiLineString, other: &Geometry) -> DFRe
         | Geometry::Rect(_)
         | Geometry::Triangle(_) => {
             return Err(DataFusionError::Execution(format!(
-                "Calculating the distance between MULTILINESTRING and {:?} is not supported",
-                other
+                "Calculating the distance between MULTILINESTRING and {other:?} is not supported"
             )));
         }
     };
@@ -204,8 +196,7 @@ fn triangle_distance(point: &Triangle, other: &Geometry) -> DFResult<f64> {
         | Geometry::Rect(_)
         | Geometry::Triangle(_) => {
             return Err(DataFusionError::Execution(format!(
-                "Calculating the distance between TRIANGLE and {:?} is not supported",
-                other
+                "Calculating the distance between TRIANGLE and {other:?} is not supported"
             )));
         }
     };

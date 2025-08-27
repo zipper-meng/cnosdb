@@ -10,7 +10,7 @@ pub type ColumnDataResult<T, E = ColumnDataError> = Result<T, E>;
 #[derive(Snafu, Debug)]
 #[snafu(visibility(pub))]
 pub enum ColumnDataError {
-    #[snafu(display("Unsupport data type: {}", dt))]
+    #[snafu(display("Unsupported data type: {dt}"))]
     UnsupportedDataType {
         dt: String,
         #[snafu(implicit)]
@@ -19,9 +19,7 @@ pub enum ColumnDataError {
     },
 
     #[snafu(display(
-        "Data type miss match: column type: {:?}, field_val: {:?}",
-        column_type,
-        field_val
+        "Data type miss match: column type: {column_type:?}, field_val: {field_val:?}",
     ))]
     DataTypeMissMatch {
         column_type: PhysicalDType,
@@ -31,7 +29,7 @@ pub enum ColumnDataError {
         backtrace: Backtrace,
     },
 
-    #[snafu(display("MutableColumnError: {}", msg))]
+    #[snafu(display("MutableColumnError: {msg}"))]
     CommonError {
         msg: String,
         #[snafu(implicit)]

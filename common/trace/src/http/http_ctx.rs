@@ -11,13 +11,13 @@ pub const DEFAULT_TRACE_HEADER_NAME: &str = "cnosdb-trace-ctx";
 #[derive(Debug, Snafu)]
 #[snafu(visibility(pub))]
 pub enum ContextError {
-    #[snafu(display("header '{}' has non-UTF8 content: {}", header, source))]
+    #[snafu(display("header '{header}' has non-UTF8 content: {source}"))]
     InvalidUtf8 {
         header: String,
         source: http::header::ToStrError,
     },
 
-    #[snafu(display("decoding header '{}': {}", header, source))]
+    #[snafu(display("decoding header '{header}': {source}"))]
     HeaderDecodeError { header: String, source: DecodeError },
 }
 

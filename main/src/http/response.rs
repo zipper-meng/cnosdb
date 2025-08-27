@@ -71,7 +71,7 @@ impl ResponseBuilder {
         T: Serialize,
     {
         let error = serde_json::to_vec(body).map_err(|err| {
-            trace::error!("response::json error: {}", err);
+            trace::error!("response::json error: {err}");
         });
 
         let builder = self.insert_header((CONTENT_TYPE, APPLICATION_JSON));
@@ -181,7 +181,7 @@ impl HttpResponse {
                         self.format
                             .format_batches(&[rb], has_headers)
                             .map_err(|e| HttpError::FetchResult {
-                                reason: format!("{}", e),
+                                reason: format!("{e}"),
                             })?;
                     if let Some(encoding) = self.encoding {
                         buffer = encoding
@@ -213,7 +213,7 @@ impl HttpResponse {
                         .format
                         .format_batches(&[rb], self.schema.is_some())
                         .map_err(|e| HttpError::FetchResult {
-                            reason: format!("{}", e),
+                            reason: format!("{e}"),
                         })?;
                     if let Some(encoding) = self.encoding.as_ref() {
                         buffer = encoding

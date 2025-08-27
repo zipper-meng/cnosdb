@@ -327,7 +327,7 @@ impl Engine for TsKv {
 
                 // TODO: stop current and prevent next flush and compaction.
                 if !ts_family.read().await.can_compaction() {
-                    warn!("forbidden compaction on moving vnode {}", vnode_id);
+                    warn!("forbidden compaction on moving vnode {vnode_id}");
                     return Ok(());
                 }
 

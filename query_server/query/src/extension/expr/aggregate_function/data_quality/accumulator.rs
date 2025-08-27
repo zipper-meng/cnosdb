@@ -151,9 +151,7 @@ impl Accumulator for DataQualityAccumulator {
                 (other1, other2) => {
                     return Err(DataFusionError::External(Box::new(QueryError::Internal {
                         reason: format!(
-                            "data quality accumulator state type should be ScalarValue::List, but found: time_list: {:?}, value_list: {:?}",
-                            other1,
-                            other2
+                            "data quality accumulator state type should be ScalarValue::List, but found: time_list: {other1:?}, value_list: {other2:?}"
                         ),
                     })))
                 }

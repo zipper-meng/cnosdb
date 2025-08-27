@@ -114,7 +114,7 @@ impl UserDefinedLogicalNodeCore for ExpandNode {
                     .map(|e| format!("{e}"))
                     .collect::<Vec<_>>()
                     .join(", ");
-                format!("[{}]", proj)
+                format!("[{proj}]")
             })
             .collect::<Vec<_>>()
             .join(", ");

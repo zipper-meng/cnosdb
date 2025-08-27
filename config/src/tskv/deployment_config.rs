@@ -50,7 +50,7 @@ impl CheckConfig for DeploymentConfig {
                 ret.add_error(CheckConfigItemResult {
                     config: config_name.clone(),
                     item: "mode".to_string(),
-                    message: format!("'mode' {} is not supported, 'mode' must be one of [query_tskv, query, tskv, singleton]", other_mode)
+                    message: format!("'mode' {other_mode} is not supported, 'mode' must be one of [query_tskv, query, tskv, singleton]")
                 });
             }
         }

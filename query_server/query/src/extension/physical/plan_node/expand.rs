@@ -163,8 +163,7 @@ impl ExecutionPlan for ExpandExec {
         context: Arc<TaskContext>,
     ) -> Result<SendableRecordBatchStream> {
         debug!(
-            "Start ExpandExec::execute for partition {} of context session_id {} and task_id {:?}",
-            partition,
+            "Start ExpandExec::execute for partition {partition} of context session_id {} and task_id {:?}",
             context.session_id(),
             context.task_id()
         );
@@ -219,7 +218,7 @@ impl DisplayAs for ExpandExec {
                     .collect::<Vec<_>>()
                     .join("], [");
 
-                write!(f, "ExpandExec: exprs=[[{}]]", proj_strs)
+                write!(f, "ExpandExec: exprs=[[{proj_strs}]]")
             }
             DisplayFormatType::TreeRender => {
                 // TODO(zipper): implement this.

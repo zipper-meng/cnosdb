@@ -22,7 +22,7 @@ type Result<T, E = ModelError> = std::result::Result<T, E>;
 pub fn sql_option_to_sql_str(opts: Vec<Option<(&str, SqlValue)>>) -> String {
     opts.into_iter()
         .flatten()
-        .map(|(k, v)| format!("{k}={}", v))
+        .map(|(k, v)| format!("{k}={v}"))
         .collect::<Vec<_>>()
         .join(", ")
 }
@@ -179,15 +179,14 @@ impl ToDDLSql for CustomTenantRole<Oid> {
         let sql = if if_not_exists {
             match self.inherit_role() {
                 Some(role) => format!(
-                    "create role if not exists {} inherit {};",
+                    "create role if not exists {} inherit {role};",
                     escape_double_quote_string(self.name()),
-                    role
                 ),
                 None => format!("create role if not exists \"{}\";", self.name()),
             }
         } else {
             match self.inherit_role() {
-                Some(role) => format!("create role \"{}\" inherit {};", self.name(), role),
+                Some(role) => format!("create role \"{}\" inherit {role};", self.name()),
                 None => format!("create role \"{}\";", self.name()),
             }
         };
@@ -404,7 +403,7 @@ impl ToDDLSql for StreamTable {
                 .iter()
                 .map(|f| {
                     let datatype = arrow_data_type_to_sql_data_type(f.data_type())?;
-                    let res = format!("\"{}\" {}", f.name(), datatype,);
+                    let res = format!("\"{}\" {datatype}", f.name());
                     Ok(res)
                 })
                 .collect::<Result<Vec<_>, crate::ModelError>>()?
@@ -538,7 +537,7 @@ remote_bucket = {max = 100, initial = 0, refill = 100, interval = 100}
 "#;
 
         let config: TenantLimiterConfig = toml::from_str(config_str).unwrap();
-        println!("{:?}", config);
+        println!("{config:?}");
 
         let opts = TenantOptionsBuilder::default()
             .comment("test")

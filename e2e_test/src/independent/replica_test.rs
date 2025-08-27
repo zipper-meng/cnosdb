@@ -37,11 +37,8 @@ fn replica_test(meta: Arc<TenantMeta>, server_url: &str) {
     assert_eq!(info.replica_set.leader_node_id, vnode.node_id);
 
     // test replica add, Add a replica to a non-existing node
-    let command = format!("replica add replica_id {} node_id 9999", replica_id);
-    println!(
-        "-----------test replica add, Add a replica to a non-existing node: {}",
-        command
-    );
+    let command = format!("replica add replica_id {replica_id} node_id 9999");
+    println!("-----------test replica add, Add a replica to a non-existing node: {command}");
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), 422);
     assert!(resp.text().unwrap().contains("Not Found Data Node"));
@@ -51,14 +48,8 @@ fn replica_test(meta: Arc<TenantMeta>, server_url: &str) {
     assert_eq!(info.replica_set.leader_node_id, vnode.node_id);
 
     // test replica promote, Promote a replica to a no replica node
-    let command = format!(
-        "replica promote replica_id {} node_id {}",
-        replica_id, target_node
-    );
-    println!(
-        "-----------test replica promote, Promote a replica to a no replica node: {}",
-        command
-    );
+    let command = format!("replica promote replica_id {replica_id} node_id {target_node}");
+    println!("-----------test replica promote, Promote a replica to a no replica node: {command}");
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), 422);
     assert!(resp.text().unwrap().contains("not found replica in node"));
@@ -68,11 +59,8 @@ fn replica_test(meta: Arc<TenantMeta>, server_url: &str) {
     assert_eq!(info.replica_set.leader_node_id, exist_node);
 
     // test replica promote, Promote a replica to a not exist node
-    let command = format!("replica promote replica_id {} node_id 999", replica_id);
-    println!(
-        "-----------test replica promote, Promote a replica to a not exist node: {}",
-        command
-    );
+    let command = format!("replica promote replica_id {replica_id} node_id 999");
+    println!("-----------test replica promote, Promote a replica to a not exist node: {command}");
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), 422);
     assert!(resp.text().unwrap().contains("not found replica in node"));
@@ -82,11 +70,8 @@ fn replica_test(meta: Arc<TenantMeta>, server_url: &str) {
     assert_eq!(info.replica_set.leader_node_id, exist_node);
 
     // test replica promote, promote a not exist replica
-    let command = format!("replica promote replica_id 9999 node_id {}", exist_node);
-    println!(
-        "-----------test replica promote, promote a not exist replica: {}",
-        command
-    );
+    let command = format!("replica promote replica_id 9999 node_id {exist_node}");
+    println!("-----------test replica promote, promote a not exist replica: {command}");
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), 422);
     // println!("resp.text().unwrap(): {}", resp.text().unwrap());
@@ -97,14 +82,8 @@ fn replica_test(meta: Arc<TenantMeta>, server_url: &str) {
     assert_eq!(info.replica_set.leader_node_id, exist_node);
 
     // test replica remove, replica id does not match node id
-    let command = format!(
-        "replica remove replica_id {} node_id {}",
-        replica_id, target_node
-    );
-    println!(
-        "-----------test replica remove, replica id does not match node id: {}",
-        command
-    );
+    let command = format!("replica remove replica_id {replica_id} node_id {target_node}");
+    println!("-----------test replica remove, replica id does not match node id: {command}");
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), 422);
     assert!(resp.text().unwrap().contains("not found replica in node"));
@@ -114,11 +93,8 @@ fn replica_test(meta: Arc<TenantMeta>, server_url: &str) {
     assert_eq!(info.replica_set.leader_node_id, exist_node);
 
     // test replica add
-    let command = format!(
-        "replica add replica_id {} node_id {}",
-        replica_id, target_node
-    );
-    println!("-----------test replica add: {}", command);
+    let command = format!("replica add replica_id {replica_id} node_id {target_node}");
+    println!("-----------test replica add: {command}");
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), status_code::OK);
     std::thread::sleep(std::time::Duration::from_secs(1));
@@ -127,11 +103,8 @@ fn replica_test(meta: Arc<TenantMeta>, server_url: &str) {
     assert_eq!(info.replica_set.leader_node_id, vnode.node_id);
 
     // test replica promote
-    let command = format!(
-        "replica promote replica_id {} node_id {}",
-        replica_id, target_node
-    );
-    println!("-----------test replica promote: {}", command);
+    let command = format!("replica promote replica_id {replica_id} node_id {target_node}");
+    println!("-----------test replica promote: {command}");
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), status_code::OK);
     std::thread::sleep(std::time::Duration::from_secs(1));
@@ -140,11 +113,8 @@ fn replica_test(meta: Arc<TenantMeta>, server_url: &str) {
     assert_eq!(info.replica_set.leader_node_id, target_node);
 
     // test replica remove
-    let command = format!(
-        "replica remove replica_id {} node_id {}",
-        replica_id, exist_node
-    );
-    println!("-----------: {}", command);
+    let command = format!("replica remove replica_id {replica_id} node_id {exist_node}");
+    println!("-----------: {command}");
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), status_code::OK);
     std::thread::sleep(std::time::Duration::from_secs(1));
@@ -153,14 +123,8 @@ fn replica_test(meta: Arc<TenantMeta>, server_url: &str) {
     assert_eq!(info.replica_set.leader_node_id, target_node);
 
     // test replica remove, remove last replica
-    let command = format!(
-        "replica remove replica_id {} node_id {}",
-        replica_id, target_node
-    );
-    println!(
-        "-----------test replica remove, remove last replica: {}",
-        command
-    );
+    let command = format!("replica remove replica_id {replica_id} node_id {target_node}");
+    println!("-----------test replica remove, remove last replica: {command}");
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), 422);
     assert!(resp
@@ -174,10 +138,7 @@ fn replica_test(meta: Arc<TenantMeta>, server_url: &str) {
 
     // test replica destroy, replica not exist
     let command = "replica destroy replica_id 9999".to_string();
-    println!(
-        "-----------test replica destroy, replica not exist: {}",
-        command
-    );
+    println!("-----------test replica destroy, replica not exist: {command}");
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), 422);
     assert!(resp.text().unwrap().contains("ReplicationSet not found"));
@@ -187,8 +148,8 @@ fn replica_test(meta: Arc<TenantMeta>, server_url: &str) {
     assert_eq!(info.replica_set.leader_node_id, target_node);
 
     // test replica destroy
-    let command = format!("replica destroy replica_id {}", replica_id);
-    println!("-----------test replica destroy: {}", command);
+    let command = format!("replica destroy replica_id {replica_id}");
+    println!("-----------test replica destroy: {command}");
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), status_code::OK);
     std::thread::sleep(std::time::Duration::from_secs(1));
@@ -196,8 +157,8 @@ fn replica_test(meta: Arc<TenantMeta>, server_url: &str) {
     assert!(info.is_none());
 
     // test replica destroy repeatedly
-    let command = format!("replica destroy replica_id {}", replica_id);
-    println!("-----------test replica destroy repeatedly: {}", command);
+    let command = format!("replica destroy replica_id {replica_id}");
+    println!("-----------test replica destroy repeatedly: {command}");
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), 422);
     assert!(resp.text().unwrap().contains("ReplicationSet not found"));
@@ -238,7 +199,7 @@ fn replica_test_case() {
         for count in 0..write_count {
             let tstamp = (1711333406_u64 + count) * 1000000000;
             let random = rand::rng().random_range(0..32);
-            let body = format!("ma,ta=a_{} fa={} {}", random, count, tstamp);
+            let body = format!("ma,ta=a_{random} fa={count} {tstamp}");
 
             check_response!(client.post(url, &body,));
         }
@@ -250,9 +211,9 @@ fn replica_test_case() {
 
     let resp = check_response!(client.post(server_url, "select count(1,2) from ma"));
     let actual = resp.text().unwrap();
-    let expected = format!("\"COUNT(Int64(1),Int64(2))\"\n{}\n", 0);
-    println!("\nselect count(1,2): {}", actual);
-    println!("expected: {}", expected);
+    let expected = "\"COUNT(Int64(1),Int64(2))\"\n0\n";
+    println!("\nselect count(1,2): {actual}");
+    println!("expected: {expected}");
     assert_eq!(actual, expected);
 
     println!("#### Test complete replica_test_case ####");
@@ -289,7 +250,7 @@ fn replica_test_case_singleton() {
         for count in 0..write_count {
             let tstamp = (1711333406_u64 + count) * 1000000000;
             let random = rand::rng().random_range(0..32);
-            let body = format!("ma,ta=a_{} fa={} {}", random, count, tstamp);
+            let body = format!("ma,ta=a_{random} fa={count} {tstamp}");
 
             check_response!(client.post(url, &body));
         }
@@ -312,7 +273,7 @@ fn replica_test_case_singleton() {
     let server_url = &format!("http://{host_port}/api/v1/sql?db=replica_test_db");
     // A Replication Already in node 1
     let command = format!("replica add replica_id {replica_id} node_id {target_node}");
-    println!("-----------: {}", command);
+    println!("-----------: {command}");
     let resp = client.post(server_url, &command).unwrap();
     assert_eq!(resp.status(), 422);
     assert!(resp.text().unwrap().contains("A Replication Already in"));
@@ -475,7 +436,7 @@ fn replica_test_case_1query_1tskv() {
         for count in 0..write_count {
             let tstamp = (1711333406_u64 + count) * 1000000000;
             let random = rand::rng().random_range(0..32);
-            let body = format!("ma,ta=a_{} fa={} {}", random, count, tstamp);
+            let body = format!("ma,ta=a_{random} fa={count} {tstamp}");
 
             check_response!(client.post(url, &body));
         }

@@ -140,7 +140,7 @@ fn scalar_to_points(value: ScalarValue) -> DFResult<Vec<TSPoint>> {
             Ok(points)
         }
         _ => Err(DataFusionError::External(Box::new(QueryError::Internal {
-            reason: format!("Expected list, got {:?}", value),
+            reason: format!("Expected list, got {value:?}"),
         }))),
     }
 }

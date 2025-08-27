@@ -115,6 +115,6 @@ mod test {
             }
             pos += file.write(b"hello worldhello worldhello worldhello worldhello worldhello worldhello worldhello worldhello worldh").await.unwrap();
         }
-        println!("write {} bytes", pos);
+        println!("write {pos} bytes");
     }
 }

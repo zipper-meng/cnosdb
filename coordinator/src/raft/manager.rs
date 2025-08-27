@@ -79,7 +79,7 @@ impl RaftNodesManager {
                 res.unwrap_err().to_string()
             }
         } else {
-            format!("Not found raft group: {}", group_id)
+            format!("Not found raft group: {group_id}")
         }
     }
 
@@ -106,12 +106,12 @@ impl RaftNodesManager {
                     .await
                 {
                     Ok(node) => {
-                        info!("start raft node: {:?} Success", summary);
+                        info!("start raft node: {summary:?} Success");
                         Ok((node, summary))
                     }
 
                     Err(err) => {
-                        info!("start raft node: {:?} Failed: {}", summary, err);
+                        info!("start raft node: {summary:?} Failed: {err}");
                         Err(err)
                     }
                 }
@@ -122,7 +122,7 @@ impl RaftNodesManager {
         for future in futures {
             let (node, summary) = future.await.map_err(|e| {
                 CommonSnafu {
-                    msg: format!("start all raft node failed: {:?}", e),
+                    msg: format!("start all raft node failed: {e:?}"),
                 }
                 .build()
             })??;
@@ -172,7 +172,7 @@ impl RaftNodesManager {
         id: VnodeId,
         group_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
-        info!("exec open raft node: {}.{}", group_id, id);
+        info!("exec open raft node: {group_id}.{id}");
         let mut nodes = self.raft_nodes.write().await;
         if let Ok(Some(node)) = nodes.get_node(group_id) {
             if node.raft_id() == id as u64 {
@@ -201,7 +201,7 @@ impl RaftNodesManager {
         id: VnodeId,
         group_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
-        info!("exec drop raft node: {}.{}", group_id, id);
+        info!("exec drop raft node: {group_id}.{id}");
         self.raft_nodes
             .write()
             .await
@@ -281,7 +281,7 @@ impl RaftNodesManager {
         let group_id = raft_node.group_id();
         for _ in 0..10 {
             let result = self.assert_leader_node(raft_node.clone()).await;
-            info!("wait leader elected group: {}, {:?}", group_id, result);
+            info!("wait leader elected group: {group_id}, {result:?}");
             if result.is_ok() {
                 break;
             }
@@ -312,7 +312,7 @@ impl RaftNodesManager {
                 })
             } else {
                 Err(CoordinatorError::RaftGroupError {
-                    msg: format!("group-{}, is_leader failed: {}", raft_node.group_id(), err),
+                    msg: format!("group-{}, is_leader failed: {err}", raft_node.group_id()),
                 })
             }
         } else {
@@ -645,10 +645,7 @@ impl RaftNodesManager {
             .raft_state
             .get_last_applied_log(group_id)
             .context(ReplicationSnafu)?;
-        info!(
-            "open vnode({}-{}) last applied id: {:?}",
-            group_id, vnode_id, apply_id
-        );
+        info!("open vnode({group_id}-{vnode_id}) last applied id: {apply_id:?}",);
         raft_logs
             .recover(apply_id, &mut vnode_store)
             .await
@@ -725,8 +722,8 @@ impl RaftNodesManager {
         replica_id: ReplicationSetId,
     ) -> CoordinatorResult<()> {
         info!(
-            "open remote raft node: {}.{}.{}",
-            vnode.node_id, replica_id, vnode.id
+            "open remote raft node: {}.{replica_id}.{}",
+            vnode.node_id, vnode.id
         );
 
         let request = AdminCommand {

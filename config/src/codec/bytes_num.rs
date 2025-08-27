@@ -140,9 +140,9 @@ mod test {
     #[rustfmt::skip]
     fn check_foo(foo: Foo, name: &str, number: u64) -> Result<(), Box<dyn Any + Send + 'static>> {
         std::panic::catch_unwind(|| {
-            assert_eq!(foo.number, number, "Checking foo {:?} with '{}' and {}", foo, name, number);
+            assert_eq!(foo.number, number, "Checking foo {foo:?} with '{name}' and {number}");
             assert_eq!(foo.name.as_str(), name,
-                "Checking {:?} with name: '{}' and number: {}", foo, name, number);
+                "Checking {foo:?} with name: '{name}' and number: {number}");
         })
     }
 
@@ -208,7 +208,7 @@ mod test {
             name = "Bar1"
         "#;
         let err = toml::from_str::<Foo>(config_str).unwrap_err();
-        let err_msg = format!("{}", err);
+        let err_msg = format!("{err}");
         let exp_err_msg = r#"TOML parse error at line 2, column 22
   |
 2 |             number = "a1s"
@@ -222,7 +222,7 @@ the character 'a' is not a number
             name = "Bar2"
         "#;
         let err = toml::from_str::<Foo>(config_str).unwrap_err();
-        let err_msg = format!("{}", err);
+        let err_msg = format!("{err}");
         let exp_err_msg = r#"TOML parse error at line 2, column 22
   |
 2 |             number = "10_000_000_000_000Gib"
