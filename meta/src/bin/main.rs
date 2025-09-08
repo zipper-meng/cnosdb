@@ -6,7 +6,7 @@ use clap::{Parser, Subcommand};
 use config::meta::Opt;
 use meta::meta_cluster_command::add_node::add_node;
 use meta::meta_cluster_command::dump::dump;
-use meta::meta_cluster_command::dumpsql::dumpsql;
+use meta::meta_cluster_command::dumpsql::dump_sql_ddl;
 use meta::meta_cluster_command::meta_init::meta_init;
 use meta::meta_cluster_command::remove_node::remove_node;
 use meta::meta_cluster_command::restore::restore;
@@ -124,7 +124,7 @@ async fn main() {
             cluster,
             file,
         }) => {
-            if let Err(e) = dumpsql(&bind, &cluster, &file).await {
+            if let Err(e) = dump_sql_ddl(&bind, &cluster, &file).await {
                 eprintln!("Error backing up meta service: {e}");
             }
         }

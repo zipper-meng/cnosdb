@@ -1,6 +1,6 @@
 use super::utils::http_save_to_file;
 
-pub async fn dumpsql(
+pub async fn dump_sql_ddl(
     bind: &str,
     cluster_name: &str,
     file: &str,

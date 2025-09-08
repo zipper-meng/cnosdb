@@ -1,17 +1,17 @@
 use openraft::RaftMetrics;
 use replication::{RaftNodeId, RaftNodeInfo};
-use serde_json::Value;
 
 use super::meta_http_client::HttpClient;
 
-pub async fn remove_node(bind: &str, addr: &str) -> Result<(), Box<dyn std::error::Error>> {
+pub async fn remove_node(bind: &str, addr: &str) -> Result<(), String> {
     let http_client = HttpClient::new();
-    let url = format!("http://{bind}/metrics");
-    let body: RaftMetrics<RaftNodeId, RaftNodeInfo> =
-        http_client.http_request_method("GET", &url, "").await?;
 
-    let leader_id = body.vote.leader_id.node_id;
-    let nodes = body
+    let cluster_metrics_url = format!("http://{bind}/metrics");
+    let cluster_metrics_resp: RaftMetrics<RaftNodeId, RaftNodeInfo> =
+        http_client.get(&cluster_metrics_url).await?;
+
+    let leader_id = cluster_metrics_resp.vote.leader_id.node_id;
+    let nodes = cluster_metrics_resp
         .membership_config
         .membership()
         .nodes()
@@ -22,22 +22,20 @@ pub async fn remove_node(bind: &str, addr: &str) -> Result<(), Box<dyn std::erro
         .map(|(k, _)| **k)
         .ok_or_else(|| format!("Node with address {addr} not found in the cluster"))?;
 
-    let url = format!("http://{bind}/change-membership");
-    let mut nodes_map = nodes.clone();
+    let change_membership_url = format!("http://{bind}/change-membership");
+    let mut nodes_map = nodes;
     nodes_map.retain(|(id, _)| **id != node_id_to_remove);
-
-    let node_ids: Vec<u64> = nodes_map.iter().map(|(id, _)| **id).collect();
-    let data = serde_json::json!(node_ids);
-    let res_body: Value = http_client
-        .http_request_method("POST", &url, &serde_json::to_string(&data)?)
+    let change_membership_req = {
+        let node_ids: Vec<u64> = nodes_map.iter().map(|(id, _)| **id).collect();
+        serde_json::json!(node_ids).to_string()
+    };
+    let change_membership_resp = http_client
+        .post_text(&change_membership_url, &change_membership_req)
         .await?;
 
-    if res_body.get("Err").is_some() {
+    if !change_membership_resp.starts_with(r#"{"Ok":"#) {
         return Err(format!(
-            "Error removing node {addr} from meta service at {bind}: {}",
-            res_body
-                .get("Err")
-                .unwrap_or(&Value::String("Unknown error".to_string()))
+            "Error removing node {addr} from meta service at {bind}: {change_membership_resp}",
         )
         .into());
     }
@@ -55,11 +53,10 @@ pub async fn remove_node(bind: &str, addr: &str) -> Result<(), Box<dyn std::erro
             for _ in 0..100 {
                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                 let url = format!("http://{new_leader_candidate}/metrics");
-                let body: RaftMetrics<RaftNodeId, RaftNodeInfo> =
-                    http_client.http_request_method("GET", &url, "").await?;
-                let new_leader_id = body.vote.leader_id.node_id;
+                let resp: RaftMetrics<RaftNodeId, RaftNodeInfo> = http_client.get(&url).await?;
+                let new_leader_id = resp.vote.leader_id.node_id;
                 if let Some(new_leader_info) =
-                    body.membership_config.membership().get_node(&new_leader_id)
+                    resp.membership_config.membership().get_node(&new_leader_id)
                 {
                     let new_leader_addr = &new_leader_info.address;
                     if new_leader_id != node_id_to_remove {

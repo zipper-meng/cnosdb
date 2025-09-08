@@ -1,4 +1,5 @@
 use std::collections::HashSet;
+use std::future::IntoFuture as _;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
@@ -65,7 +66,7 @@ pub async fn start_singe_meta_server<P: AsRef<Path>>(
         addr: listen_addr.to_string(),
         storage: Arc::new(RwLock::new(storage)),
     };
-    tokio::spawn(async move { axum::serve(listener, http_api::create_router(server)) });
+    tokio::spawn(axum::serve(listener, http_api::create_router(server)).into_future());
 }
 
 #[derive(Clone)]

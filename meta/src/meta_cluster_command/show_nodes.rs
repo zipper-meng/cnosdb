@@ -6,19 +6,18 @@ use super::meta_http_client::HttpClient;
 pub async fn show_nodes(bind: &str) -> Result<(), Box<dyn std::error::Error>> {
     let http_client = HttpClient::new();
     let url = format!("http://{bind}/metrics");
-    let body: RaftMetrics<RaftNodeId, RaftNodeInfo> =
-        http_client.http_request_method("GET", &url, "").await?;
+    let resp: RaftMetrics<RaftNodeId, RaftNodeInfo> = http_client.get(&url).await?;
 
-    let nodes = body
+    let nodes = resp
         .membership_config
         .membership()
         .nodes()
         .collect::<Vec<_>>();
-    let term = body.current_term;
-    let last_log_index = body.last_log_index.unwrap_or(0);
-    let last_applied = body.last_applied.map(|log_id| log_id.index).unwrap_or(0);
-    let leader = body.current_leader.unwrap_or(0);
-    let members = body.membership_config.membership().get_joint_config();
+    let term = resp.current_term;
+    let last_log_index = resp.last_log_index.unwrap_or(0);
+    let last_applied = resp.last_applied.map(|log_id| log_id.index).unwrap_or(0);
+    let leader = resp.current_leader.unwrap_or(0);
+    let members = resp.membership_config.membership().get_joint_config();
 
     println!(
         "Node ID  Address         State     Term  Last_Log_index  Last_Applied  Leader  Members"
@@ -39,7 +38,7 @@ pub async fn show_nodes(bind: &str) -> Result<(), Box<dyn std::error::Error>> {
 
     for (node_id, node_info) in nodes {
         let address = &node_info.address;
-        let state = if Some(*node_id) == body.current_leader {
+        let state = if Some(*node_id) == resp.current_leader {
             "Leader"
         } else {
             "Follower"

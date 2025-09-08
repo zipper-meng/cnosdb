@@ -1,3 +1,4 @@
+use std::process::exit;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,7 +17,7 @@ use replication::network_grpc::RaftCBServer;
 use replication::node_store::NodeStorage;
 use replication::raft_node::RaftNode;
 use replication::state_store::StateStorage;
-use replication::{RaftNodeInfo, ReplicationConfig};
+use replication::{network_http, RaftNodeInfo, ReplicationConfig};
 use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::{info, warn};
@@ -169,9 +170,15 @@ async fn start_server(
     node: RaftNode,
     storage: Arc<RwLock<StateMachine>>,
 ) -> MetaResult<()> {
-    let listener = TcpListener::bind(&addr).await.unwrap();
+    let listener = match TcpListener::bind(&addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            info!("Failed to create listener of {addr}: {e}");
+            exit(1);
+        }
+    };
 
-    let metrics_register = Arc::new(MetricsRegister::new([("address", addr.clone())]));
+    let metrics_register = Arc::new(MetricsRegister::new([("address", addr)]));
     let metrics = ReplicationMetrics::new(
         metrics_register,
         "cnosdb_meta",
@@ -180,22 +187,23 @@ async fn start_server(
         node.raft_id(),
     );
 
-    let node = Arc::new(node);
+    let raft_node = Arc::new(node);
     let http_server = super::http::HttpServer {
-        node: node.clone(),
+        node: raft_node.clone(),
         storage: storage.clone(),
     };
 
-    let mut router = super::http::create_router(http_server.clone());
+    let mut router = super::http::create_router(http_server.clone()); // Meta-Server HTTP APIs.
+    router = router.merge(network_http::create_router(raft_node.clone())); // Merge RAFT HTTP APIs.
     {
         let mut multi_raft = MultiRaft::new();
-        multi_raft.add_node(node, metrics);
+        multi_raft.add_node(raft_node, metrics);
         let multi_raft = Arc::new(RwLock::new(multi_raft));
 
         let mut grpc_routes_builder = tonic::service::Routes::builder();
         grpc_routes_builder.add_service(RaftServiceServer::new(RaftCBServer::new(multi_raft)));
         let grpc_router = grpc_routes_builder.routes().into_axum_router();
-        router = router.merge(grpc_router);
+        router = router.merge(grpc_router); // Merge RAFT GRPC APIs.
     }
 
     axum::serve(listener, router)
