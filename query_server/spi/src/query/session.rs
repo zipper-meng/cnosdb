@@ -146,17 +146,17 @@ impl SessionCtxFactory {
         span_ctx: &Option<SpanContext>,
         coord: Arc<dyn Coordinator>,
     ) -> QueryResult<SessionContext> {
-        let mut df_session_cfg = context.session_config().to_df_config().clone();
+        let mut config = context.session_config().to_df_config().clone();
         if let Some(span_ctx) = span_ctx {
             // inject span context into datafusion session config, so that it can be used in execution
-            df_session_cfg = df_session_cfg.with_extension(Arc::new(*span_ctx))
+            config = config.with_extension(Arc::new(*span_ctx))
         }
         // inject cnosdb_config into datafusion session_config
-        df_session_cfg
+        config
             .options_mut()
             .extensions
             .insert(SqlExecInfo::default());
-        df_session_cfg = df_session_cfg.set_u64(
+        config = config.set_u64(
             "sql_exec_info.copyinto_trigger_flush_size",
             coord.get_config().storage.copyinto_trigger_flush_size,
         );
@@ -164,10 +164,12 @@ impl SessionCtxFactory {
         let rt = RuntimeEnvBuilder::new()
             .with_memory_pool(memory_pool)
             .build()?;
+
         let df_session_state = SessionStateBuilder::new()
+            .with_config(config)
             .with_runtime_env(Arc::new(rt))
             .with_session_id(session_id.into())
-            .with_config(df_session_cfg)
+            .with_default_features()
             .build();
         let df_session_ctx = SessionContext::new_with_state(df_session_state);
         // register built-in system variables

@@ -317,11 +317,21 @@ impl ContextProvider for MetadataProvider {
     }
 
     fn get_aggregate_meta(&self, name: &str) -> Option<Arc<AggregateUDF>> {
-        self.func_manager.udaf(name).ok()
+        self.func_manager.udaf(name).ok().or(self
+            .session
+            .inner()
+            .aggregate_functions()
+            .get(name)
+            .cloned())
     }
 
     fn get_window_meta(&self, name: &str) -> Option<Arc<WindowUDF>> {
-        self.func_manager.udwf(name).ok()
+        self.func_manager.udwf(name).ok().or(self
+            .session
+            .inner()
+            .window_functions()
+            .get(name)
+            .cloned())
     }
 
     fn get_variable_type(&self, variable_names: &[String]) -> Option<DataType> {
