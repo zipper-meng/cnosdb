@@ -385,11 +385,11 @@ impl<'a> ExtParser<'a> {
         } else if self.parse_cnos_keyword(CnosKeyWord::QUERIES) {
             self.parse_show_queries()
         } else if self.parse_cnos_keyword(CnosKeyWord::STREAMS) {
-            let verbose = self
-                .parser
-                .parse_keyword(Keyword::VERBOSE)
-                .then_some(true)
-                .unwrap_or_default();
+            let verbose = if self.parser.parse_keyword(Keyword::VERBOSE) {
+                true
+            } else {
+                Default::default()
+            };
             Ok(ExtStatement::ShowStreams(ast::ShowStreams { verbose }))
         } else if self.parse_cnos_keyword(CnosKeyWord::REPLICAS) {
             self.parse_show_replicas()

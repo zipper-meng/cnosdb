@@ -404,12 +404,8 @@ impl DeleteSelectionExpressionToDomainsVisitorContext {
     /// Returns two column domains: tag and time.
     pub fn into_tag_and_time_domains(mut self) -> (ColumnDomains<String>, ColumnDomains<String>) {
         (
-            self.tag_domain_stack
-                .pop_back()
-                .unwrap_or(ColumnDomains::all()),
-            self.time_domain_stack
-                .pop_back()
-                .unwrap_or(ColumnDomains::all()),
+            self.tag_domain_stack.pop_back().unwrap_or_default(),
+            self.time_domain_stack.pop_back().unwrap_or_default(),
         )
     }
 }

@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)] // TODO(zipper: fix large enums)
+
 #[cfg(test)]
 mod tests {
     use std::path::{Path, PathBuf};
@@ -29,7 +31,6 @@ mod tests {
     ///
     /// If the given runtime is none, get_tskv will create a new runtime and
     /// put into the return value, or else the given runtime will be returned.
-
     fn get_config(dir: impl AsRef<Path>) -> Config {
         let dir = dir.as_ref();
         let mut global_config = Config::for_test();

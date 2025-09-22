@@ -227,6 +227,7 @@ impl<'de> Deserialize<'de> for TskvTableSchema {
     }
 }
 
+#[allow(clippy::non_canonical_partial_ord_impl)]
 impl PartialOrd for TskvTableSchema {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.schema_version.cmp(&other.schema_version))
@@ -458,7 +459,7 @@ impl TskvTableSchema {
             self.columns
                 .iter()
                 .filter(|column| column.column_type.is_time())
-                .last()
+                .next_back()
                 .cloned()
                 .unwrap_unchecked()
         }

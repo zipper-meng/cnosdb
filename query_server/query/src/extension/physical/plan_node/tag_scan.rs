@@ -195,6 +195,7 @@ impl<'a> Display for PredicateDisplay<'a> {
     }
 }
 
+#[allow(dead_code)] // TODO(zipper: fix this)
 struct TagRecordBatchStream {
     schema: SchemaRef,
     columns: Option<Vec<ArrayRef>>,

@@ -1,4 +1,7 @@
 #![recursion_limit = "256"]
+#![allow(clippy::result_large_err)] // TODO(zipper: fix large enums)
+#![allow(clippy::large_enum_variant)] // TODO(zipper: fix large enums)
+
 extern crate core;
 
 pub mod auth;

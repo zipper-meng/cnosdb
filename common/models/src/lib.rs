@@ -1,3 +1,5 @@
+#![allow(clippy::result_large_err)] // TODO(zipper: fix large enums)
+
 use std::sync::Arc;
 
 pub use errors::{ModelError, ModelResult};

@@ -354,6 +354,7 @@ mod test {
         pub b: i32,
     }
 
+    #[allow(clippy::non_canonical_partial_ord_impl)]
     impl PartialOrd for Tuple {
         fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
             Some(self.a.cmp(&other.a))

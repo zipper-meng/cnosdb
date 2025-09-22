@@ -1,4 +1,5 @@
 #![recursion_limit = "256"]
+#![allow(clippy::result_large_err)] // TODO(zipper: fix large enums)
 
 use std::fmt::Debug;
 use std::pin::Pin;

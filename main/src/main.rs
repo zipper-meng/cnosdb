@@ -1,5 +1,7 @@
 #![allow(dead_code)]
 #![recursion_limit = "256"]
+#![allow(clippy::result_large_err)] // TODO(zipper: fix large enums)
+#![allow(clippy::large_enum_variant)] // TODO(zipper: fix large enums)
 
 use std::fmt::Display;
 use std::process;
@@ -278,7 +280,7 @@ fn init_runtime(cores: Option<usize>) -> Result<Runtime, std::io::Error> {
 fn get_deployment_mode(config_deployment_mode: &str) -> Result<DeploymentMode, std::io::Error> {
     match config_deployment_mode.parse::<DeploymentMode>() {
         Ok(mode) => Ok(mode),
-        Err(e) => Err(std::io::Error::new(std::io::ErrorKind::Other, e)),
+        Err(e) => Err(std::io::Error::other(e)),
     }
 }
 

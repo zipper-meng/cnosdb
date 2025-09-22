@@ -25,7 +25,7 @@ impl LPLine {
         }
     }
 
-    pub fn to_line(&self) -> Line {
+    pub fn to_line(&self) -> Line<'_> {
         let tags = self
             .labels
             .0
