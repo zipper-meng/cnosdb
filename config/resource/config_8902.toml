@@ -2,7 +2,7 @@
 node_id = 1001
 host = "127.0.0.1"
 cluster_name = "cluster_xxx"
-store_metrics = true
+store_metrics = false
 pre_create_bucket = false
 
 [deployment]
@@ -53,11 +53,11 @@ sync = false
 compress = "zstd"
 
 [cache]
-max_buffer_size = "512 MiB"
+max_buffer_size = "128 MiB"
 partition = 16
 
 [log]
-level = "info"
+level = "warn"
 path = "/tmp/cnosdb/1001/log"
 # max_file_count = 10
 file_rotation = "daily"

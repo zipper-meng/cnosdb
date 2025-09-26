@@ -1210,9 +1210,10 @@ impl StateMachine {
         }
 
         if *ts < db_schema.time_to_expired() {
-            return Err(MetaError::NotSupport {
-                msg: "create expired bucket".to_string(),
-            });
+            warn!("create expired bucket: {ts}");
+            // return Err(MetaError::NotSupport {
+            //     msg: "create expired bucket".to_string(),
+            // });
         }
 
         let mut bucket = BucketInfo {

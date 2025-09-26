@@ -255,7 +255,13 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
     ) -> QueryResult<PlanWithPrivileges> {
         match stmt {
             Statement::Query(_) => {
-                let df_plan = self.df_planner.sql_statement_to_plan(stmt)?;
+                let df_plan = match self.df_planner.sql_statement_to_plan(stmt) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        println!("  E: failed building plan: {e}");
+                        return Err(e.into());
+                    },
+                };
                 let plan = Plan::Query(QueryPlan {
                     df_plan,
                     is_tag_scan: false,

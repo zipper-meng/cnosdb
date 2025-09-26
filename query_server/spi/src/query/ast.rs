@@ -2,10 +2,10 @@ use std::fmt;
 
 use datafusion::sql::parser::CreateExternalTable;
 use datafusion::sql::sqlparser::ast::{
-    AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, SqlOption, Statement,
-    TableFactor, Value,
+    AnalyzeFormat, DataType, Expr, Ident, ObjectName, Offset, OrderByExpr, SetExpr, SqlOption, Statement, TableFactor, Value
 };
 use datafusion::sql::sqlparser::parser::ParserError;
+use models::arrow::SchemaRef;
 use models::codec::Encoding;
 use models::meta_data::{NodeId, ReplicationSetId, VnodeId};
 
@@ -71,6 +71,41 @@ pub enum ExtStatement {
     ReplicaAdd(ReplicaAdd),
     ReplicaRemove(ReplicaRemove),
     ReplicaPromote(ReplicaPromote),
+}
+
+impl ExtStatement {
+    // pub fn parameter_schema(stmt: &Statement) -> Option<SchemaRef> {
+    //     match stmt {
+    //         Statement::Query(query) => match query.body.as_ref() {
+    //             SetExpr::Select(select) => {
+    //                 match &select.selection {
+    //                     Some(expr) => Self::extract_placeholders(expr),
+    //                     None => None,
+    //                 }
+    //             },
+    //             SetExpr::Query(query) => todo!(),
+    //             SetExpr::SetOperation { op, set_quantifier, left, right } => todo!(),
+    //             SetExpr::Values(values) => todo!(),
+    //             SetExpr::Insert(statement) => ,
+    //             SetExpr::Update(statement) => todo!(),
+    //             SetExpr::Table(table) => todo!(),
+    //         },
+    //         Statement::Insert { source, .. } => todo!(),
+    //         Statement::Update { assignments, selection, .. } => todo!(),
+    //         Statement::Delete { selection, ..} => todo!(),
+    //         _ => {
+    //             // TODO(zipper): support placeholder for more stmt types.
+    //             None
+    //         }
+    //     }
+    // }
+
+    // fn extract_placeholders(expr: &Expr) -> Option<SchemaRef> {
+
+
+
+    //     None
+    // }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

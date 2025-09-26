@@ -2,6 +2,8 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
+use arrow_flight::decode::{DecodedPayload, FlightDataDecoder};
+use arrow_flight::error::FlightError;
 use arrow_flight::flight_service_server::FlightService;
 use arrow_flight::sql::server::FlightSqlService;
 use arrow_flight::sql::{
@@ -18,11 +20,14 @@ use arrow_flight::sql::{
 };
 use arrow_flight::{
     utils as flight_utils, Action, FlightData, FlightDescriptor, FlightEndpoint, FlightInfo,
-    HandshakeRequest, HandshakeResponse, IpcMessage, Ticket,
+    HandshakeRequest, HandshakeResponse, IpcMessage, PutResult, Ticket,
 };
+use datafusion::arrow;
 use datafusion::arrow::datatypes::{Schema, SchemaRef, ToByteSlice};
-use futures::Stream;
+use datafusion::arrow::record_batch::RecordBatch;
+use futures::{Stream, StreamExt, TryStreamExt};
 use http_protocol::header::{DB, STREAM_TRIGGER_INTERVAL, TARGET_PARTITIONS, TENANT};
+use models::arrow::Field;
 use models::auth::user::User;
 use models::oid::UuidGenerator;
 use moka::sync::Cache;
@@ -79,6 +84,7 @@ where
         req_headers: &MetadataMap,
         span_ctx: Option<&SpanContext>,
     ) -> Result<(Option<Plan>, QueryStateMachineRef), Status> {
+        println!("method: pre_precess_statement_query_req");
         // auth request
         let auth_result = {
             let _span = Span::from_context("authenticate", span_ctx);
@@ -95,7 +101,7 @@ where
         // build query state machine
         let query_state_machine = {
             let span = Span::from_context("build query_state_machine", span_ctx);
-            self.build_query_state_machine(sql.into(), ctx, span.context().as_ref())
+            self.build_query_state_machine(sql, ctx, span.context().as_ref())
                 .await?
         };
 
@@ -111,6 +117,7 @@ where
         req_headers: &MetadataMap,
         span_ctx: Option<&SpanContext>,
     ) -> Result<(Vec<u8>, SchemaRef), Status> {
+        println!("method: pre_precess_statement_query_req_and_save");
         let (logical_plan, query_state_machine) = self
             .pre_precess_statement_query_req(sql, req_headers, span_ctx)
             .await?;
@@ -136,6 +143,7 @@ where
         request: Request<FlightDescriptor>,
         span_ctx: Option<&SpanContext>,
     ) -> Result<Response<FlightInfo>, Status> {
+        println!("method: precess_flight_info_req");
         let (result_ident, schema) = self
             .pre_precess_statement_query_req_and_save(sql, request.metadata(), span_ctx)
             .await?;
@@ -162,6 +170,7 @@ where
         total_records: i64,
         flight_descriptor: FlightDescriptor,
     ) -> Result<FlightInfo, Status> {
+        println!("method: construct_flight_info");
         let ticket = Ticket {
             ticket: result_ident.into(),
         };
@@ -179,6 +188,7 @@ where
     }
 
     fn construct_context(&self, user: User, metadata: &MetadataMap) -> Result<Context, Status> {
+        println!("method: construct_context");
         // parse tenant & default database
         let tenant = utils::get_value_from_header(metadata, TENANT, "");
         let db = utils::get_value_from_header(metadata, DB, "");
@@ -217,6 +227,7 @@ where
         ctx: Context,
         span_context: Option<&SpanContext>,
     ) -> Result<QueryStateMachineRef, Status> {
+        println!("method: build_query_state_machine");
         let query = Query::new(ctx, sql.into());
         // TODO
         let query_state_machine = self
@@ -231,6 +242,7 @@ where
         &self,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<Option<Plan>, Status> {
+        println!("method: build_logical_plan");
         let logical_plan = self
             .instance
             .build_logical_plan(query_state_machine)
@@ -244,6 +256,7 @@ where
         logical_plan: Option<Plan>,
         query_state_machine: QueryStateMachineRef,
     ) -> Result<QueryHandle, Status> {
+        println!("method: execute_logical_plan");
         let query_result = match logical_plan {
             None => QueryHandle::new(
                 query_state_machine.query_id,
@@ -264,6 +277,7 @@ where
         statement_handle: &[u8],
         span_ctx: Option<SpanContext>,
     ) -> Result<(Option<Plan>, QueryStateMachineRef), Status> {
+        println!("method: get_plan_and_qsm");
         let (logical_plan, query_state_machine) =
             self.result_cache.get(statement_handle).ok_or_else(|| {
                 Status::internal(format!(
@@ -281,6 +295,7 @@ where
         statement_handle: &[u8],
         span_ctx: Option<&SpanContext>,
     ) -> Result<<Self as FlightService>::DoGetStream, Status> {
+        println!("method: execute_and_fetch_result_set");
         let (logical_plan, query_state_machine) =
             self.get_plan_and_qsm(statement_handle, span_ctx.cloned())?;
 
@@ -370,6 +385,7 @@ where
         Response<Pin<Box<dyn Stream<Item = Result<HandshakeResponse, Status>> + Send>>>,
         Status,
     > {
+        println!("service: do_handshake");
         debug!("do_handshake: {:?}", request);
 
         let _span_recorder = get_span(request.extensions(), "flight sql do_handshake");
@@ -396,6 +412,7 @@ where
         query: CommandStatementQuery,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
+        println!("service: get_flight_info_statement");
         debug!(
             "get_flight_info_statement: query: {:?}, request: {:?}",
             query, request
@@ -418,6 +435,7 @@ where
         query: CommandPreparedStatementQuery,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
+        println!("service: get_flight_info_prepared_statement");
         debug!(
             "get_flight_info_prepared_statement: query: {:?}, request: {:?}",
             query, request
@@ -450,6 +468,7 @@ where
         query: CommandGetCatalogs,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
+        println!("service: get_flight_info_catalogs");
         debug!(
             "get_flight_info_catalogs: query: {:?}, request: {:?}",
             query, request
@@ -475,6 +494,7 @@ where
         query: CommandGetDbSchemas,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
+        println!("service: get_flight_info_schemas");
         debug!(
             "get_flight_info_schemas: query: {:?}, request: {:?}",
             query, request
@@ -520,6 +540,7 @@ where
         query: CommandGetTables,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
+        println!("service: get_flight_info_tables");
         debug!(
             "get_flight_info_tables: query: {:?}, request: {:?}",
             query, request
@@ -577,6 +598,7 @@ where
         query: CommandGetTableTypes,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
+        println!("service: get_flight_info_table_types");
         debug!(
             "get_flight_info_table_types: query: {:?}, request: {:?}",
             query, request
@@ -603,6 +625,7 @@ where
         query: CommandGetSqlInfo,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
+        println!("service: get_flight_info_sql_info");
         debug!(
             "get_flight_info_sql_info: query: {:?}, request: {:?}",
             query, request
@@ -619,6 +642,7 @@ where
         query: CommandGetPrimaryKeys,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
+        println!("service: get_flight_info_primary_keys");
         debug!(
             "get_flight_info_primary_keys: query: {:?}, request: {:?}",
             query, request
@@ -635,6 +659,7 @@ where
         query: CommandGetExportedKeys,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
+        println!("service: get_flight_info_exported_keys");
         debug!(
             "get_flight_info_exported_keys: query: {:?}, request: {:?}",
             query, request
@@ -651,6 +676,7 @@ where
         query: CommandGetImportedKeys,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
+        println!("service: get_flight_info_imported_keys");
         debug!(
             "get_flight_info_imported_keys: query: {:?}, request: {:?}",
             query, request
@@ -667,6 +693,7 @@ where
         query: CommandGetCrossReference,
         request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
+        println!("service: get_flight_info_cross_reference");
         debug!(
             "get_flight_info_cross_reference: query: {:?}, request: {:?}",
             query, request
@@ -685,6 +712,7 @@ where
         ticket: TicketStatementQuery,
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        println!("service: do_get_statement");
         debug!(
             "do_get_statement: query: {:?}, request: {:?}",
             ticket, request
@@ -713,6 +741,7 @@ where
         query: CommandPreparedStatementQuery,
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        println!("service: do_get_prepared_statement");
         debug!(
             "do_get_prepared_statement: query: {:?}, request: {:?}",
             query, request
@@ -740,6 +769,7 @@ where
         query: CommandGetCatalogs,
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        println!("service: do_get_catalogs");
         debug!(
             "do_get_catalogs: query: {:?}, request: {:?}",
             query, request
@@ -755,6 +785,7 @@ where
         query: CommandGetDbSchemas,
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        println!("service: do_get_schemas");
         debug!("do_get_schemas: query: {:?}, request: {:?}", query, request);
 
         Err(Status::unimplemented("do_get_schemas not implemented"))
@@ -767,6 +798,7 @@ where
         query: CommandGetTables,
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        println!("service: do_get_tables");
         debug!("do_get_tables: query: {:?}, request: {:?}", query, request);
 
         Err(Status::unimplemented("do_get_tables not implemented"))
@@ -779,6 +811,7 @@ where
         query: CommandGetTableTypes,
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        println!("service: do_get_table_types");
         debug!(
             "do_get_table_types: query: {:?}, request: {:?}",
             query, request
@@ -793,6 +826,7 @@ where
         query: CommandGetSqlInfo,
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        println!("service: do_get_sql_info");
         debug!(
             "do_get_sql_info: query: {:?}, request: {:?}",
             query, request
@@ -807,6 +841,7 @@ where
         query: CommandGetPrimaryKeys,
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        println!("service: do_get_primary_keys");
         debug!(
             "do_get_primary_keys: query: {:?}, request: {:?}",
             query, request
@@ -821,6 +856,7 @@ where
         query: CommandGetExportedKeys,
         request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        println!("service: do_get_exported_keys");
         debug!(
             "do_get_exported_keys: query: {:?}, request: {:?}",
             query, request
@@ -837,6 +873,7 @@ where
         _query: CommandGetImportedKeys,
         _request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        println!("service: do_get_imported_keys");
         Err(Status::unimplemented(
             "do_get_imported_keys not implemented",
         ))
@@ -848,6 +885,7 @@ where
         _query: CommandGetCrossReference,
         _request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        println!("service: do_get_cross_reference");
         Err(Status::unimplemented(
             "do_get_cross_reference not implemented",
         ))
@@ -859,6 +897,7 @@ where
         ticket: CommandStatementUpdate,
         request: Request<Streaming<FlightData>>,
     ) -> Result<i64, Status> {
+        println!("service: do_put_statement_update");
         debug!(
             "do_put_statement_update: query: {:?}, request: {:?}",
             ticket, request
@@ -884,16 +923,50 @@ where
         Ok(affected_rows)
     }
 
-    /// not support
+    /// Bind parameters to given prepared statement.
     async fn do_put_prepared_statement_query(
         &self,
         query: CommandPreparedStatementQuery,
         request: Request<Streaming<FlightData>>,
     ) -> Result<Response<<Self as FlightService>::DoPutStream>, Status> {
+        println!("service: do_put_prepared_statement_query");
+        let prepared_statement_ident = query.prepared_statement_handle.to_byte_slice();
         debug!(
             "do_put_prepared_statement_query: query: {:?}, request: {:?}",
-            query, request
+            prepared_statement_ident, request
         );
+
+        let span = get_span(
+            request.extensions(),
+            "flight sql do_put_prepared_statement_query",
+        );
+
+        let mut decoder = FlightDataDecoder::new(
+            request
+                .into_inner()
+                .map(|r| r.map_err(|status| FlightError::Tonic(status))),
+        );
+        let mut schema = None::<SchemaRef>;
+        let mut record_batches = Vec::new();
+        while let Some(decode_ret) = decoder.next().await {
+            match decode_ret?.payload {
+                DecodedPayload::None => continue,
+                DecodedPayload::Schema(sch) => schema = Some(sch),
+                DecodedPayload::RecordBatch(rb) => record_batches.push(rb),
+            }
+        }
+
+        println!("  {schema:?}");
+        println!(
+            "  {}",
+            arrow::util::pretty::pretty_format_batches(&record_batches).unwrap()
+        );
+
+        let (plan, query_machine) =
+            self.get_plan_and_qsm(prepared_statement_ident, span.context())?;
+
+        // let stream: Pin<Box<dyn Stream<Item = Result<PutResult, Status>> + Send>> =
+        //     Box::pin(futures::stream::iter(flight_data));
 
         Err(Status::unimplemented(
             "do_put_prepared_statement_query not implemented",
@@ -910,6 +983,7 @@ where
         query: CommandPreparedStatementUpdate,
         request: Request<Streaming<FlightData>>,
     ) -> Result<i64, Status> {
+        println!("service: do_put_prepared_statement_update");
         let prepared_statement_ident = query.prepared_statement_handle.to_byte_slice();
         debug!(
             "do_put_prepared_statement_update query: {:?}",
@@ -935,6 +1009,7 @@ where
         query: ActionCreatePreparedStatementRequest,
         request: Request<Action>,
     ) -> Result<ActionCreatePreparedStatementResult, Status> {
+        println!("service: do_action_create_prepared_statement");
         debug!(
             "do_action_create_prepared_statement: query: {:?}, request: {:?}",
             query, request
@@ -955,6 +1030,14 @@ where
             )
             .await?;
 
+        let parameter_schema = Arc::new(Schema::new(vec![Field::new(
+            "1",
+            models::arrow::DataType::Utf8,
+            true,
+        )]));
+        let IpcMessage(parameter_schema) = utils::schema_to_ipc_message(&parameter_schema)
+            .map_err(|e| status!("Schema(parameter) to ipc message", e))?;
+
         let IpcMessage(dataset_schema) = utils::schema_to_ipc_message(schema.as_ref())
             .map_err(|e| status!("Schema to ipc message", e))?;
         // JDBC:
@@ -963,7 +1046,7 @@ where
         let result = ActionCreatePreparedStatementResult {
             prepared_statement_handle: result_ident.into(),
             dataset_schema,
-            ..Default::default()
+            parameter_schema,
         };
 
         Ok(result)
@@ -977,6 +1060,7 @@ where
         query: ActionClosePreparedStatementRequest,
         request: Request<Action>,
     ) -> Result<(), Status> {
+        println!("service: do_action_close_prepared_statement");
         debug!(
             "do_action_close_prepared_statement: query: {:?}, request: {:?}",
             query, request
@@ -987,6 +1071,7 @@ where
 
     /// not support
     async fn register_sql_info(&self, _id: i32, _result: &SqlInfo) {
+        println!("service: register_sql_info");
         debug!("register_sql_info: _id: {:?}, request: {:?}", _id, _result);
     }
 
@@ -995,6 +1080,7 @@ where
         _query: ActionCreatePreparedSubstraitPlanRequest,
         _request: Request<Action>,
     ) -> Result<ActionCreatePreparedStatementResult, Status> {
+        println!("service: do_action_create_prepared_substrait_plan");
         Err(Status::unimplemented(
             "Implement do_action_create_prepared_substrait_plan",
         ))
@@ -1005,6 +1091,7 @@ where
         _query: ActionBeginTransactionRequest,
         _request: Request<Action>,
     ) -> Result<ActionBeginTransactionResult, Status> {
+        println!("service: do_action_begin_transaction");
         Err(Status::unimplemented(
             "Implement do_action_begin_transaction",
         ))
@@ -1015,6 +1102,7 @@ where
         _query: ActionEndTransactionRequest,
         _request: Request<Action>,
     ) -> Result<(), Status> {
+        println!("service: do_action_end_transaction");
         Err(Status::unimplemented("Implement do_action_end_transaction"))
     }
 
@@ -1023,6 +1111,7 @@ where
         _query: ActionBeginSavepointRequest,
         _request: Request<Action>,
     ) -> Result<ActionBeginSavepointResult, Status> {
+        println!("service: do_action_begin_savepoint");
         Err(Status::unimplemented("Implement do_action_begin_savepoint"))
     }
 
@@ -1031,6 +1120,7 @@ where
         _query: ActionEndSavepointRequest,
         _request: Request<Action>,
     ) -> Result<(), Status> {
+        println!("service: do_action_end_savepoint");
         Err(Status::unimplemented("Implement do_action_end_savepoint"))
     }
 
@@ -1039,6 +1129,7 @@ where
         _query: ActionCancelQueryRequest,
         _request: Request<Action>,
     ) -> Result<ActionCancelQueryResult, Status> {
+        println!("service: do_action_cancel_query");
         Err(Status::unimplemented("Implement do_action_cancel_query"))
     }
 
@@ -1047,6 +1138,7 @@ where
         _ticket: CommandStatementSubstraitPlan,
         _request: Request<Streaming<FlightData>>,
     ) -> Result<i64, Status> {
+        println!("service: do_put_substrait_plan");
         Err(Status::unimplemented(
             "do_put_substrait_plan not implemented",
         ))
@@ -1057,6 +1149,7 @@ where
         _query: CommandStatementSubstraitPlan,
         _request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
+        println!("service: get_flight_info_substrait_plan");
         Err(Status::unimplemented(
             "get_flight_info_substrait_plan not implemented",
         ))
@@ -1067,6 +1160,7 @@ where
         _query: CommandGetXdbcTypeInfo,
         _request: Request<FlightDescriptor>,
     ) -> Result<Response<FlightInfo>, Status> {
+        println!("service: get_flight_info_xdbc_type_info");
         Err(Status::unimplemented(
             "get_flight_info_xdbc_type_info not implemented",
         ))
@@ -1077,6 +1171,7 @@ where
         _query: CommandGetXdbcTypeInfo,
         _request: Request<Ticket>,
     ) -> Result<Response<<Self as FlightService>::DoGetStream>, Status> {
+        println!("service: do_get_xdbc_type_info");
         Err(Status::unimplemented(
             "do_get_xdbc_type_info not implemented",
         ))
