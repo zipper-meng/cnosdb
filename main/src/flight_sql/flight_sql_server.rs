@@ -2,7 +2,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Duration;
 
-use arrow_flight::decode::{DecodedPayload, FlightDataDecoder};
+use arrow_flight::decode::{DecodedPayload, FlightDataDecoder, FlightRecordBatchStream};
 use arrow_flight::error::FlightError;
 use arrow_flight::flight_service_server::FlightService;
 use arrow_flight::sql::server::FlightSqlService;
@@ -25,6 +25,7 @@ use arrow_flight::{
 use datafusion::arrow;
 use datafusion::arrow::datatypes::{Schema, SchemaRef, ToByteSlice};
 use datafusion::arrow::record_batch::RecordBatch;
+use datafusion::scalar::ScalarValue;
 use futures::{Stream, StreamExt, TryStreamExt};
 use http_protocol::header::{DB, STREAM_TRIGGER_INTERVAL, TARGET_PARTITIONS, TENANT};
 use models::arrow::Field;
@@ -35,7 +36,7 @@ use prost::bytes::Bytes;
 use prost::Message;
 use spi::query::config::StreamTriggerInterval;
 use spi::query::execution::{Output, QueryStateMachineRef};
-use spi::query::logical_planner::Plan;
+use spi::query::logical_planner::{Plan, QueryPlan};
 use spi::server::dbms::DBMSRef;
 use spi::service::protocol::{Context, ContextBuilder, Query, QueryHandle};
 use tonic::metadata::MetadataMap;
@@ -116,11 +117,22 @@ where
         sql: impl Into<String>,
         req_headers: &MetadataMap,
         span_ctx: Option<&SpanContext>,
-    ) -> Result<(Vec<u8>, SchemaRef), Status> {
+    ) -> Result<(Vec<u8>, SchemaRef, SchemaRef), Status> {
         println!("method: pre_precess_statement_query_req_and_save");
         let (logical_plan, query_state_machine) = self
             .pre_precess_statement_query_req(sql, req_headers, span_ctx)
             .await?;
+
+        let (logical_plan, parameter_schema) = match logical_plan {
+            Some(plan) => match plan
+                .analyze_placeholders()
+                .map_err(|e| status!("Error analyzing placeholders", e))?
+            {
+                Some((plan, schema)) => (Some(plan), Arc::new(schema)),
+                None => (Some(plan), Arc::new(Schema::empty())),
+            },
+            None => (None, Arc::new(Schema::empty())),
+        };
 
         let schema = logical_plan
             .as_ref()
@@ -134,7 +146,7 @@ where
         self.result_cache
             .insert(result_ident.clone(), (logical_plan, query_state_machine));
 
-        Ok((result_ident, schema))
+        Ok((result_ident, schema, parameter_schema))
     }
 
     async fn precess_flight_info_req(
@@ -144,7 +156,7 @@ where
         span_ctx: Option<&SpanContext>,
     ) -> Result<Response<FlightInfo>, Status> {
         println!("method: precess_flight_info_req");
-        let (result_ident, schema) = self
+        let (result_ident, schema, _) = self
             .pre_precess_statement_query_req_and_save(sql, request.metadata(), span_ctx)
             .await?;
 
@@ -923,7 +935,6 @@ where
         Ok(affected_rows)
     }
 
-    /// Bind parameters to given prepared statement.
     async fn do_put_prepared_statement_query(
         &self,
         query: CommandPreparedStatementQuery,
@@ -941,36 +952,34 @@ where
             "flight sql do_put_prepared_statement_query",
         );
 
-        let mut decoder = FlightDataDecoder::new(
-            request
-                .into_inner()
-                .map(|r| r.map_err(|status| FlightError::Tonic(status))),
-        );
-        let mut schema = None::<SchemaRef>;
-        let mut record_batches = Vec::new();
-        while let Some(decode_ret) = decoder.next().await {
-            match decode_ret?.payload {
-                DecodedPayload::None => continue,
-                DecodedPayload::Schema(sch) => schema = Some(sch),
-                DecodedPayload::RecordBatch(rb) => record_batches.push(rb),
+        let (mut plan, query_machine) =
+            self.get_plan_and_qsm(prepared_statement_ident, span.context())?;
+
+        // Fetch parameters of prepared statement.
+        let param_values = collect_parameter_values(request.into_inner()).await?;
+        // Replace placeholders in the logical-plan with those parameters(if any).
+        if !param_values.is_empty() {
+            if let Some(Plan::Query(mut p)) = plan {
+                let new_plan = p
+                    .df_plan
+                    .with_param_values(param_values)
+                    .map_err(|e| status!("Error setting query parameters", e))?;
+                p.df_plan = new_plan;
+                let (new_plan, _) = p
+                    .analyze_placeholders()
+                    .map_err(|e| status!("Error analyzing plan", e))?;
+                plan = Some(Plan::Query(new_plan));
             }
         }
 
-        println!("  {schema:?}");
-        println!(
-            "  {}",
-            arrow::util::pretty::pretty_format_batches(&record_batches).unwrap()
-        );
+        let query_result = self.execute_logical_plan(plan, query_machine).await?;
+        let output = query_result.result();
 
-        let (plan, query_machine) =
-            self.get_plan_and_qsm(prepared_statement_ident, span.context())?;
+        let stream = Box::pin(futures::stream::iter(vec![Ok(PutResult {
+            app_metadata: "".into(),
+        })]));
 
-        // let stream: Pin<Box<dyn Stream<Item = Result<PutResult, Status>> + Send>> =
-        //     Box::pin(futures::stream::iter(flight_data));
-
-        Err(Status::unimplemented(
-            "do_put_prepared_statement_query not implemented",
-        ))
+        Ok(Response::new(stream))
     }
 
     /// Execute the query and return the number of affected rows.
@@ -993,8 +1002,27 @@ where
             request.extensions(),
             "flight sql do_put_prepared_statement_update",
         );
-        let (plan, query_machine) =
+
+        let (mut plan, query_machine) =
             self.get_plan_and_qsm(prepared_statement_ident, span.context())?;
+
+        // Fetch parameters of prepared statement.
+        let param_values = collect_parameter_values(request.into_inner()).await?;
+        // Replace placeholders in the logical-plan with those parameters(if any).
+        if !param_values.is_empty() {
+            if let Some(Plan::Query(mut p)) = plan {
+                let new_plan = p
+                    .df_plan
+                    .with_param_values(param_values)
+                    .map_err(|e| status!("Error setting query parameters", e))?;
+                p.df_plan = new_plan;
+                let (new_plan, _) = p
+                    .analyze_placeholders()
+                    .map_err(|e| status!("Error analyzing plan", e))?;
+                plan = Some(Plan::Query(new_plan));
+            }
+        }
+
         // execute plan
         let query_result = self.execute_logical_plan(plan, query_machine).await?;
         let output = query_result.result();
@@ -1022,7 +1050,7 @@ where
         // ignore transaction_id
         let ActionCreatePreparedStatementRequest { query: sql, .. } = query;
 
-        let (result_ident, schema) = self
+        let (result_ident, schema, parameter_schema) = self
             .pre_precess_statement_query_req_and_save(
                 sql,
                 request.metadata(),
@@ -1030,11 +1058,6 @@ where
             )
             .await?;
 
-        let parameter_schema = Arc::new(Schema::new(vec![Field::new(
-            "1",
-            models::arrow::DataType::Utf8,
-            true,
-        )]));
         let IpcMessage(parameter_schema) = utils::schema_to_ipc_message(&parameter_schema)
             .map_err(|e| status!("Schema(parameter) to ipc message", e))?;
 
@@ -1181,6 +1204,32 @@ where
 fn get_span(extensions: &Extensions, child_span_name: &'static str) -> Span {
     let span_context = extensions.get::<SpanContext>();
     Span::from_context(child_span_name, span_context)
+}
+
+async fn collect_peekable_flight_data_stream(
+    stream: Streaming<FlightData>,
+) -> Result<Vec<RecordBatch>, Status> {
+    let req_stream = FlightRecordBatchStream::new_from_flight_data(stream.map_err(|e| e.into()));
+    req_stream
+        .try_collect()
+        .await
+        .map_err(|e| Status::invalid_argument(format!("Error reading request stream: {e}")))
+}
+
+async fn collect_parameter_values(
+    stream: Streaming<FlightData>,
+) -> Result<Vec<ScalarValue>, Status> {
+    let req_data = collect_peekable_flight_data_stream(stream).await?;
+    let mut param_values = Vec::new();
+    for rb in req_data {
+        for arr in rb.columns().iter() {
+            let v = ScalarValue::try_from_array(arr, 0).map_err(|e| {
+                Status::invalid_argument(format!("Error reading scalar-value from array: {e}"))
+            })?;
+            param_values.push(v);
+        }
+    }
+    Ok(param_values)
 }
 
 #[cfg(test)]

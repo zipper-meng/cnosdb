@@ -43,8 +43,10 @@ use super::datasource::s3::{S3StorageConfig, S3StorageConfigBuilder};
 use super::datasource::UriSchema;
 use super::session::SessionCtx;
 use super::AFFECTED_ROWS;
+use crate::query::rewrite_placeholder::rewrite_placeholders;
 use crate::{
-    ParserSnafu, QueryError, QueryResult, SerdeJsonSnafu, StdIoSnafu, TenantOptionsBuildFailSnafu,
+    DFResult, ParserSnafu, QueryError, QueryResult, SerdeJsonSnafu, StdIoSnafu,
+    TenantOptionsBuildFailSnafu,
 };
 
 pub const TENANT_OPTION_LIMITER: &str = "_limiter";
@@ -98,6 +100,16 @@ impl Plan {
             Self::SYSTEM(p) => p.schema(),
         }
     }
+
+    pub fn analyze_placeholders(&self) -> DFResult<Option<(Plan, Schema)>> {
+        match self {
+            Plan::Query(plan) => {
+                let (new_plan, schema) = plan.clone().analyze_placeholders()?;
+                Ok(Some((Self::Query(new_plan), schema)))
+            }
+            _ => Ok(None),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -109,6 +121,17 @@ pub struct QueryPlan {
 impl QueryPlan {
     pub fn is_explain(&self) -> bool {
         matches!(self.df_plan, DFPlan::Explain(_) | DFPlan::Analyze(_))
+    }
+
+    pub fn analyze_placeholders(self) -> DFResult<(QueryPlan, Schema)> {
+        let (new_plan, schema) = rewrite_placeholders(self.df_plan)?;
+        Ok((
+            Self {
+                df_plan: new_plan,
+                is_tag_scan: self.is_tag_scan,
+            },
+            schema,
+        ))
     }
 }
 

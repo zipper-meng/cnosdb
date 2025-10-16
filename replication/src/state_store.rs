@@ -104,7 +104,7 @@ impl StateStorage {
         Ok(reader)
     }
 
-    fn writer_txn(&self) -> ReplicationResult<heed::RwTxn<'_, '_>> {
+    fn writer_txn(&self) -> ReplicationResult<heed::RwTxn<'_>> {
         let writer = self.env.write_txn().context(HeedSnafu)?;
 
         Ok(writer)

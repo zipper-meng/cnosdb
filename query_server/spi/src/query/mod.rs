@@ -13,6 +13,7 @@ pub mod optimizer;
 pub mod parser;
 pub mod physical_planner;
 pub mod recordbatch;
+mod rewrite_placeholder;
 pub mod scheduler;
 pub mod session;
 pub mod variable;
