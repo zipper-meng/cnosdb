@@ -255,6 +255,7 @@ impl<'a, S: ContextProviderExtension + Send + Sync + 'a> SqlPlanner<'a, S> {
         match stmt {
             Statement::Query(_) => {
                 let df_plan = self.df_planner.sql_statement_to_plan(stmt)?;
+                println!("## sql_to_plan:\n{}", df_plan.display_indent());
                 let plan = Plan::Query(QueryPlan {
                     df_plan,
                     is_tag_scan: false,

@@ -1,0 +1,38 @@
+Original logical plan:
+Projection: COUNT(ma.fa) [COUNT(ma.fa):Int64;N]
+  Aggregate: groupBy=[[]], aggr=[[COUNT(ma.fa)]] [COUNT(ma.fa):Int64;N]
+    TableScan: ma [time:Timestamp(Nanosecond, None), ta:Utf8;N, fa:Float64;N]
+or:
+Projection: COUNT(ma.fa)
+  Aggregate: groupBy=[[]], aggr=[[COUNT(ma.fa)]]
+    TableScan: ma
+
+inline_table_scan:
+Projection: COUNT(ma.fa)
+  Aggregate: groupBy=[[]], aggr=[[COUNT(ma.fa)]]
+    Projection: ma.time, ma.ta, ma.fa
+      TableScan: ma
+
+eliminate_projection:
+Aggregate: groupBy=[[]], aggr=[[COUNT(ma.fa)]]
+  Projection: ma.fa
+    TableScan: ma projection=[time, fa]
+
+push_down_aggregation:
+Projection: SUM(COUNT(ma.fa)) AS COUNT(ma.fa)
+  Aggregate: groupBy=[[]], aggr=[[SUM(COUNT(ma.fa))]]
+    TableScan: ma, grouping=[], agg=[AggregateFunction(AggregateFunction { fun: Count, args: [Column(Column { relation: Some(Bare { table: "ma" }), name: "fa" })], distinct: false, filter: None, order_by: None, can_be_pushed_down: true })]
+
+Input physical plan:
+ProjectionExec: expr=[SUM(COUNT(ma.fa))@0 as COUNT(ma.fa)]
+  AggregateExec: mode=Final, gby=[], aggr=[SUM(COUNT(ma.fa))]
+    AggregateExec: mode=Partial, gby=[], aggr=[SUM(COUNT(ma.fa))]
+      AggregateFilterTskvExec: agg=[[Count("fa")]], filter=[Predicate { pushed_down_domains: ColumnDomains { column_to_domain: Some({}) }, physical_expr: None, limit: None }]
+
+Final physical plan:
+ProjectionExec: expr=[SUM(COUNT(ma.fa))@0 as COUNT(ma.fa)]
+  AggregateExec: mode=Final, gby=[], aggr=[SUM(COUNT(ma.fa))]
+    CoalescePartitionsExec
+      AggregateExec: mode=Partial, gby=[], aggr=[SUM(COUNT(ma.fa))]
+        RepartitionExec: partitioning=RoundRobinBatch(10), input_partitions=1
+          AggregateFilterTskvExec: agg=[[Count("fa")]], filter=[Predicate { pushed_down_domains: ColumnDomains { column_to_domain: Some({}) }, physical_expr: None, limit: None }]

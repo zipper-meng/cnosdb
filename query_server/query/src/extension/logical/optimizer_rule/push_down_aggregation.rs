@@ -28,7 +28,7 @@ use datafusion::logical_expr::{
     Aggregate, AggregateUDF, LogicalPlan, LogicalPlanBuilder, Projection,
     TableProviderAggregationPushDown, TableScan, TableScanAggregate,
 };
-use datafusion::optimizer::{ApplyOrder, OptimizerConfig, OptimizerRule};
+use datafusion::optimizer::{OptimizerConfig, OptimizerRule};
 use datafusion::prelude::Expr;
 
 /// Push Down Aggregation optimizer rule pushes aggregation clauses down the plan
@@ -54,6 +54,7 @@ impl OptimizerRule for PushDownAggregation {
         plan: LogicalPlan,
         _config: &dyn OptimizerConfig,
     ) -> DFResult<Transformed<LogicalPlan>> {
+        println!("## Optimizing plan:\n{}", plan.display_indent());
         if let LogicalPlan::Aggregate(Aggregate {
             input,
             group_expr,
@@ -105,6 +106,8 @@ impl OptimizerRule for PushDownAggregation {
                             .map(|e| {
                                 let col_name = e.schema_name().to_string();
                                 let column = Column::from_name(col_name.clone());
+
+                                println!("building new expr from {e:?}");
 
                                 let new_expr = match e {
                                     Expr::AggregateFunction(AggregateFunction {
@@ -244,10 +247,6 @@ impl OptimizerRule for PushDownAggregation {
         }
 
         Ok(Transformed::no(plan))
-    }
-
-    fn apply_order(&self) -> Option<ApplyOrder> {
-        Some(ApplyOrder::BottomUp)
     }
 }
 

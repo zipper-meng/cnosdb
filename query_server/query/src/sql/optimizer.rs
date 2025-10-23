@@ -219,8 +219,10 @@ mod test {
         opt_logical_plan_str: &str,
         final_physical_plan_str: &str,
     ) -> Result<()> {
+        println!("## Plan before optimize:\n{}", plan.display_indent());
         let opt_plan = optimize_plan(plan)?;
-        let result_str = format!("{opt_plan:?}");
+        println!("## Plan after optimize:\n{}", opt_plan.display_indent());
+        let result_str = opt_plan.display_indent().to_string();
 
         assert_eq!(opt_logical_plan_str, result_str);
 

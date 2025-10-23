@@ -65,9 +65,9 @@ impl TsKv {
 
         let version_set = Arc::new(RwLock::new(VersionSet::new(ctx.clone())));
 
-        let compact_job = CompactJob::new(ctx.clone(), version_set.clone());
-        compact_job.start_jobs(compact_task_receiver).await;
-        Self::run_flush_cold_vnode_job(ctx.clone(), version_set.clone());
+        // let compact_job = CompactJob::new(ctx.clone(), version_set.clone());
+        // compact_job.start_jobs(compact_task_receiver).await;
+        // Self::run_flush_cold_vnode_job(ctx.clone(), version_set.clone());
 
         let (close_sender, _close_receiver) = broadcast::channel(1);
         let core = Self {

@@ -8,6 +8,7 @@ use spi::QueryResult;
 
 use crate::extension::analyse::add_time_for_tsgenfunc::AddTimeForTimeSeriesGenFunc;
 use crate::extension::analyse::initial_plan_checker::InitialPlanChecker;
+use crate::extension::analyse::inline_table_scan::InlineTableScan;
 use crate::extension::analyse::transform_bottom_func_to_topk_node::TransformBottomFuncToTopkNodeRule;
 use crate::extension::analyse::transform_count_gen_time_col::TransformCountGenTimeColRule;
 use crate::extension::analyse::transform_exact_count_to_count::TransformExactCountToCountRule;
@@ -26,6 +27,7 @@ impl DefaultAnalyzer {
 
         let rules = &mut analyzer.rules;
         rules.insert(0, Arc::new(TransformUpdateRule::new()));
+        rules.insert(1, Arc::new(InlineTableScan::new()));
         rules.push(Arc::new(InitialPlanChecker {}));
         rules.push(Arc::new(TransformBottomFuncToTopkNodeRule {}));
         rules.push(Arc::new(TransformTopkFuncToTopkNodeRule {}));

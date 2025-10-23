@@ -151,7 +151,7 @@ impl QueryPlan {
     }
 }
 
-#[derive(Clone)]
+#[derive(Debug, Clone)]
 pub enum DDLPlan {
     // e.g. drop table
     DropDatabaseObject(DropDatabaseObject),

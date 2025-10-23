@@ -21,39 +21,45 @@ static START_LOGGING: Once = Once::new();
 
 pub fn targets_filter(level: LevelFilter, defined_tokio_trace: bool) -> filter::Targets {
     let mut filter = filter::Targets::new()
-        .with_targets(vec![
-            // Workspace crates,
-            // make sure all workspace members are here.
-            ("client", level),
-            ("config", level),
-            ("coordinator", level),
-            ("e2e_test", level),
-            ("error_code", level),
-            ("macros", level),
-            ("http_protocol", level),
-            ("limiter_bucket", level),
-            ("lru_cache", level),
-            ("cnosdb", level),
-            ("memory_pool", level),
-            ("meta", level),
-            ("metrics", level),
-            ("models", level),
-            ("protos", level),
-            ("protocol_parser", level),
-            ("query", level),
-            ("spi", level),
-            ("sqllogicaltests", level),
-            ("test", level),
-            ("trace", level),
-            ("tskv", level),
-            ("utils", level),
-            ("replication", level),
-            ("datafusion", level),
-            ("arrow", level),
-        ])
+        .with_default(level)
+        // .with_targets(vec![
+        //     // Workspace crates,
+        //     // make sure all workspace members are here.
+        //     ("client", level),
+        //     ("config", level),
+        //     ("coordinator", level),
+        //     ("e2e_test", level),
+        //     ("error_code", level),
+        //     ("macros", level),
+        //     ("http_protocol", level),
+        //     ("limiter_bucket", level),
+        //     ("lru_cache", level),
+        //     ("cnosdb", level),
+        //     ("memory_pool", level),
+        //     ("meta", level),
+        //     ("metrics", level),
+        //     ("models", level),
+        //     ("protos", level),
+        //     ("protocol_parser", level),
+        //     ("query", level),
+        //     ("spi", level),
+        //     ("sqllogicaltests", level),
+        //     ("test", level),
+        //     ("trace", level),
+        //     ("tskv", level),
+        //     ("utils", level),
+        //     ("replication", level),
+        //     ("datafusion", level),
+        //     ("arrow", level),
+        // ])
         .with_targets(vec![
             // Third-party crates
+            ("hyper", LevelFilter::INFO),
+            ("hyper_util", LevelFilter::INFO),
+            ("reqwest", LevelFilter::INFO),
+            ("openraft", LevelFilter::INFO),
             ("actix_web::middleware::logger", LevelFilter::WARN),
+            ("sqlparser", LevelFilter::INFO),
         ]);
     if defined_tokio_trace {
         filter = filter.with_targets(vec![
@@ -75,6 +81,8 @@ pub fn init_global_logging(log_config: &LogConfig, file_name_prefix: &str) {
         let formatting_layer = fmt::layer()
             .with_ansi(false)
             .with_timer(local_time.clone())
+            .with_file(true)
+            .with_line_number(true)
             .with_writer(std::io::stderr);
 
         let rotation = match log_config.file_rotation.as_str() {
@@ -113,6 +121,7 @@ pub fn init_global_logging(log_config: &LogConfig, file_name_prefix: &str) {
             .with(ErrorLayer::default())
             .with(formatting_layer)
             .with(file_layer)
+            // .with(tracing_level);
             .with(targets_filter(
                 tracing_level,
                 log_config.tokio_trace.is_some(),

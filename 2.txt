@@ -1,0 +1,19 @@
+Original logical plan:
+Projection: count(ma.fa) [count(ma.fa):Int64]
+  Aggregate: groupBy=[[]], aggr=[[count(ma.fa)]] [count(ma.fa):Int64]
+    SubqueryAlias: ma [time:Timestamp(Nanosecond, None), ta:Utf8;N, fa:Float64;N]
+      TableScan: ma [time:Timestamp(Nanosecond, None), ta:Utf8;N, fa:Float64;N]
+or:
+Projection: count(ma.fa)
+  Aggregate: groupBy=[[]], aggr=[[count(ma.fa)]]
+    SubqueryAlias: ma
+      TableScan: ma
+
+inline_table_scan:
+
+
+optimize_projection:
+
+
+push_down_aggregation:
+

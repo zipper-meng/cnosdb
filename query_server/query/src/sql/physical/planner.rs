@@ -127,6 +127,11 @@ impl PhysicalPlanner for DefaultPhysicalPlanner {
             self.ext_physical_transform_rules.clone(),
         );
 
+        println!(
+            "# DefaultPhysicalPlanner executing plan:\n{}",
+            logical_plan.display_indent()
+        );
+
         // 执行df的物理计划规划及优化
         planner
             .create_physical_plan(logical_plan, &new_state)

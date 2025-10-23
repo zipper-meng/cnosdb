@@ -3,6 +3,7 @@ use datafusion::logical_expr::LogicalPlan;
 
 pub mod add_time_for_tsgenfunc;
 pub mod initial_plan_checker;
+pub mod inline_table_scan;
 pub mod stream_checker;
 pub mod transform_bottom_func_to_topk_node;
 pub mod transform_count_gen_time_col;

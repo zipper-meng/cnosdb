@@ -82,6 +82,12 @@ impl TableSourceAdapter {
             plan.display_indent_schema()
         );
 
+        if let LogicalPlan::TableScan(t) = &plan {
+            if let Some(p) = t.source.get_logical_plan() {
+                println!("plan source of TableSource:\n{}", p.display_indent());
+            }
+        }
+
         Ok(Self {
             database_name,
             table_name,

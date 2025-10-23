@@ -9,6 +9,8 @@ use datafusion::common::Result as DFResult;
 use datafusion::config::ConfigOptions;
 use datafusion::datasource::TableProvider;
 use datafusion::error::DataFusionError;
+use datafusion::execution::FunctionRegistry;
+use datafusion::logical_expr::planner::ExprPlanner;
 use datafusion::logical_expr::{AggregateUDF, ScalarUDF, TableSource, WindowUDF};
 use datafusion::sql::planner::ContextProvider;
 use datafusion::sql::TableReference;
@@ -91,6 +93,7 @@ pub struct MetadataProvider {
     access_databases: RwLock<DatabaseSet>,
     // tskv/external
     current_session_table_provider: TableHandleProviderRef,
+    expr_planners: Vec<Arc<dyn ExprPlanner>>,
 }
 
 impl MetadataProvider {
@@ -104,6 +107,7 @@ impl MetadataProvider {
         query_tracker: Arc<QueryTracker>,
         session: SessionCtx,
     ) -> Self {
+        let expr_planners = (session.inner() as &dyn FunctionRegistry).expr_planners();
         Self {
             current_session_table_provider,
             coord,
@@ -116,6 +120,7 @@ impl MetadataProvider {
             cluster_schema_provider: ClusterSchemaProvider::new(),
             usage_schema_provider: UsageSchemaProvider::new(default_table_provider),
             access_databases: Default::default(),
+            expr_planners,
         }
     }
 
@@ -305,6 +310,10 @@ impl ContextProvider for MetadataProvider {
     fn get_table_source(&self, name: TableReference) -> DFResult<Arc<dyn TableSource>> {
         let table_source = self.get_table_source_adapter(name)?;
         Ok(table_source)
+    }
+
+    fn get_expr_planners(&self) -> &[Arc<dyn ExprPlanner>] {
+        &self.expr_planners
     }
 
     fn get_function_meta(&self, name: &str) -> Option<Arc<ScalarUDF>> {

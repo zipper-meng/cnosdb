@@ -104,6 +104,14 @@ impl QueryDispatcher for SimpleQueryDispatcher {
         };
 
         let logical_plan = self.build_logical_plan(query_state_machine.clone()).await?;
+        if let Some(plan) = &logical_plan {
+            match plan {
+                Plan::Query(p) => println!("## got query_plan:\n{}", p.df_plan.display_indent()),
+                Plan::DDL(p) => println!("## got query_plan:\n{p:?}"),
+                Plan::DML(p) => println!("## got query_plan:\n{p:?}"),
+                Plan::SYSTEM(p) => println!("## got query_plan:\n{p:?}"),
+            }
+        }
         let logical_plan = match logical_plan {
             Some(plan) => plan,
             None => return Ok(Output::Nil(())),

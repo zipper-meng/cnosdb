@@ -108,6 +108,8 @@ impl TableHandleProvider for BaseTableProvider {
             }
         };
 
+        println!("TableHandle schema: {:?}", table_handle.schema());
+
         Ok(table_handle)
     }
 }

@@ -14,7 +14,16 @@ pub struct TransformCountGenTimeColRule {}
 
 impl AnalyzerRule for TransformCountGenTimeColRule {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
-        plan.transform_up(&analyze_internal).data()
+        println!(
+            "TransformCountGenTimeColRule - before:\n{}",
+            plan.display_indent()
+        );
+        let new_plan = plan.transform_up(&analyze_internal).data()?;
+        println!(
+            "TransformCountGenTimeColRule - after:\n{}",
+            new_plan.display_indent()
+        );
+        Ok(new_plan)
     }
 
     fn name(&self) -> &str {
@@ -31,6 +40,7 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
             }) = &expr
             {
                 if func.name() == "count" {
+                    println!("analyzing count function: {func:?}, args: {args:?}");
                     let mut only_literal = true;
                     for arg in args {
                         match arg {
@@ -42,9 +52,9 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
                         }
                     }
                     if only_literal {
-                        let mut plan_vec = vec![plan.clone()];
+                        let mut plan_vec = vec![&plan];
                         loop {
-                            let last = plan_vec.last().unwrap().clone();
+                            let last = plan_vec[plan_vec.len() - 1];
                             match last {
                                 LogicalPlan::TableScan(scan) => {
                                     if source_as_provider(&scan.source)?
@@ -79,7 +89,7 @@ fn analyze_internal(plan: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
                                 }
                                 _ => {}
                             }
-                            plan_vec.push(last.inputs()[0].clone());
+                            plan_vec.push(last.inputs()[0]);
                         }
                     }
                 }

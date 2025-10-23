@@ -32,7 +32,7 @@ use crate::extension::logical::optimizer_rule::push_down_aggregation::PushDownAg
 use crate::extension::logical::optimizer_rule::rewrite_tag_scan::RewriteTagScan;
 use crate::sql::analyzer::DefaultAnalyzer;
 
-const OPTIMIZE_PROJECTIONS_INDEX: usize = 24; // index of OptimizeProjections in rules
+// const OPTIMIZE_PROJECTIONS_INDEX: usize = 21; // index of OptimizeProjections in rules
 
 pub trait LogicalOptimizer: Send + Sync {
     fn optimize(&self, plan: &QueryPlan, session: &SessionCtx) -> QueryResult<LogicalPlan>;
@@ -89,7 +89,7 @@ impl Default for DefaultLogicalOptimizer {
             // that might benefit from the following rules
             Arc::new(SimplifyExpressions::new()),
             Arc::new(CommonSubexprEliminate::new()),
-            Arc::new(OptimizeProjections::new()),
+            // Arc::new(OptimizeProjections::new()),
             Arc::new(PushDownAggregation::new()),
             // PushDownProjection can pushdown Projections through Limits, do PushDownLimit again.
             Arc::new(PushDownLimit::new()),
@@ -130,8 +130,8 @@ impl LogicalOptimizer for DefaultLogicalOptimizer {
 
         let rules: Vec<Arc<dyn OptimizerRule + Send + Sync>> = if plan.is_tag_scan {
             let mut rules = self.rules.clone();
-            rules[OPTIMIZE_PROJECTIONS_INDEX] =
-                Arc::new(OptimizeProjections::with_tag_scan(plan.is_tag_scan));
+            // rules[OPTIMIZE_PROJECTIONS_INDEX] =
+            //     Arc::new(OptimizeProjections::with_tag_scan(plan.is_tag_scan));
             rules
         } else {
             self.rules.clone()

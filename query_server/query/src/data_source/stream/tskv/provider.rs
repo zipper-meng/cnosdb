@@ -94,6 +94,8 @@ impl StreamProvider for TskvStreamProvider {
             ));
         }
 
+        println!("# TskvStreamProvider doing scan, projection: {projection:?}");
+
         let projected_schema = project_schema(&self.used_schema, projection)?;
         let source_schema = self.table.schema();
         let new_projection = projected_schema

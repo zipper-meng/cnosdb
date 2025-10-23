@@ -40,10 +40,15 @@ impl SqlQueryExecution {
     async fn start(&self) -> QueryResult<Output> {
         // begin optimize
         self.query_state_machine.begin_optimize();
+        println!(
+            "## before optimize:\n{}",
+            self.plan.df_plan.display_indent()
+        );
         let physical_plan = self
             .optimizer
             .optimize(&self.plan, &self.query_state_machine.session)
             .await?;
+        println!("## after optimize:\n{}", self.plan.df_plan.display_indent());
         self.query_state_machine.end_optimize();
 
         // begin schedule

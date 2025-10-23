@@ -66,6 +66,10 @@ impl ClusterTable {
         projection: Option<&Vec<usize>>,
         predicate: PredicateRef,
     ) -> Result<Arc<dyn ExecutionPlan>> {
+        println!(
+            "# ClusterTable creating table-scan physical plan on schema: {:?}",
+            self.schema
+        );
         let proj_schema = self.project_schema(projection)?;
 
         let table_layout = TableLayoutHandle {
@@ -320,6 +324,7 @@ impl TableProvider for ClusterTable {
         limit: Option<usize>,
     ) -> Result<Arc<dyn ExecutionPlan>> {
         let df_schema = self.schema.build_df_schema()?;
+        println!("# ClusterTable scan, projection: {projection:?}, df_schema: {df_schema:?}");
         // projection schema
         let df_schema = if let Some(p) = projection {
             let df_fields_qualified = p
@@ -337,6 +342,7 @@ impl TableProvider for ClusterTable {
         } else {
             df_schema
         };
+        println!("# ClusterTable scan, projected df_schema: {df_schema:?}");
 
         let filters = rewrite_filters(filters, df_schema.clone())?;
         // Generate physical expressions using projected schema
@@ -511,6 +517,10 @@ pub fn valid_project(
     let mut contains_time_column = false;
 
     if let Some(e) = projection {
+        println!(
+            "# Finding time column on schema: {:?} with projection: {e:?}",
+            schema
+        );
         e.iter().for_each(|idx| {
             if let Some(c) = schema.get_column_by_index(*idx) {
                 if c.column_type.is_time() {
