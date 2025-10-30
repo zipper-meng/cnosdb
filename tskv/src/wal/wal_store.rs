@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use metrics::average::U64Average;
 use openraft::{EntryPayload, LogId};
 use protos::kv_service::RaftWriteCommand;
@@ -30,7 +32,7 @@ impl RaftEntryStorage {
         Self {
             inner: RaftEntryStorageInner {
                 wal,
-                files_meta: vec![],
+                files_meta: BTreeMap::new(),
                 entry_cache: cache::CircularKVCache::new(256),
             },
 
@@ -101,12 +103,22 @@ impl EntryStorage for RaftEntryStorage {
     }
 
     async fn del_before(&mut self, seq_no: u64) -> ReplicationResult<()> {
+        trace::info!(
+            "{}: delete wal entries before: {}",
+            self.inner.wal.vnode_id,
+            seq_no
+        );
         self.inner.mark_delete_before(seq_no).await?;
 
         Ok(())
     }
 
     async fn del_after(&mut self, seq_no: u64) -> ReplicationResult<()> {
+        trace::info!(
+            "{}: delete wal entries after: {}",
+            self.inner.wal.vnode_id,
+            seq_no
+        );
         self.inner.mark_delete_after(seq_no).await?;
 
         Ok(())
@@ -257,7 +269,7 @@ impl WalFileMeta {
 
 struct RaftEntryStorageInner {
     wal: VnodeWal,
-    files_meta: Vec<WalFileMeta>,
+    files_meta: BTreeMap<u64, WalFileMeta>,
     entry_cache: cache::CircularKVCache<u64, RaftEntry>,
 }
 
@@ -265,12 +277,7 @@ impl RaftEntryStorageInner {
     /// Mark a new raft entry information to the entry index.
     async fn mark_write_wal(&mut self, entry: RaftEntry, wal_id: u64, pos: u64) -> TskvResult<()> {
         let index = entry.log_id.index;
-        if let Some(item) = self
-            .files_meta
-            .iter_mut()
-            .rev()
-            .find(|item| item.file_id == wal_id)
-        {
+        if let Some(item) = self.files_meta.get_mut(&wal_id) {
             item.mark_entry(index, pos);
         } else {
             let mut item = WalFileMeta {
@@ -281,7 +288,7 @@ impl RaftEntryStorageInner {
                 reader: self.wal.wal_reader(wal_id).await?,
             };
             item.mark_entry(index, pos);
-            self.files_meta.push(item);
+            self.files_meta.insert(wal_id, item);
         }
 
         self.entry_cache.put(index, entry);
@@ -295,7 +302,7 @@ impl RaftEntryStorageInner {
         }
 
         let mut delete_file_ids = vec![];
-        for item in self.files_meta.iter_mut() {
+        for item in self.files_meta.values_mut() {
             if item.max_seq < seq_no {
                 delete_file_ids.push(item.file_id);
                 continue;
@@ -310,7 +317,7 @@ impl RaftEntryStorageInner {
 
         self.entry_cache.del_before(seq_no);
         self.files_meta
-            .retain(|item| !delete_file_ids.contains(&item.file_id));
+            .retain(|wal_id, _| !delete_file_ids.contains(wal_id));
 
         self.wal
             .rollback_wal_writer(&delete_file_ids)
@@ -326,7 +333,7 @@ impl RaftEntryStorageInner {
         }
 
         let mut delete_file_ids = vec![];
-        for item in self.files_meta.iter_mut().rev() {
+        for item in self.files_meta.values_mut().rev() {
             if item.min_seq >= seq_no {
                 delete_file_ids.push(item.file_id);
                 continue;
@@ -344,7 +351,7 @@ impl RaftEntryStorageInner {
 
         self.entry_cache.del_after(seq_no);
         self.files_meta
-            .retain(|item| !delete_file_ids.contains(&item.file_id));
+            .retain(|wal_id, _| !delete_file_ids.contains(wal_id));
 
         self.wal
             .rollback_wal_writer(&delete_file_ids)
@@ -368,7 +375,7 @@ impl RaftEntryStorageInner {
     }
 
     fn min_sequence(&self) -> u64 {
-        if let Some(item) = self.files_meta.first() {
+        if let Some((_, item)) = self.files_meta.first_key_value() {
             return item.min_seq;
         }
 
@@ -376,7 +383,7 @@ impl RaftEntryStorageInner {
     }
 
     fn max_sequence(&self) -> u64 {
-        if let Some(item) = self.files_meta.last() {
+        if let Some((_, item)) = self.files_meta.last_key_value() {
             return item.max_seq;
         }
 
@@ -401,7 +408,7 @@ impl RaftEntryStorageInner {
         }
 
         let mut list = vec![];
-        for item in self.files_meta.iter_mut() {
+        for item in self.files_meta.values_mut() {
             if let Some((start, end)) = item.intersection(start, end) {
                 for index in start..end {
                     if let Some(entry) = item.get_entry_by_index(index).await? {
@@ -421,7 +428,7 @@ impl RaftEntryStorageInner {
 
         let location = match self
             .files_meta
-            .iter_mut()
+            .values_mut()
             .rev()
             .find(|item| (index >= item.min_seq) && (index <= item.max_seq))
         {
@@ -645,8 +652,8 @@ mod test {
                     continue;
                 }
 
-                let wal_reocrd = WalRecordData::new(record.data, record.pos, 8.into()).unwrap();
-                let entry = wal_reocrd.block;
+                let wal_record = WalRecordData::new(record.data, record.pos, 8.into()).unwrap();
+                let entry = wal_record.block;
                 storage
                     .inner
                     .mark_write_wal(entry, wal_id, record.pos)

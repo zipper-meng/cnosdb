@@ -11,10 +11,10 @@ use crate::file_system::FileSystem;
 use crate::TskvResult;
 
 lazy_static! {
-    static ref SUMMARY_FILE_NAME_PATTERN: Regex = Regex::new(r"summary-\d{6}").unwrap();
-    static ref WAL_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d{6}\.wal").unwrap();
-    static ref TSM_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d{6}\.tsm").unwrap();
-    static ref HINTEDOFF_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d{6}\.hh").unwrap();
+    static ref SUMMARY_FILE_NAME_PATTERN: Regex = Regex::new(r"summary-\d+").unwrap();
+    static ref WAL_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d+\.wal").unwrap();
+    static ref TSM_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d+.tsm").unwrap();
+    static ref HINTEDOFF_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d+\.hh").unwrap();
     static ref INDEX_BINLOG_FILE_NAME_PATTERN: Regex = Regex::new(r"_\d{6}\.binlog").unwrap();
 }
 

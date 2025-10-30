@@ -7,7 +7,6 @@ mod https_api_tests;
 mod restart_tests;
 mod version_check;
 
-#[cfg(feature = "coordinator_e2e_test")]
 mod coordinator_tests;
 
 mod chaos_tests;

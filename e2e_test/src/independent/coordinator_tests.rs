@@ -34,106 +34,104 @@ fn database_name(code: i32) -> String {
     format!("tenant_{code}_database")
 }
 
-impl CnosdbMetaTestHelper {
-    fn prepare_test_data(&self) {
-        for i in 0..5 {
-            // Create tenant tenant_{i}
-            let name = tenant_name(i);
-            let oid = UuidGenerator::default().next_id();
-            let tenant = Tenant::new(oid, name.clone(), TenantOptions::default());
-            let create_tenant_req = WriteCommand::CreateTenant(DEFAULT_CLUSTER.to_string(), tenant);
-            println!("Creating tenant: {:?}", &create_tenant_req);
-            let create_tenant_res = self
-                .runtime
-                .block_on(self.meta_client.write::<()>(&create_tenant_req));
-            create_tenant_res.unwrap();
+/// Create tenant and database for each node.
+fn prepare_meta_nodes(meta_helper: &CnosdbMetaTestHelper) {
+    for i in 0..5 {
+        // Create tenant tenant_{i}
+        let name = tenant_name(i);
+        let oid = UuidGenerator.next_id();
+        let tenant = Tenant::new(oid, name.clone(), TenantOptions::default());
+        let create_tenant_req = WriteCommand::CreateTenant(DEFAULT_CLUSTER.to_string(), tenant);
+        println!("Creating tenant: {:?}", &create_tenant_req);
+        let create_tenant_res = meta_helper
+            .runtime
+            .block_on(meta_helper.meta_client.write::<()>(&create_tenant_req));
+        create_tenant_res.unwrap();
 
-            thread::sleep(Duration::from_secs(3));
+        thread::sleep(Duration::from_secs(3));
 
-            // Create database tenant_{i}_database
-            let database = database_name(i);
-            let create_database_req = WriteCommand::CreateDB(
-                DEFAULT_CLUSTER.to_string(),
-                name.clone(),
-                DatabaseSchema::new(
-                    &name,
-                    &database,
-                    DatabaseOptions::default(),
-                    DatabaseConfig::default().into(),
-                ),
-            );
-            println!("Creating database: {:?}", &create_database_req);
-            let create_database_res = self.runtime.block_on(
-                self.meta_client
-                    .write::<TenantMetaData>(&create_database_req),
-            );
-            create_database_res.unwrap();
-        }
+        // Create database tenant_{i}_database
+        let database = database_name(i);
+        let create_database_req = WriteCommand::CreateDB(
+            DEFAULT_CLUSTER.to_string(),
+            name.clone(),
+            DatabaseSchema::new(
+                &name,
+                &database,
+                DatabaseOptions::default(),
+                DatabaseConfig::default().into(),
+            ),
+        );
+        println!("Creating database: {:?}", &create_database_req);
+        let create_database_res = meta_helper.runtime.block_on(
+            meta_helper
+                .meta_client
+                .write::<TenantMetaData>(&create_database_req),
+        );
+        create_database_res.unwrap();
     }
 }
 
-impl CnosdbDataTestHelper {
-    /// Generate write line protocol `{DEFAULT_TABLE},tag_a=a1,tag_b=b1 value={}` and write to cnosdb.
-    fn prepare_test_data(&self) -> E2eResult<()> {
-        let mut handles: Vec<thread::JoinHandle<()>> = vec![];
-        let has_failed = Arc::new(AtomicBool::new(false));
-        let host_port = self.data_node_definitions[0].http_host_port;
-        for i in 0..5 {
-            let tenant = tenant_name(i);
-            let database = database_name(i);
+/// Generate write line protocol `{DEFAULT_TABLE},tag_a=a1,tag_b=b1 value={}` and write to cnosdb.
+fn prepare_data_nodes(data_helper: &CnosdbDataTestHelper) -> E2eResult<()> {
+    let mut handles: Vec<thread::JoinHandle<()>> = vec![];
+    let has_failed = Arc::new(AtomicBool::new(false));
+    let host_port = data_helper.data_node_definitions[0].http_host_port;
+    for i in 0..5 {
+        let tenant = tenant_name(i);
+        let database = database_name(i);
 
-            let url = format!("http://{host_port}/api/v1/write?tenant={tenant}&db={database}");
-            // let curl_write = format!(
-            //     "curl -u root: -XPOST -w %{{http_code}} -s -o /dev/null http://{host_port}/api/v1/write?tenant={tenant}&db={database}",
-            // );
-            let has_failed = has_failed.clone();
-            let client = self.data_node_clients[0].clone();
-            let handle: thread::JoinHandle<()> = thread::spawn(move || {
-                println!("Write data thread-{i} started");
-                for j in 0..100 {
-                    if has_failed.load(atomic::Ordering::SeqCst) {
-                        break;
-                    }
-                    let body = format!("{DEFAULT_TABLE},tag_a=a1,tag_b=b1 value={}", j);
-                    let mut write_fail_count = 0;
-                    // Try write and retry at most 3 times if failed..
-                    while write_fail_count < 3 {
-                        let resp = match client.post(&url, &body) {
-                            Ok(r) => r,
-                            Err(e) => {
-                                write_fail_count += 1;
-                                eprintln!("Failed to write: {}", e);
-                                continue;
-                            }
-                        };
-                        if resp.status().as_u16() == 200 {
-                            break;
-                        } else {
-                            let message = resp
-                                .text()
-                                .unwrap_or_else(|e| format!("Receive non-UTF-8 character: {e}"));
-                            eprintln!("Received unexpected ouput: {message}",);
+        let url = format!("http://{host_port}/api/v1/write?tenant={tenant}&db={database}");
+        // let curl_write = format!(
+        //     "curl -u root: -XPOST -w %{{http_code}} -s -o /dev/null http://{host_port}/api/v1/write?tenant={tenant}&db={database}",
+        // );
+        let has_failed = has_failed.clone();
+        let client = data_helper.data_node_clients[0].clone();
+        let handle: thread::JoinHandle<()> = thread::spawn(move || {
+            println!("Write data thread-{i} started");
+            for j in 0..100 {
+                if has_failed.load(atomic::Ordering::SeqCst) {
+                    break;
+                }
+                let body = format!("{DEFAULT_TABLE},tag_a=a1,tag_b=b1 value={}", j);
+                let mut write_fail_count = 0;
+                // Try write and retry at most 3 times if failed..
+                while write_fail_count < 3 {
+                    let resp = match client.post(&url, &body) {
+                        Ok(r) => r,
+                        Err(e) => {
                             write_fail_count += 1;
+                            eprintln!("Failed to write: {}", e);
+                            continue;
                         }
-                    }
-                    if write_fail_count >= 3 {
-                        eprintln!("Failed to write '{}' after retried 3 times", &body);
-                        has_failed.store(true, atomic::Ordering::SeqCst);
+                    };
+                    if resp.status().as_u16() == 200 {
                         break;
+                    } else {
+                        let message = resp
+                            .text()
+                            .unwrap_or_else(|e| format!("Receive non-UTF-8 character: {e}"));
+                        eprintln!("Received unexpected ouput: {message}",);
+                        write_fail_count += 1;
                     }
                 }
-                println!("Write data thread-{i} finished");
-            });
-            handles.push(handle);
-        }
-        for handle in handles {
-            handle.join().unwrap();
-        }
-        if has_failed.load(atomic::Ordering::SeqCst) {
-            Err(E2eError::DataWrite(String::new()))
-        } else {
-            Ok(())
-        }
+                if write_fail_count >= 3 {
+                    eprintln!("Failed to write '{}' after retried 3 times", &body);
+                    has_failed.store(true, atomic::Ordering::SeqCst);
+                    break;
+                }
+            }
+            println!("Write data thread-{i} finished");
+        });
+        handles.push(handle);
+    }
+    for handle in handles {
+        handle.join().unwrap();
+    }
+    if has_failed.load(atomic::Ordering::SeqCst) {
+        Err(E2eError::DataWrite(String::new()))
+    } else {
+        Ok(())
     }
 }
 
@@ -241,8 +239,8 @@ mod self_tests {
             );
             let meta = meta.unwrap();
             let data = data.unwrap();
-            meta.prepare_test_data();
-            data.prepare_test_data().unwrap();
+            prepare_meta_nodes(&meta);
+            prepare_data_nodes(&data).unwrap();
 
             let tenant = tenant_name(1);
             let database = database_name(1);
@@ -270,8 +268,8 @@ fn test_multi_tenants_write_data() {
 
     executor.startup();
 
-    executor.case_context().meta().prepare_test_data();
-    executor.case_context().data().prepare_test_data().unwrap();
+    prepare_meta_nodes(executor.case_context().meta());
+    prepare_data_nodes(executor.case_context().data()).unwrap();
 
     let data_client = executor.case_context().data().data_node_clients[0].clone();
     for i in 0..5 {

@@ -155,7 +155,7 @@ mod tests {
 
     #[test]
     #[instrument]
-    fn test_init() {
+    fn test_init_multiply() {
         init_default_global_tracing("trace", "trace.log", "debug");
         info!("hello");
         init_default_global_tracing("trace", "trace.log", "debug");

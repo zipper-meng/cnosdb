@@ -129,7 +129,6 @@ impl Writer {
         Ok(written_size)
     }
 
-    #[allow(dead_code)]
     pub async fn write_footer(&mut self, footer: &mut [u8; FILE_FOOTER_LEN]) -> TskvResult<usize> {
         self.sync().await?;
 
@@ -193,7 +192,6 @@ impl Writer {
         self.path.clone()
     }
 
-    #[allow(dead_code)]
     pub fn footer(&self) -> Option<[u8; FILE_FOOTER_LEN]> {
         self.footer
     }

@@ -34,7 +34,7 @@ impl OidGenerator for MemoryOidGenerator {
 }
 
 #[derive(Default, Clone)]
-pub struct UuidGenerator {}
+pub struct UuidGenerator;
 
 impl UuidGenerator {
     pub fn next_id(&self) -> u128 {

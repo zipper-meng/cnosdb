@@ -37,7 +37,7 @@ max_cached_readers = 32
 compact_trigger_file_num = 4
 compact_trigger_cold_duration = "1h"
 max_compact_size = "2 GiB"
-max_concurrent_compaction = 4
+max_concurrent_compaction = 0
 collect_compaction_metrics = false
 strict_write = false
 reserve_space = "0 B"
@@ -48,13 +48,13 @@ tsm_meta_compress = "null"
 
 [wal]
 path = "/tmp/cnosdb/1001/wal"
-max_file_size = "128 MiB"
+max_file_size = "256 KiB"
 sync = false
 compress = "zstd"
 
 [cache]
-max_buffer_size = "512 MiB"
-partition = 16
+max_buffer_size = "512 KiB"
+partition = 4
 
 [log]
 level = "info"
@@ -77,8 +77,8 @@ enable_report = true
 
 [cluster]
 raft_logs_to_keep = 5000
-snapshot_holding_time = "1h"
-trigger_snapshot_interval = "10m"
+snapshot_holding_time = "1m"
+trigger_snapshot_interval = "30s"
 lmdb_max_map_size = "1 GiB"
 heartbeat_interval = "300ms"
 send_append_entries_timeout = "5s"
